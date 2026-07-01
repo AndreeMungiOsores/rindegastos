@@ -9,6 +9,7 @@ export default function AdminDashboard({ onLogout }) {
   const [selectedIds, setSelectedIds] = useState([]);
   
   // Filtros
+  const [empresaFilter, setEmpresaFilter] = useState('');
   const [vendedorFilter, setVendedorFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
   const [aprobadoFilter, setAprobadoFilter] = useState('');
@@ -97,6 +98,12 @@ export default function AdminDashboard({ onLogout }) {
     return [...new Set(list)].sort();
   }, [expenses]);
 
+  // Lista única de empresas para el selector de filtros
+  const empresasList = useMemo(() => {
+    const list = expenses.map(e => e.cr168_empresa).filter(Boolean);
+    return [...new Set(list)].sort();
+  }, [expenses]);
+
   // Lista única de estados
   const statesList = useMemo(() => {
     const list = expenses.map(e => ({
@@ -117,21 +124,23 @@ export default function AdminDashboard({ onLogout }) {
   // Filtrado y búsqueda de gastos
   const filteredExpenses = useMemo(() => {
     return expenses.filter(item => {
+      const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
       const matchesVendedor = vendedorFilter ? item.cr168_vendedor === vendedorFilter : true;
       const matchesEstado = estadoFilter ? String(item.cr168_estado) === String(estadoFilter) : true;
       const matchesAprobado = aprobadoFilter ? String(item.cr168_aprobado) === String(aprobadoFilter) : true;
       
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = searchTerm ? (
+        (item.cr168_empresa && item.cr168_empresa.toLowerCase().includes(searchLower)) ||
         (item.cr168_vendedor && item.cr168_vendedor.toLowerCase().includes(searchLower)) ||
         (item.cr168_nombredelcomercio && item.cr168_nombredelcomercio.toLowerCase().includes(searchLower)) ||
         (item.cr168_numerodecomprobante && item.cr168_numerodecomprobante.toLowerCase().includes(searchLower)) ||
         (item.cr168_detalle && item.cr168_detalle.toLowerCase().includes(searchLower))
       ) : true;
 
-      return matchesVendedor && matchesEstado && matchesAprobado && matchesSearch;
+      return matchesEmpresa && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch;
     });
-  }, [expenses, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm]);
+  }, [expenses, empresaFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm]);
 
   // Ordenamiento de gastos basado en la columna Fecha
   const sortedExpenses = useMemo(() => {
@@ -657,6 +666,21 @@ export default function AdminDashboard({ onLogout }) {
                   </th>
                   <th>
                     <div className="header-with-filter">
+                      <span className="header-label" style={{ color: '#0369a1' }}>Empresa</span>
+                      <select
+                        className="header-select-filter"
+                        value={empresaFilter}
+                        onChange={(e) => setEmpresaFilter(e.target.value)}
+                      >
+                        <option value="">(Todos)</option>
+                        {empresasList.map(emp => (
+                          <option key={emp} value={emp}>{emp}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </th>
+                  <th>
+                    <div className="header-with-filter">
                       <span className="header-label" style={{ color: '#0369a1' }}>Vendedor</span>
                       <select
                         className="header-select-filter"
@@ -719,7 +743,7 @@ export default function AdminDashboard({ onLogout }) {
               <tbody>
                 {sortedExpenses.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    <td colSpan={9} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
                         <span style={{ fontSize: '2.5rem' }}>📂</span>
                         <p style={{ fontWeight: '500' }}>No se encontraron gastos con los filtros seleccionados.</p>
@@ -749,6 +773,9 @@ export default function AdminDashboard({ onLogout }) {
                         </td>
                         <td onClick={() => setActiveExpense({ ...item })}>
                           {formattedDate}
+                        </td>
+                        <td onClick={() => setActiveExpense({ ...item })} style={{ color: 'var(--text-secondary)' }}>
+                          {item.cr168_empresa || 'Sin Empresa'}
                         </td>
                         <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '500' }}>
                           {item.cr168_vendedor || 'Sin Vendedor'}
