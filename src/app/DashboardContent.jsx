@@ -2,6 +2,20 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 
+/**
+ * Formatea una fecha YYYY-MM-DD o ISO a formato DD/MM/YYYY sin desfasajes de zona horaria local.
+ */
+function formatDisplayDate(dateStr) {
+  if (!dateStr) return 'S/D';
+  const clean = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  const parts = clean.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    const [year, month, day] = parts;
+    return `${day}/${month}/${year}`;
+  }
+  return dateStr;
+}
+
 export default function AdminDashboard({ onLogout }) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +55,9 @@ export default function AdminDashboard({ onLogout }) {
   // Voucher de desembolso individual
   const [drawerVoucherFile, setDrawerVoucherFile] = useState(null);
 
+  // Edición de Información del Comprobante
+  const [isEditingComprobante, setIsEditingComprobante] = useState(false);
+
   // Manejador del movimiento del mouse para el zoom
   const handleMouseMove = (e) => {
     if (!isZoomed) return;
@@ -50,11 +67,12 @@ export default function AdminDashboard({ onLogout }) {
     setZoomPos({ x, y });
   };
 
-  // Resetear el zoom al cerrar o cambiar de gasto
+  // Resetear el zoom y edición al cerrar o cambiar de gasto
   useEffect(() => {
     if (!activeExpense) {
       setIsZoomed(false);
       setZoomPos({ x: 50, y: 50 });
+      setIsEditingComprobante(false);
     }
     setDrawerVoucherFile(null);
   }, [activeExpense]);
@@ -146,9 +164,9 @@ export default function AdminDashboard({ onLogout }) {
   const sortedExpenses = useMemo(() => {
     const sorted = [...filteredExpenses];
     sorted.sort((a, b) => {
-      const dateA = a.cr168_fechadelgasto ? new Date(a.cr168_fechadelgasto) : new Date(0);
-      const dateB = b.cr168_fechadelgasto ? new Date(b.cr168_fechadelgasto) : new Date(0);
-      return dateOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      const dateA = a.cr168_fechadelgasto ? a.cr168_fechadelgasto.split('T')[0] : '';
+      const dateB = b.cr168_fechadelgasto ? b.cr168_fechadelgasto.split('T')[0] : '';
+      return dateOrder === 'asc' ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
     });
     return sorted;
   }, [filteredExpenses, dateOrder]);
@@ -254,6 +272,21 @@ export default function AdminDashboard({ onLogout }) {
       const formData = new FormData();
       formData.append('cr168_aprobado', activeExpense.cr168_aprobado);
       formData.append('cr168_estado', parseInt(activeExpense.cr168_estado, 10));
+      if (activeExpense.cr168_nombredelcomercio !== undefined) {
+        formData.append('cr168_nombredelcomercio', activeExpense.cr168_nombredelcomercio || '');
+      }
+      if (activeExpense.cr168_rucdelcomercio !== undefined) {
+        formData.append('cr168_rucdelcomercio', activeExpense.cr168_rucdelcomercio || '');
+      }
+      if (activeExpense.cr168_numerodecomprobante !== undefined) {
+        formData.append('cr168_numerodecomprobante', activeExpense.cr168_numerodecomprobante || '');
+      }
+      if (activeExpense.cr168_fechadelgasto !== undefined && activeExpense.cr168_fechadelgasto !== '') {
+        formData.append('cr168_fechadelgasto', activeExpense.cr168_fechadelgasto);
+      }
+      if (activeExpense.cr168_montototalincluyendoigv !== undefined && activeExpense.cr168_montototalincluyendoigv !== '') {
+        formData.append('cr168_montototalincluyendoigv', activeExpense.cr168_montototalincluyendoigv);
+      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -292,9 +325,7 @@ export default function AdminDashboard({ onLogout }) {
 
       // Mapear los datos a filas del excel
       const rows = filteredExpenses.map(item => {
-        const formattedDate = item.cr168_fechadelgasto
-          ? new Date(item.cr168_fechadelgasto).toLocaleDateString('es-PE')
-          : '';
+        const formattedDate = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
 
         return [
           item.cr168_vendedor || '',
@@ -753,9 +784,7 @@ export default function AdminDashboard({ onLogout }) {
                 ) : (
                   sortedExpenses.map((item) => {
                     const isSelected = selectedIds.includes(item.cr168_reportedegastosid);
-                    const formattedDate = item.cr168_fechadelgasto
-                      ? new Date(item.cr168_fechadelgasto).toLocaleDateString('es-PE')
-                      : 'S/D';
+                    const formattedDate = formatDisplayDate(item.cr168_fechadelgasto);
                     
                     return (
                       <tr
@@ -841,23 +870,117 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
 
                   <div className="detail-section">
-                    <h3>Información del Comprobante</h3>
-                    <div className="info-row">
-                      <span className="info-label">Comercio</span>
-                      <span className="info-value">{activeExpense.cr168_nombredelcomercio || 'S/D'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                      <h3 style={{ margin: 0, borderBottom: 'none', paddingBottom: 0 }}>Información del Comprobante</h3>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingComprobante(prev => !prev)}
+                        title={isEditingComprobante ? "Desactivar edición" : "Editar información del comprobante"}
+                        style={{
+                          background: isEditingComprobante ? 'rgba(37, 99, 235, 0.1)' : 'transparent',
+                          border: '1px solid',
+                          borderColor: isEditingComprobante ? 'var(--accent-color)' : '#cbd5e1',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          color: isEditingComprobante ? 'var(--accent-color)' : '#64748b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          fontWeight: '600',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <span>✏️</span>
+                        <span style={{ fontSize: '0.75rem' }}>{isEditingComprobante ? 'Editando' : 'Editar'}</span>
+                      </button>
                     </div>
-                    <div className="info-row">
-                      <span className="info-label">RUC del Comercio</span>
-                      <span className="info-value">{activeExpense.cr168_rucdelcomercio || 'S/D'}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">Número de Comprobante</span>
-                      <span className="info-value">{activeExpense.cr168_numerodecomprobante || 'S/D'}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">Monto Total (IGV Inc.)</span>
-                      <span className="info-value amount">S/ {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
-                    </div>
+
+                    {isEditingComprobante ? (
+                      <>
+                        <div className="info-row" style={{ marginBottom: '0.85rem' }}>
+                          <span className="info-label">Fecha del Gasto</span>
+                          <input
+                            type="date"
+                            className="form-input"
+                            value={activeExpense.cr168_fechadelgasto ? activeExpense.cr168_fechadelgasto.split('T')[0] : ''}
+                            onChange={(e) => setActiveExpense(prev => ({ ...prev, cr168_fechadelgasto: e.target.value }))}
+                          />
+                        </div>
+                        <div className="info-row" style={{ marginBottom: '0.85rem' }}>
+                          <span className="info-label">Comercio</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={activeExpense.cr168_nombredelcomercio || ''}
+                            onChange={(e) => setActiveExpense(prev => ({ ...prev, cr168_nombredelcomercio: e.target.value }))}
+                            placeholder="Nombre del comercio"
+                          />
+                        </div>
+                        <div className="info-row" style={{ marginBottom: '0.85rem' }}>
+                          <span className="info-label">RUC del Comercio</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={activeExpense.cr168_rucdelcomercio || ''}
+                            onChange={(e) => setActiveExpense(prev => ({ ...prev, cr168_rucdelcomercio: e.target.value }))}
+                            placeholder="RUC del comercio"
+                          />
+                        </div>
+                        <div className="info-row" style={{ marginBottom: '0.85rem' }}>
+                          <span className="info-label">Número de Comprobante</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={activeExpense.cr168_numerodecomprobante || ''}
+                            onChange={(e) => setActiveExpense(prev => ({ ...prev, cr168_numerodecomprobante: e.target.value }))}
+                            placeholder="Nº de comprobante"
+                          />
+                        </div>
+                        <div className="info-row">
+                          <span className="info-label">Monto Total (IGV Inc.)</span>
+                          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <span style={{ position: 'absolute', left: '10px', color: '#64748b', fontWeight: 'bold', fontSize: '0.85rem' }}>S/</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="form-input"
+                              style={{ paddingLeft: '2rem' }}
+                              value={activeExpense.cr168_montototalincluyendoigv ?? ''}
+                              onChange={(e) => setActiveExpense(prev => ({
+                                ...prev,
+                                cr168_montototalincluyendoigv: e.target.value === '' ? '' : parseFloat(e.target.value)
+                              }))}
+                              placeholder="0.00"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="info-row">
+                          <span className="info-label">Fecha del Gasto</span>
+                          <span className="info-value">{formatDisplayDate(activeExpense.cr168_fechadelgasto)}</span>
+                        </div>
+                        <div className="info-row">
+                          <span className="info-label">Comercio</span>
+                          <span className="info-value">{activeExpense.cr168_nombredelcomercio || 'S/D'}</span>
+                        </div>
+                        <div className="info-row">
+                          <span className="info-label">RUC del Comercio</span>
+                          <span className="info-value">{activeExpense.cr168_rucdelcomercio || 'S/D'}</span>
+                        </div>
+                        <div className="info-row">
+                          <span className="info-label">Número de Comprobante</span>
+                          <span className="info-value">{activeExpense.cr168_numerodecomprobante || 'S/D'}</span>
+                        </div>
+                        <div className="info-row">
+                          <span className="info-label">Monto Total (IGV Inc.)</span>
+                          <span className="info-value amount">S/ {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Detalles adicionales (solo si alguno tiene dato) */}

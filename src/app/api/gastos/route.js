@@ -27,6 +27,11 @@ export async function PATCH(request) {
     const idsRaw = formData.get('ids');
     const cr168_estadoRaw = formData.get('cr168_estado');
     const cr168_aprobadoRaw = formData.get('cr168_aprobado');
+    const cr168_nombredelcomercioRaw = formData.get('cr168_nombredelcomercio');
+    const cr168_rucdelcomercioRaw = formData.get('cr168_rucdelcomercio');
+    const cr168_numerodecomprobanteRaw = formData.get('cr168_numerodecomprobante');
+    const cr168_montototalincluyendoigvRaw = formData.get('cr168_montototalincluyendoigv');
+    const cr168_fechadelgastoRaw = formData.get('cr168_fechadelgasto');
     const voucherFile = formData.get('voucher'); // Archivo de tipo File o null
 
     // Procesar campos comunes
@@ -167,6 +172,16 @@ export async function PATCH(request) {
       const updateData = {};
       if (cr168_estado !== undefined) updateData.cr168_estado = cr168_estado;
       if (cr168_aprobado !== undefined) updateData.cr168_aprobado = cr168_aprobado;
+      if (cr168_nombredelcomercioRaw !== null) updateData.cr168_nombredelcomercio = cr168_nombredelcomercioRaw;
+      if (cr168_rucdelcomercioRaw !== null) updateData.cr168_rucdelcomercio = cr168_rucdelcomercioRaw;
+      if (cr168_numerodecomprobanteRaw !== null) updateData.cr168_numerodecomprobante = cr168_numerodecomprobanteRaw;
+      if (cr168_fechadelgastoRaw !== null && cr168_fechadelgastoRaw !== '') updateData.cr168_fechadelgasto = cr168_fechadelgastoRaw;
+      if (cr168_montototalincluyendoigvRaw !== null && cr168_montototalincluyendoigvRaw !== '') {
+        const parsedAmount = parseFloat(cr168_montototalincluyendoigvRaw);
+        if (!isNaN(parsedAmount)) {
+          updateData.cr168_montototalincluyendoigv = parsedAmount;
+        }
+      }
 
       if (Object.keys(updateData).length === 0) {
         return NextResponse.json({ error: 'Debes proporcionar datos para actualizar' }, { status: 400 });
