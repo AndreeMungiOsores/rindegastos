@@ -58,6 +58,19 @@ export default function AdminDashboard({ onLogout }) {
   // Edición de Información del Comprobante
   const [isEditingComprobante, setIsEditingComprobante] = useState(false);
 
+  // Control de Zoom para Voucher de Propina (Lupa)
+  const [isZoomedPropina, setIsZoomedPropina] = useState(false);
+  const [zoomPosPropina, setZoomPosPropina] = useState({ x: 50, y: 50 });
+
+  // Manejador del movimiento del mouse para el zoom de la propina
+  const handleMouseMovePropina = (e) => {
+    if (!isZoomedPropina) return;
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - left) / width) * 100;
+    const y = ((e.clientY - top) / height) * 100;
+    setZoomPosPropina({ x, y });
+  };
+
   // Manejador del movimiento del mouse para el zoom
   const handleMouseMove = (e) => {
     if (!isZoomed) return;
@@ -72,6 +85,8 @@ export default function AdminDashboard({ onLogout }) {
     if (!activeExpense) {
       setIsZoomed(false);
       setZoomPos({ x: 50, y: 50 });
+      setIsZoomedPropina(false);
+      setZoomPosPropina({ x: 50, y: 50 });
       setIsEditingComprobante(false);
     }
     setDrawerVoucherFile(null);
@@ -979,6 +994,14 @@ export default function AdminDashboard({ onLogout }) {
                           <span className="info-label">Monto Total (IGV Inc.)</span>
                           <span className="info-value amount">S/ {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
                         </div>
+                        {activeExpense.cr168_monto_propina !== undefined && activeExpense.cr168_monto_propina !== null && (
+                          <div className="info-row">
+                            <span className="info-label">Monto Propina</span>
+                            <span className="info-value amount" style={{ color: '#0284c7' }}>
+                              S/ {Number(activeExpense.cr168_monto_propina).toFixed(2)}
+                            </span>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -1183,6 +1206,49 @@ export default function AdminDashboard({ onLogout }) {
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
                     Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en <strong>↗</strong> para ver en pantalla completa.
                   </span>
+
+                  {/* Voucher de Propina (Cargado desde Dataverse) */}
+                  {activeExpense.cr168_voucher_propina && (
+                    <div style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center' }}>
+                      <span className="info-label" style={{ alignSelf: 'flex-start', fontWeight: 'bold' }}>
+                        Voucher de Propina (Cargada desde Dataverse)
+                      </span>
+                      <div 
+                        className="comprobante-preview-box"
+                        onMouseMove={handleMouseMovePropina}
+                        onMouseLeave={() => {
+                          if (isZoomedPropina) {
+                            setIsZoomedPropina(false);
+                            setZoomPosPropina({ x: 50, y: 50 });
+                          }
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="btn-expand-floating"
+                          title="Ver en pantalla completa (nueva pestaña)"
+                          onClick={() => {
+                            window.open(`/api/gastos/imagen?id=${activeExpense.cr168_reportedegastosid}&column=propina`);
+                          }}
+                        >
+                          ↗
+                        </button>
+                        <img
+                          src={`/api/gastos/imagen?id=${activeExpense.cr168_reportedegastosid}&column=propina`}
+                          alt="Voucher de Propina"
+                          className={`comprobante-img ${isZoomedPropina ? 'zoomed' : ''}`}
+                          style={isZoomedPropina ? {
+                            transform: 'scale(2.2)',
+                            transformOrigin: `${zoomPosPropina.x}% ${zoomPosPropina.y}%`
+                          } : {}}
+                          onClick={() => setIsZoomedPropina(!isZoomedPropina)}
+                        />
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
+                        Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en <strong>↗</strong> para ver en pantalla completa.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

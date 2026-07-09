@@ -10,6 +10,8 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const path = searchParams.get('path');
+    const column = searchParams.get('column') || 'imagendelcomprobante';
+    const columnName = column === 'propina' ? 'cr168_voucher_propina' : 'cr168_imagendelcomprobante';
 
     if (!id && !path) {
       return NextResponse.json({ error: 'Se requiere el parámetro id o path' }, { status: 400 });
@@ -26,8 +28,8 @@ export async function GET(request) {
       if (id) {
         // 1a. Intentar con la entidad en plural (estándar en la API de OData de Dataverse)
         try {
-          const urlPlural = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${id})/cr168_imagendelcomprobante/$value?size=full`;
-          console.log('[ImageProxy] Intentando descargar imagen en alta calidad (Plural):', urlPlural);
+          const urlPlural = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${id})/${columnName}/$value?size=full`;
+          console.log(`[ImageProxy] Intentando descargar imagen en alta calidad (Plural, columna: ${columnName}):`, urlPlural);
           response = await axios({
             method: 'GET',
             url: urlPlural,
@@ -48,8 +50,8 @@ export async function GET(request) {
 
         // 1b. Intentar con la entidad en singular (especificada en el requerimiento del usuario)
         try {
-          const urlSingular = `${DATAVERSE_BASE_URL}/cr168_reportedegastos(${id})/cr168_imagendelcomprobante/$value?size=full`;
-          console.log('[ImageProxy] Intentando descargar imagen en alta calidad (Singular):', urlSingular);
+          const urlSingular = `${DATAVERSE_BASE_URL}/cr168_reportedegastos(${id})/${columnName}/$value?size=full`;
+          console.log(`[ImageProxy] Intentando descargar imagen en alta calidad (Singular, columna: ${columnName}):`, urlSingular);
           response = await axios({
             method: 'GET',
             url: urlSingular,
