@@ -32,6 +32,9 @@ export async function PATCH(request) {
     const cr168_numerodecomprobanteRaw = formData.get('cr168_numerodecomprobante');
     const cr168_montototalincluyendoigvRaw = formData.get('cr168_montototalincluyendoigv');
     const cr168_fechadelgastoRaw = formData.get('cr168_fechadelgasto');
+    const cr168_monto_propinaRaw = formData.get('cr168_monto_propina');
+    const cr168_empresaRaw = formData.get('cr168_empresa');
+    const cr168_rucempresaRaw = formData.get('cr168_rucempresa');
     const voucherFile = formData.get('voucher'); // Archivo de tipo File o null
 
     // Procesar campos comunes
@@ -67,10 +70,14 @@ export async function PATCH(request) {
 
       console.log(`[API PATCH] Iniciando actualización masiva para ${ids.length} registros...`);
 
-      // 1. Actualizar el estado de cada gasto en Dataverse y subir voucher si existe
+      // 1. Actualizar el estado o campo aprobado de cada gasto en Dataverse y subir voucher si existe
       await Promise.all(
         ids.map(async (expenseId) => {
-          await updateExpense(expenseId, { cr168_estado });
+          const updateData = {};
+          if (cr168_estado !== undefined) updateData.cr168_estado = cr168_estado;
+          if (cr168_aprobado !== undefined) updateData.cr168_aprobado = cr168_aprobado;
+
+          await updateExpense(expenseId, updateData);
           
           if (voucherBuffer) {
             try {
@@ -182,6 +189,14 @@ export async function PATCH(request) {
           updateData.cr168_montototalincluyendoigv = parsedAmount;
         }
       }
+      if (cr168_monto_propinaRaw !== null && cr168_monto_propinaRaw !== '') {
+        const parsedTip = parseFloat(cr168_monto_propinaRaw);
+        if (!isNaN(parsedTip)) {
+          updateData.cr168_monto_propina = parsedTip;
+        }
+      }
+      if (cr168_empresaRaw !== null) updateData.cr168_empresa = cr168_empresaRaw;
+      if (cr168_rucempresaRaw !== null) updateData.cr168_rucempresa = cr168_rucempresaRaw;
 
       if (Object.keys(updateData).length === 0) {
         return NextResponse.json({ error: 'Debes proporcionar datos para actualizar' }, { status: 400 });

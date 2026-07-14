@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 /**
  * Formatea una fecha YYYY-MM-DD o ISO a formato DD/MM/YYYY sin desfasajes de zona horaria local.
@@ -31,6 +31,7 @@ export default function AdminDashboard({ onLogout }) {
   
   // Ordenamiento de Fecha
   const [dateOrder, setDateOrder] = useState('desc'); // 'desc' (más recientes) o 'asc' (más antiguos)
+  const [sortField, setSortField] = useState('cr168_fechadelgasto'); // 'cr168_fechadelgasto' o 'createdon'
   
   // Elemento seleccionado para ver detalle
   const [activeExpense, setActiveExpense] = useState(null);
@@ -52,11 +53,30 @@ export default function AdminDashboard({ onLogout }) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
 
+  // Dropdown de exportación
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Módulos y Navegación del Panel Lateral
+  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores'
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Filtro de Rango de Fechas (Calendario Visual)
+  const [filterStartDate, setFilterStartDate] = useState(null); // 'YYYY-MM-DD'
+  const [filterEndDate, setFilterEndDate] = useState(null); // 'YYYY-MM-DD'
+  const [showCalendarPopover, setShowCalendarPopover] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const calendarRef = useRef(null);
+
   // Voucher de desembolso individual
   const [drawerVoucherFile, setDrawerVoucherFile] = useState(null);
 
   // Edición de Información del Comprobante
   const [isEditingComprobante, setIsEditingComprobante] = useState(false);
+
+  // Edición de Información del Vendedor
+  const [isEditingVendedor, setIsEditingVendedor] = useState(false);
 
   // Control de Zoom para Voucher de Propina (Lupa)
   const [isZoomedPropina, setIsZoomedPropina] = useState(false);
@@ -88,9 +108,26 @@ export default function AdminDashboard({ onLogout }) {
       setIsZoomedPropina(false);
       setZoomPosPropina({ x: 50, y: 50 });
       setIsEditingComprobante(false);
+      setIsEditingVendedor(false);
     }
     setDrawerVoucherFile(null);
   }, [activeExpense]);
+
+  // Cerrar el dropdown y popover al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowExportDropdown(false);
+      }
+      if (calendarRef.current && !calendarRef.current.contains(event.target)) {
+        setShowCalendarPopover(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Cargar datos al iniciar
   const fetchExpenses = async () => {
@@ -171,20 +208,39 @@ export default function AdminDashboard({ onLogout }) {
         (item.cr168_detalle && item.cr168_detalle.toLowerCase().includes(searchLower))
       ) : true;
 
-      return matchesEmpresa && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch;
-    });
-  }, [expenses, empresaFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm]);
+      // Rango de fechas de gasto
+      let matchesDateRange = true;
+      if (filterStartDate || filterEndDate) {
+        if (item.cr168_fechadelgasto) {
+          const expenseDateStr = item.cr168_fechadelgasto.split('T')[0];
+          if (filterStartDate && expenseDateStr < filterStartDate) matchesDateRange = false;
+          if (filterEndDate && expenseDateStr > filterEndDate) matchesDateRange = false;
+        } else {
+          matchesDateRange = false;
+        }
+      }
 
-  // Ordenamiento de gastos basado en la columna Fecha
+      return matchesEmpresa && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange;
+    });
+  }, [expenses, empresaFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
+
+  // Ordenamiento de gastos basado en la columna de fecha activa (Gasto o Creación)
   const sortedExpenses = useMemo(() => {
     const sorted = [...filteredExpenses];
     sorted.sort((a, b) => {
-      const dateA = a.cr168_fechadelgasto ? a.cr168_fechadelgasto.split('T')[0] : '';
-      const dateB = b.cr168_fechadelgasto ? b.cr168_fechadelgasto.split('T')[0] : '';
+      let dateA = '';
+      let dateB = '';
+      if (sortField === 'createdon') {
+        dateA = a.createdon ? a.createdon.split('T')[0] : '';
+        dateB = b.createdon ? b.createdon.split('T')[0] : '';
+      } else {
+        dateA = a.cr168_fechadelgasto ? a.cr168_fechadelgasto.split('T')[0] : '';
+        dateB = b.cr168_fechadelgasto ? b.cr168_fechadelgasto.split('T')[0] : '';
+      }
       return dateOrder === 'asc' ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
     });
     return sorted;
-  }, [filteredExpenses, dateOrder]);
+  }, [filteredExpenses, sortField, dateOrder]);
 
   // Calcular totales para los KPIs generales
   const stats = useMemo(() => {
@@ -261,6 +317,37 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
+  // Aprobar registros seleccionados en bloque
+  const handleApproveSelected = async () => {
+    if (selectedIds.length === 0) return;
+    
+    const confirmApprove = window.confirm(`¿Estás seguro de que deseas aprobar los ${selectedIds.length} gastos seleccionados?`);
+    if (!confirmApprove) return;
+
+    setIsUpdating(true);
+    try {
+      const formData = new FormData();
+      formData.append('ids', JSON.stringify(selectedIds));
+      formData.append('cr168_aprobado', 'true');
+
+      const res = await fetch('/api/gastos', {
+        method: 'PATCH',
+        body: formData
+      });
+
+      if (!res.ok) throw new Error('Error al aprobar registros en Dataverse.');
+      
+      alert(`Se aprobaron con éxito ${selectedIds.length} registros.`);
+      setSelectedIds([]);
+      await fetchExpenses();
+    } catch (err) {
+      console.error('Error al aprobar registros masivamente:', err);
+      alert(`Error al aprobar registros: ${err.message}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   // Guardar cambios del modal de detalle
   const handleSaveChanges = async (e) => {
     e.preventDefault();
@@ -302,6 +389,15 @@ export default function AdminDashboard({ onLogout }) {
       if (activeExpense.cr168_montototalincluyendoigv !== undefined && activeExpense.cr168_montototalincluyendoigv !== '') {
         formData.append('cr168_montototalincluyendoigv', activeExpense.cr168_montototalincluyendoigv);
       }
+      if (activeExpense.cr168_monto_propina !== undefined && activeExpense.cr168_monto_propina !== null && activeExpense.cr168_monto_propina !== '') {
+        formData.append('cr168_monto_propina', activeExpense.cr168_monto_propina);
+      }
+      if (activeExpense.cr168_empresa !== undefined) {
+        formData.append('cr168_empresa', activeExpense.cr168_empresa || '');
+      }
+      if (activeExpense.cr168_rucempresa !== undefined) {
+        formData.append('cr168_rucempresa', activeExpense.cr168_rucempresa || '');
+      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -323,7 +419,90 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const handleExportToExcel = async () => {
+  // Helper para generar el libro de trabajo Excel en memoria
+  const generateExcelWorkbook = async () => {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Reporte de Gastos');
+
+    // Mapear los datos a filas del excel
+    const rows = filteredExpenses.map(item => {
+      const formattedDate = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
+      const createdDate = item.createdon ? formatDisplayDate(item.createdon) : '';
+
+      return [
+        item.cr168_vendedor || '',
+        item.cr168_empresa || '',
+        item.cr168_rucempresa || '',
+        createdDate,
+        formattedDate,
+        item.cr168_rucdelcomercio || '',
+        item.cr168_nombredelcomercio || '',
+        item.cr168_tipodecomprobante || '',
+        item.cr168_numerodecomprobante || '',
+        item.cr168_clinica || '',
+        item.cr168_doctor || '',
+        item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || item.cr168_tipodegasto || '',
+        item.cr168_marca || '',
+        item.cr168_montototalincluyendoigv || 0,
+        item.cr168_detalle || '',
+        item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False'),
+        item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'
+      ];
+    });
+
+    // Definir columnas con sus respectivos encabezados
+    const columns = [
+      { name: 'Vendedor', filterButton: true },
+      { name: 'Empresa', filterButton: true },
+      { name: 'RUC Empresa', filterButton: true },
+      { name: 'Fecha de Creación', filterButton: true },
+      { name: 'Fecha de Gasto', filterButton: true },
+      { name: 'RUC del Comercio', filterButton: true },
+      { name: 'Nombre del Comercio', filterButton: true },
+      { name: 'Tipo de Comprobante', filterButton: true },
+      { name: 'Número de Comprobante', filterButton: true },
+      { name: 'Clínica', filterButton: true },
+      { name: 'Doctor', filterButton: true },
+      { name: 'Tipo de Gasto', filterButton: true },
+      { name: 'Marca', filterButton: true },
+      { name: 'Monto Total (Inc. IGV)', filterButton: true },
+      { name: 'Detalle', filterButton: true },
+      { name: 'Aprobado', filterButton: true },
+      { name: 'Estado', filterButton: true }
+    ];
+
+    // Agregar tabla de datos con estilo formal en Excel
+    worksheet.addTable({
+      name: 'ReporteGastosTabla',
+      ref: 'A1',
+      headerRow: true,
+      totalsRow: false,
+      style: {
+        theme: 'TableStyleMedium2',
+        showRowStripes: true,
+      },
+      columns: columns,
+      rows: rows,
+    });
+
+    // Auto-ajustar el ancho de las columnas
+    worksheet.columns.forEach(column => {
+      let maxLen = 0;
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        const val = cell.value ? cell.value.toString() : '';
+        if (val.length > maxLen) {
+          maxLen = val.length;
+        }
+      });
+      column.width = Math.max(maxLen + 4, 12);
+    });
+
+    return await workbook.xlsx.writeBuffer();
+  };
+
+  // Exportar solo el archivo Excel
+  const handleExportExcelOnly = async () => {
     if (filteredExpenses.length === 0) {
       alert('No hay datos filtrados para exportar.');
       return;
@@ -333,82 +512,35 @@ export default function AdminDashboard({ onLogout }) {
     setExportStatus('Generando Excel...');
 
     try {
-      // 1. Generar el archivo Excel en memoria
-      const ExcelJS = await import('exceljs');
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Reporte de Gastos');
+      const excelBuffer = await generateExcelWorkbook();
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'Reporte_Gastos_Rindegastos.xlsx';
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error al exportar solo Excel:', err);
+      alert(`Error al exportar solo Excel: ${err.message}`);
+    } finally {
+      setIsExporting(false);
+      setExportStatus('');
+    }
+  };
 
-      // Mapear los datos a filas del excel
-      const rows = filteredExpenses.map(item => {
-        const formattedDate = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
+  // Exportar Excel junto con comprobantes en formato ZIP
+  const handleExportExcelWithImages = async () => {
+    if (filteredExpenses.length === 0) {
+      alert('No hay datos filtrados para exportar.');
+      return;
+    }
 
-        return [
-          item.cr168_vendedor || '',
-          item.cr168_empresa || '',
-          item.cr168_rucempresa || '',
-          formattedDate,
-          item.cr168_rucdelcomercio || '',
-          item.cr168_nombredelcomercio || '',
-          item.cr168_tipodecomprobante || '',
-          item.cr168_numerodecomprobante || '',
-          item.cr168_clinica || '',
-          item.cr168_doctor || '',
-          item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || item.cr168_tipodegasto || '',
-          item.cr168_marca || '',
-          item.cr168_montototalincluyendoigv || 0,
-          item.cr168_detalle || '',
-          item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False'),
-          item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'
-        ];
-      });
+    setIsExporting(true);
+    setExportStatus('Generando Excel...');
 
-      // Definir columnas con sus respectivos encabezados
-      const columns = [
-        { name: 'Vendedor', filterButton: true },
-        { name: 'Empresa', filterButton: true },
-        { name: 'RUC Empresa', filterButton: true },
-        { name: 'Fecha del Gasto', filterButton: true },
-        { name: 'RUC del Comercio', filterButton: true },
-        { name: 'Nombre del Comercio', filterButton: true },
-        { name: 'Tipo de Comprobante', filterButton: true },
-        { name: 'Número de Comprobante', filterButton: true },
-        { name: 'Clínica', filterButton: true },
-        { name: 'Doctor', filterButton: true },
-        { name: 'Tipo de Gasto', filterButton: true },
-        { name: 'Marca', filterButton: true },
-        { name: 'Monto Total (Inc. IGV)', filterButton: true },
-        { name: 'Detalle', filterButton: true },
-        { name: 'Aprobado', filterButton: true },
-        { name: 'Estado', filterButton: true }
-      ];
-
-      // Agregar tabla de datos con estilo formal en Excel
-      worksheet.addTable({
-        name: 'ReporteGastosTabla',
-        ref: 'A1',
-        headerRow: true,
-        totalsRow: false,
-        style: {
-          theme: 'TableStyleMedium2',
-          showRowStripes: true,
-        },
-        columns: columns,
-        rows: rows,
-      });
-
-      // Auto-ajustar el ancho de las columnas
-      worksheet.columns.forEach(column => {
-        let maxLen = 0;
-        column.eachCell({ includeEmpty: true }, (cell) => {
-          const val = cell.value ? cell.value.toString() : '';
-          if (val.length > maxLen) {
-            maxLen = val.length;
-          }
-        });
-        column.width = Math.max(maxLen + 4, 12);
-      });
-
-      const excelBuffer = await workbook.xlsx.writeBuffer();
+    try {
+      const excelBuffer = await generateExcelWorkbook();
 
       // 2. Preparar el empaquetado del archivo ZIP
       setExportStatus('Cargando ZIP...');
@@ -517,56 +649,238 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
+  const handlePrevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear(prev => prev - 1);
+    } else {
+      setCalendarMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear(prev => prev + 1);
+    } else {
+      setCalendarMonth(prev => prev + 1);
+    }
+  };
+
+  const handleDayClick = (dateStr) => {
+    if (!filterStartDate || (filterStartDate && filterEndDate)) {
+      setFilterStartDate(dateStr);
+      setFilterEndDate(null);
+    } else {
+      if (dateStr < filterStartDate) {
+        setFilterStartDate(dateStr);
+      } else {
+        setFilterEndDate(dateStr);
+        setShowCalendarPopover(false);
+      }
+    }
+  };
+
+  const selectLast7Days = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 6);
+    setFilterStartDate(start.toISOString().split('T')[0]);
+    setFilterEndDate(end.toISOString().split('T')[0]);
+    setShowCalendarPopover(false);
+  };
+
+  const selectLast30Days = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 29);
+    setFilterStartDate(start.toISOString().split('T')[0]);
+    setFilterEndDate(end.toISOString().split('T')[0]);
+    setShowCalendarPopover(false);
+  };
+
+  const selectThisMonth = () => {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    setFilterStartDate(start.toISOString().split('T')[0]);
+    setFilterEndDate(end.toISOString().split('T')[0]);
+    setShowCalendarPopover(false);
+  };
+
+  const selectLastMonth = () => {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth(), 0);
+    setFilterStartDate(start.toISOString().split('T')[0]);
+    setFilterEndDate(end.toISOString().split('T')[0]);
+    setShowCalendarPopover(false);
+  };
+
+  const renderCalendarCard = () => {
+    const monthNames = [
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+    ];
+
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    let firstDayIndex = new Date(calendarYear, calendarMonth, 1).getDay();
+    // Ajustar para empezar en Lunes (Lu=0, Ma=1... Do=6)
+    firstDayIndex = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
+
+    const days = [];
+    // Celdas vacías del mes anterior
+    for (let i = 0; i < firstDayIndex; i++) {
+      days.push(<div key={`empty-${i}`} className="calendar-day-cell empty-day"></div>);
+    }
+
+    // Celdas del mes actual
+    for (let d = 1; d <= daysInMonth; d++) {
+      const mStr = String(calendarMonth + 1).padStart(2, '0');
+      const dStr = String(d).padStart(2, '0');
+      const dateStr = `${calendarYear}-${mStr}-${dStr}`;
+
+      const isStart = dateStr === filterStartDate;
+      const isEnd = dateStr === filterEndDate;
+      const inRange = filterStartDate && filterEndDate && dateStr > filterStartDate && dateStr < filterEndDate;
+
+      let cellClass = 'calendar-day-cell';
+      if (isStart) cellClass += ' selected-start';
+      if (isEnd) cellClass += ' selected-end';
+      if (inRange) cellClass += ' in-range';
+
+      days.push(
+        <div
+          key={`day-${d}`}
+          className={cellClass}
+          onClick={() => handleDayClick(dateStr)}
+        >
+          {d}
+        </div>
+      );
+    }
+
+    return (
+      <div className="calendar-popover-card" onClick={(e) => e.stopPropagation()}>
+        <div className="calendar-header">
+          <button type="button" className="calendar-nav-btn" onClick={handlePrevMonth}>◀</button>
+          <span className="calendar-month-title">
+            {monthNames[calendarMonth]} {calendarYear}
+          </span>
+          <button type="button" className="calendar-nav-btn" onClick={handleNextMonth}>▶</button>
+        </div>
+
+        <div className="calendar-weekdays">
+          <div>Lu</div><div>Ma</div><div>Mi</div><div>Ju</div><div>Vi</div><div>Sá</div><div>Do</div>
+        </div>
+
+        <div className="calendar-days-grid">
+          {days}
+        </div>
+
+        <div className="calendar-presets-list">
+          <button type="button" className="calendar-preset-btn" onClick={selectLast7Days}>Últimos 7 días</button>
+          <button type="button" className="calendar-preset-btn" onClick={selectLast30Days}>Últimos 30 días</button>
+          <button type="button" className="calendar-preset-btn" onClick={selectThisMonth}>Este mes</button>
+          <button type="button" className="calendar-preset-btn" onClick={selectLastMonth}>Mes anterior</button>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="dashboard-container">
-      {/* Header */}
-      <header className="dashboard-header">
-        <div className="header-title">
-          <h1>Rindegastos Administración</h1>
-          <p>Visualización y auditoría de reportes de gastos conectados a Microsoft Dataverse</p>
+    <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      {/* Sidebar Navigation */}
+      <aside className="sidebar-navigation">
+        <div className="sidebar-header">
+          <div className="logo-container">
+            <span className="logo-icon">🏢</span>
+            {!sidebarCollapsed && <span className="logo-text">Bliss Admin</span>}
+          </div>
+          <button 
+            type="button" 
+            className="sidebar-toggle-btn"
+            onClick={() => setSidebarCollapsed(prev => !prev)}
+            title={sidebarCollapsed ? "Expandir menú" : "Contraer menú"}
+          >
+            {sidebarCollapsed ? '▶' : '◀'}
+          </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {tokenInfo && (
-            <div className="token-status-badge">
-              <span className="status-dot"></span>
-              <span>Token Activo (Expira: {tokenInfo.expiresAt})</span>
+
+        <nav className="sidebar-menu">
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'rindegastos' ? 'active' : ''}`}
+            onClick={() => setActiveModule('rindegastos')}
+            title="Panel RindeGastos"
+          >
+            <span className="menu-icon">📊</span>
+            {!sidebarCollapsed && <span className="menu-label">Panel RindeGastos</span>}
+          </button>
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'prestamos' ? 'active' : ''}`}
+            onClick={() => setActiveModule('prestamos')}
+            title="Seguimiento de préstamos"
+          >
+            <span className="menu-icon">🤝</span>
+            {!sidebarCollapsed && <span className="menu-label">Seguimiento de préstamos</span>}
+          </button>
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'proveedores' ? 'active' : ''}`}
+            onClick={() => setActiveModule('proveedores')}
+            title="Portal de Proveedores"
+          >
+            <span className="menu-icon">📦</span>
+            {!sidebarCollapsed && <span className="menu-label">Portal de Proveedores</span>}
+          </button>
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="user-profile">
+            <div className="user-avatar" title="Contabilidad">
+              C
             </div>
-          )}
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="btn"
-              style={{
-                background: '#f1f5f9',
-                color: '#475569',
-                border: '1px solid #e2e8f0',
-                padding: '0.4rem 1rem',
-                fontSize: '0.85rem',
-                borderRadius: '8px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                transition: 'all 0.2s ease',
-                height: '36px'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#ef4444';
-                e.currentTarget.style.color = '#ffffff';
-                e.currentTarget.style.borderColor = '#ef4444';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#f1f5f9';
-                e.currentTarget.style.color = '#475569';
-                e.currentTarget.style.borderColor = '#e2e8f0';
-              }}
-            >
-              🚪 Cerrar Sesión
-            </button>
-          )}
+            {!sidebarCollapsed && (
+              <div className="user-info">
+                <span className="user-name">Contabilidad</span>
+                <span className="user-role">Administrador</span>
+              </div>
+            )}
+            {onLogout && (
+              <button
+                type="button"
+                className="logout-icon-btn"
+                onClick={onLogout}
+                title="Cerrar Sesión"
+              >
+                🚪
+              </button>
+            )}
+          </div>
         </div>
-      </header>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="main-content-wrapper">
+        {activeModule === 'rindegastos' && (
+          <div className="dashboard-container">
+            {/* Header */}
+            <header className="dashboard-header">
+              <div className="header-title">
+                <h1>Rindegastos Administración</h1>
+                <p>Visualización y auditoría de reportes de gastos conectados a Microsoft Dataverse</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                {tokenInfo && (
+                  <div className="token-status-badge">
+                    <span className="status-dot"></span>
+                    <span>Token Activo (Expira: {tokenInfo.expiresAt})</span>
+                  </div>
+                )}
+              </div>
+            </header>
 
       {/* KPI Cards */}
       <section className="kpis-grid">
@@ -632,15 +946,73 @@ export default function AdminDashboard({ onLogout }) {
             />
           </div>
 
-          <div className="action-group">
-            <button 
-              className="btn btn-success" 
-              onClick={handleExportToExcel}
-              title="Exportar a Excel"
-              disabled={filteredExpenses.length === 0 || isExporting}
+          {/* Filtro de Rango de Fechas (Calendario Visual) */}
+          <div className="calendar-popover-container" ref={calendarRef}>
+            <button
+              type="button"
+              className={`calendar-trigger-btn ${filterStartDate ? 'active-filter' : ''}`}
+              onClick={() => setShowCalendarPopover(prev => !prev)}
+              title="Filtrar por rango de fecha del gasto"
             >
-              {isExporting ? `📦 ${exportStatus}` : '📊 Exportar Excel'}
+              📅 {filterStartDate ? `${formatDisplayDate(filterStartDate)} - ${filterEndDate ? formatDisplayDate(filterEndDate) : '...'}` : 'Filtrar por fecha'}
+              {filterStartDate && (
+                <span 
+                  className="clear-date-btn" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFilterStartDate(null);
+                    setFilterEndDate(null);
+                    setShowCalendarPopover(false);
+                  }}
+                  title="Limpiar filtro de fecha"
+                >
+                  ×
+                </span>
+              )}
             </button>
+            {showCalendarPopover && renderCalendarCard()}
+          </div>
+
+          <div className="action-group">
+            <div className="export-dropdown-container" ref={dropdownRef}>
+              <button 
+                type="button"
+                className="btn btn-success" 
+                onClick={() => {
+                  if (!isExporting && filteredExpenses.length > 0) {
+                    setShowExportDropdown(prev => !prev);
+                  }
+                }}
+                title="Exportar a Excel"
+                disabled={filteredExpenses.length === 0 || isExporting}
+              >
+                {isExporting ? `📦 ${exportStatus}` : '📊 Exportar Excel ▾'}
+              </button>
+              {showExportDropdown && (
+                <div className="export-dropdown-menu">
+                  <button 
+                    type="button" 
+                    className="export-dropdown-item" 
+                    onClick={() => {
+                      setShowExportDropdown(false);
+                      handleExportExcelOnly();
+                    }}
+                  >
+                    📄 Exportar solo excel
+                  </button>
+                  <button 
+                    type="button" 
+                    className="export-dropdown-item" 
+                    onClick={() => {
+                      setShowExportDropdown(false);
+                      handleExportExcelWithImages();
+                    }}
+                  >
+                    📦 Exportar excel con comprobantes (ZIP)
+                  </button>
+                </div>
+              )}
+            </div>
             <button className="btn btn-primary" onClick={fetchExpenses} title="Refrescar datos" disabled={isExporting}>
               🔄 Sincronizar
             </button>
@@ -656,6 +1028,13 @@ export default function AdminDashboard({ onLogout }) {
             <div className="action-buttons">
               <button className="btn btn-success" onClick={() => { setShowDisburseModal(true); setDisburseFile(null); }}>
                 💸 Generar desembolso
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleApproveSelected}
+                disabled={isUpdating}
+              >
+                {isUpdating ? 'Procesando...' : '✓ Aprobar registros'}
               </button>
               <button className="btn btn-secondary" onClick={handleDeselectAll}>
                 Cancelar Selección
@@ -697,14 +1076,39 @@ export default function AdminDashboard({ onLogout }) {
                       }}
                     />
                   </th>
-                  <th>
+                   <th>
                     <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Fecha</span>
+                      <span className="header-label" style={{ color: '#0369a1' }}>Fecha de creación</span>
                       <select
                         className="header-select-filter"
-                        value={dateOrder}
-                        onChange={(e) => setDateOrder(e.target.value)}
+                        value={sortField === 'createdon' ? dateOrder : ''}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setSortField('createdon');
+                            setDateOrder(e.target.value);
+                          }
+                        }}
                       >
+                        <option value="" disabled={sortField === 'createdon'}>Ordenar</option>
+                        <option value="desc">Más recientes</option>
+                        <option value="asc">Más antiguos</option>
+                      </select>
+                    </div>
+                  </th>
+                  <th>
+                    <div className="header-with-filter">
+                      <span className="header-label" style={{ color: '#0369a1' }}>Fecha de gasto</span>
+                      <select
+                        className="header-select-filter"
+                        value={sortField === 'cr168_fechadelgasto' ? dateOrder : ''}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setSortField('cr168_fechadelgasto');
+                            setDateOrder(e.target.value);
+                          }
+                        }}
+                      >
+                        <option value="" disabled={sortField === 'cr168_fechadelgasto'}>Ordenar</option>
                         <option value="desc">Más recientes</option>
                         <option value="asc">Más antiguos</option>
                       </select>
@@ -816,6 +1220,9 @@ export default function AdminDashboard({ onLogout }) {
                           />
                         </td>
                         <td onClick={() => setActiveExpense({ ...item })}>
+                          {formatDisplayDate(item.createdon)}
+                        </td>
+                        <td onClick={() => setActiveExpense({ ...item })}>
                           {formattedDate}
                         </td>
                         <td onClick={() => setActiveExpense({ ...item })} style={{ color: 'var(--text-secondary)' }}>
@@ -869,19 +1276,73 @@ export default function AdminDashboard({ onLogout }) {
                 {/* Columna de Información */}
                 <div className="info-column">
                   <div className="detail-section">
-                    <h3>Información del Vendedor</h3>
-                    <div className="info-row">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                      <h3 style={{ margin: 0, borderBottom: 'none', paddingBottom: 0 }}>Información del Vendedor</h3>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVendedor(prev => !prev)}
+                        title={isEditingVendedor ? "Desactivar edición" : "Editar información del vendedor"}
+                        style={{
+                          background: isEditingVendedor ? 'rgba(37, 99, 235, 0.1)' : 'transparent',
+                          border: '1px solid',
+                          borderColor: isEditingVendedor ? 'var(--accent-color)' : '#cbd5e1',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          color: isEditingVendedor ? 'var(--accent-color)' : '#64748b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          fontWeight: '600',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <span>✏️</span>
+                        <span style={{ fontSize: '0.75rem' }}>{isEditingVendedor ? 'Editando' : 'Editar'}</span>
+                      </button>
+                    </div>
+
+                    <div className="info-row" style={{ marginBottom: isEditingVendedor ? '0.85rem' : '0.75rem' }}>
                       <span className="info-label">Vendedor</span>
                       <span className="info-value">{activeExpense.cr168_vendedor || 'S/D'}</span>
                     </div>
-                    <div className="info-row">
-                      <span className="info-label">Empresa</span>
-                      <span className="info-value">{activeExpense.cr168_empresa || 'S/D'}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">RUC Empresa</span>
-                      <span className="info-value">{activeExpense.cr168_rucempresa || 'S/D'}</span>
-                    </div>
+
+                    {isEditingVendedor ? (
+                      <>
+                        <div className="info-row" style={{ marginBottom: '0.85rem' }}>
+                          <span className="info-label">Empresa</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={activeExpense.cr168_empresa || ''}
+                            onChange={(e) => setActiveExpense(prev => ({ ...prev, cr168_empresa: e.target.value }))}
+                            placeholder="Nombre de la empresa"
+                          />
+                        </div>
+                        <div className="info-row">
+                          <span className="info-label">RUC Empresa</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={activeExpense.cr168_rucempresa || ''}
+                            onChange={(e) => setActiveExpense(prev => ({ ...prev, cr168_rucempresa: e.target.value }))}
+                            placeholder="RUC de la empresa"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="info-row">
+                          <span className="info-label">Empresa</span>
+                          <span className="info-value">{activeExpense.cr168_empresa || 'S/D'}</span>
+                        </div>
+                        <div className="info-row">
+                          <span className="info-label">RUC Empresa</span>
+                          <span className="info-value">{activeExpense.cr168_rucempresa || 'S/D'}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="detail-section">
@@ -971,6 +1432,26 @@ export default function AdminDashboard({ onLogout }) {
                             />
                           </div>
                         </div>
+                        {activeExpense.cr168_monto_propina !== undefined && activeExpense.cr168_monto_propina !== null && (
+                          <div className="info-row" style={{ marginTop: '0.85rem' }}>
+                            <span className="info-label">Monto Propina</span>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                              <span style={{ position: 'absolute', left: '10px', color: '#64748b', fontWeight: 'bold', fontSize: '0.85rem' }}>S/</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                className="form-input"
+                                style={{ paddingLeft: '2rem' }}
+                                value={activeExpense.cr168_monto_propina ?? ''}
+                                onChange={(e) => setActiveExpense(prev => ({
+                                  ...prev,
+                                  cr168_monto_propina: e.target.value === '' ? '' : parseFloat(e.target.value)
+                                }))}
+                                placeholder="0.00"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </>
                     ) : (
                       <>
@@ -1328,6 +1809,29 @@ export default function AdminDashboard({ onLogout }) {
           </div>
         </div>
       )}
+          </div>
+        )}
+
+        {activeModule === 'prestamos' && (
+          <div className="placeholder-module-screen">
+            <div className="placeholder-card">
+              <span className="placeholder-icon">🤝</span>
+              <h2>Seguimiento de préstamos</h2>
+              <p className="status-text">En proceso :D</p>
+            </div>
+          </div>
+        )}
+
+        {activeModule === 'proveedores' && (
+          <div className="placeholder-module-screen">
+            <div className="placeholder-card">
+              <span className="placeholder-icon">📦</span>
+              <h2>Portal de Proveedores</h2>
+              <p className="status-text">En proceso :D</p>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
