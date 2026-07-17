@@ -61,6 +61,23 @@ export default function AdminDashboard({ onLogout }) {
   const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // Plataforma de Préstamos MVP
+  const [loans, setLoans] = useState([]);
+  const [loansLoaded, setLoansLoaded] = useState(false);
+  const [loanFilterEmpresa, setLoanFilterEmpresa] = useState('');
+  const [loanFilterEstado, setLoanFilterEstado] = useState('');
+
+  // Formulario de Préstamos
+  const [newLoanTrabajador, setNewLoanTrabajador] = useState('');
+  const [newLoanEmpresa, setNewLoanEmpresa] = useState('BLISSCORP');
+  const [newLoanMonto, setNewLoanMonto] = useState('');
+  const [newLoanMotivo, setNewLoanMotivo] = useState('');
+  const [newLoanFechaDesembolso, setNewLoanFechaDesembolso] = useState('');
+  const [newLoanModalidad, setNewLoanModalidad] = useState('Pago Único');
+  const [newLoanFechaInicioPago, setNewLoanFechaInicioPago] = useState('');
+  const [newLoanMesDescuento, setNewLoanMesDescuento] = useState('');
+  const [newLoanEstado, setNewLoanEstado] = useState('Pendiente');
+
   // Filtro de Rango de Fechas (Calendario Visual)
   const [filterStartDate, setFilterStartDate] = useState(null); // 'YYYY-MM-DD'
   const [filterEndDate, setFilterEndDate] = useState(null); // 'YYYY-MM-DD'
@@ -128,6 +145,85 @@ export default function AdminDashboard({ onLogout }) {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Cargar préstamos de localStorage al montar
+  useEffect(() => {
+    const MOCK_LOANS = [
+      {
+        id: 'mock-1',
+        trabajador: 'Juan Pérez',
+        empresa: 'BLISSCORP',
+        monto: 1500,
+        motivo: 'Salud',
+        fechaDesembolso: '2026-07-10',
+        modalidad: 'Pago Único',
+        fechaInicioPago: '2026-07-31', // Cambiado a fin de mes
+        mesDescuento: 'Julio 2026',
+        estado: 'Pendiente'
+      },
+      {
+        id: 'mock-2',
+        trabajador: 'María Rojas',
+        empresa: 'BLISSFARMA',
+        monto: 800,
+        motivo: 'Adelanto de sueldo',
+        modalidad: 'Pago en Cuotas',
+        fechaDesembolso: '2026-07-05',
+        fechaInicioPago: '2026-07-31', // Último día hábil
+        mesDescuento: 'Julio 2026',
+        estado: 'Pendiente'
+      },
+      {
+        id: 'mock-3',
+        trabajador: 'Carlos Dávila',
+        empresa: 'SKINBLISS',
+        monto: 2000,
+        motivo: 'Calamidad doméstica',
+        modalidad: 'Pago Único',
+        fechaDesembolso: '2026-06-15',
+        fechaInicioPago: '2026-06-30',
+        mesDescuento: 'Junio 2026',
+        estado: 'Descontado'
+      },
+      {
+        id: 'mock-4',
+        trabajador: 'Ana Torres',
+        empresa: 'BLISSCORP',
+        monto: 1200,
+        motivo: 'Estudios',
+        modalidad: 'Pago en Cuotas',
+        fechaDesembolso: '2026-07-12',
+        fechaInicioPago: '2026-08-15',
+        mesDescuento: 'Agosto 2026',
+        estado: 'Pendiente'
+      }
+    ];
+
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('bliss_loans');
+      if (stored) {
+        // Migración automática si existe el registro antiguo con fecha 16
+        const parsed = JSON.parse(stored).map(l => {
+          if (l.id === 'mock-1' && l.fechaInicioPago === '2026-07-16') {
+            return { ...l, fechaInicioPago: '2026-07-31' };
+          }
+          return l;
+        });
+        setLoans(parsed);
+      } else {
+        setLoans(MOCK_LOANS);
+        localStorage.setItem('bliss_loans', JSON.stringify(MOCK_LOANS));
+      }
+      setLoansLoaded(true);
+    }
+  }, []);
+
+  // Guardar préstamos en localStorage cada vez que cambien
+  useEffect(() => {
+    if (loansLoaded && typeof window !== 'undefined') {
+      localStorage.setItem('bliss_loans', JSON.stringify(loans));
+    }
+  }, [loans, loansLoaded]);
 
   // Cargar datos al iniciar
   const fetchExpenses = async () => {
@@ -247,13 +343,17 @@ export default function AdminDashboard({ onLogout }) {
     const totalCount = expenses.length;
     const totalAmount = expenses.reduce((sum, e) => sum + (e.cr168_montototalincluyendoigv || 0), 0);
     const approvedCount = expenses.filter(e => e.cr168_aprobado).length;
-    const pendingCount = expenses.filter(e => !e.cr168_aprobado).length;
+    const pendingApprovalCount = expenses.filter(e => !e.cr168_aprobado).length;
+    const pendingDisbursementCount = expenses.filter(e => parseInt(e.cr168_estado, 10) !== 553050001).length;
+    const disbursedCount = expenses.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
 
     return {
       totalCount,
       totalAmount,
       approvedCount,
-      pendingCount
+      pendingApprovalCount,
+      pendingDisbursementCount,
+      disbursedCount
     };
   }, [expenses]);
 
@@ -717,6 +817,153 @@ export default function AdminDashboard({ onLogout }) {
     setShowCalendarPopover(false);
   };
 
+  // --- LOGICA DE PRESTAMOS MVP ---
+
+  // Obtener el último día hábil del mes actual
+  const lastBusinessDayOfMonth = useMemo(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    
+    const lastDay = new Date(year, month + 1, 0);
+    let dayOfWeek = lastDay.getDay(); // 0 = Dom, 6 = Sáb
+    
+    if (dayOfWeek === 0) {
+      lastDay.setDate(lastDay.getDate() - 2);
+    } else if (dayOfWeek === 6) {
+      lastDay.setDate(lastDay.getDate() - 1);
+    }
+    return lastDay;
+  }, []);
+
+  // Calcular días faltantes para el último día hábil del mes
+  const daysToCierreMes = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const target = new Date(lastBusinessDayOfMonth);
+    target.setHours(0, 0, 0, 0);
+    
+    const diffTime = target.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  }, [lastBusinessDayOfMonth]);
+
+  // Fecha actual en formato YYYY-MM-DD
+  const todayStr = useMemo(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
+
+  // Préstamos pendientes cuya fecha de pago es hoy
+  const todayAlertLoans = useMemo(() => {
+    return loans.filter(l => l.estado === 'Pendiente' && l.fechaInicioPago === todayStr);
+  }, [loans, todayStr]);
+
+  // Préstamos pendientes cuya fecha de pago es este mes
+  const finDeMesAlertLoans = useMemo(() => {
+    if (!todayStr) return [];
+    const prefix = todayStr.substring(0, 7); // 'YYYY-MM'
+    return loans.filter(l => l.estado === 'Pendiente' && l.fechaInicioPago.startsWith(prefix));
+  }, [loans, todayStr]);
+
+  // ID del préstamo pendiente más cercano a pagar en el futuro
+  const nextPaymentLoanId = useMemo(() => {
+    const pendingFuture = loans.filter(l => l.estado === 'Pendiente' && l.fechaInicioPago !== todayStr);
+    if (pendingFuture.length === 0) return null;
+    
+    let minDiff = Infinity;
+    let nextId = null;
+    const todayMs = new Date(todayStr).getTime();
+    
+    pendingFuture.forEach(l => {
+      const ms = new Date(l.fechaInicioPago).getTime();
+      const diff = ms - todayMs;
+      if (diff >= 0 && diff < minDiff) {
+        minDiff = diff;
+        nextId = l.id;
+      }
+    });
+    
+    return nextId;
+  }, [loans, todayStr]);
+
+  // Filtrado de préstamos por empresa y estado
+  const filteredLoans = useMemo(() => {
+    return loans.filter(l => {
+      const matchEmpresa = loanFilterEmpresa ? l.empresa === loanFilterEmpresa : true;
+      const matchEstado = loanFilterEstado ? l.estado === loanFilterEstado : true;
+      return matchEmpresa && matchEstado;
+    });
+  }, [loans, loanFilterEmpresa, loanFilterEstado]);
+
+  // Ordenamiento: primero los pendientes ordenados por fecha, luego descontados
+  const sortedLoans = useMemo(() => {
+    const sorted = [...filteredLoans];
+    sorted.sort((a, b) => {
+      if (a.estado === 'Pendiente' && b.estado === 'Descontado') return -1;
+      if (a.estado === 'Descontado' && b.estado === 'Pendiente') return 1;
+      return a.fechaInicioPago.localeCompare(b.fechaInicioPago);
+    });
+    return sorted;
+  }, [filteredLoans]);
+
+  // Crear un nuevo préstamo
+  const handleAddLoan = (e) => {
+    e.preventDefault();
+    if (!newLoanTrabajador || !newLoanMonto || !newLoanFechaDesembolso || !newLoanFechaInicioPago) {
+      alert('Por favor complete todos los campos obligatorios (Trabajador, Monto, Fecha de Desembolso y Fecha de Inicio de Pago).');
+      return;
+    }
+    
+    const newId = `loan-${Date.now()}`;
+    const newRecord = {
+      id: newId,
+      trabajador: newLoanTrabajador,
+      empresa: newLoanEmpresa,
+      monto: parseFloat(newLoanMonto),
+      motivo: newLoanMotivo || 'Sin Motivo',
+      fechaDesembolso: newLoanFechaDesembolso,
+      modalidad: newLoanModalidad,
+      fechaInicioPago: newLoanFechaInicioPago,
+      mesDescuento: newLoanMesDescuento || 'N/A',
+      estado: newLoanEstado
+    };
+    
+    setLoans(prev => [...prev, newRecord]);
+    
+    // Resetear formulario
+    setNewLoanTrabajador('');
+    setNewLoanMonto('');
+    setNewLoanMotivo('');
+    setNewLoanFechaDesembolso('');
+    setNewLoanFechaInicioPago('');
+    setNewLoanMesDescuento('');
+    setNewLoanEstado('Pendiente');
+  };
+
+  // Alternar estado Pendiente ↔ Descontado
+  const handleToggleLoanStatus = (id) => {
+    setLoans(prev => prev.map(l => {
+      if (l.id === id) {
+        return { ...l, estado: l.estado === 'Pendiente' ? 'Descontado' : 'Pendiente' };
+      }
+      return l;
+    }));
+  };
+
+  // Eliminar un préstamo
+  const handleDeleteLoan = (id) => {
+    if (confirm('¿Está seguro de eliminar este registro de préstamo?')) {
+      setLoans(prev => prev.filter(l => l.id !== id));
+    }
+  };
+
+  // Estado del banner de alerta de hoy
+  const [hideTodayAlert, setHideTodayAlert] = useState(false);
+
   const renderCalendarCard = () => {
     const monthNames = [
       'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -892,12 +1139,17 @@ export default function AdminDashboard({ onLogout }) {
         <div className="kpi-card approved">
           <span className="kpi-label">Gastos Aprobados</span>
           <span className="kpi-value">{stats.approvedCount}</span>
-          <span className="kpi-sub">Verificados por administración</span>
+          <span className="kpi-sub"><strong>{stats.pendingApprovalCount}</strong> pendientes de aprobación</span>
+        </div>
+        <div className="kpi-card reimbursed">
+          <span className="kpi-label">Gastos Desembolsados</span>
+          <span className="kpi-value">{stats.disbursedCount}</span>
+          <span className="kpi-sub">Con voucher de pago cargado</span>
         </div>
         <div className="kpi-card pending">
-          <span className="kpi-label">Gastos Pendientes</span>
-          <span className="kpi-value">{stats.pendingCount}</span>
-          <span className="kpi-sub">Requieren aprobación manual</span>
+          <span className="kpi-label">Pendientes de Desembolso</span>
+          <span className="kpi-value">{stats.pendingDisbursementCount}</span>
+          <span className="kpi-sub">Esperando comprobante de pago</span>
         </div>
       </section>
 
@@ -1813,11 +2065,312 @@ export default function AdminDashboard({ onLogout }) {
         )}
 
         {activeModule === 'prestamos' && (
-          <div className="placeholder-module-screen">
-            <div className="placeholder-card">
-              <span className="placeholder-icon">🤝</span>
-              <h2>Seguimiento de préstamos</h2>
-              <p className="status-text">En proceso :D</p>
+          <div className="loans-module-container">
+            {/* Header del Módulo */}
+            <div className="loans-header">
+              <div className="loans-header-title">
+                <h2>Seguimiento de Préstamos y Adelantos</h2>
+                <p>MVP local para el registro, seguimiento y control de cobro de préstamos a trabajadores del grupo Bliss.</p>
+              </div>
+            </div>
+
+            {/* Banner de Alerta Crítica (Hoy o Cierre de Mes) */}
+            {!hideTodayAlert && (
+              todayAlertLoans.length > 0 ? (
+                <div className="loans-alert-banner">
+                  <span className="alert-icon">⚠️</span>
+                  <div className="alert-content">
+                    <strong>ALERTA DE COBRO HOY ({formatDisplayDate(todayStr)}):</strong>{' '}
+                    Se detectaron {todayAlertLoans.length} {todayAlertLoans.length === 1 ? 'pago pendiente' : 'pagos pendientes'} para el día de hoy:{' '}
+                    {todayAlertLoans.map((l, idx) => (
+                      <span key={l.id}>
+                        {idx > 0 ? ', ' : ''}<strong>{l.trabajador}</strong> ({l.empresa} - S/ {l.monto.toFixed(2)})
+                      </span>
+                    ))}
+                  </div>
+                  <button type="button" className="alert-close-btn" onClick={() => setHideTodayAlert(true)}>×</button>
+                </div>
+              ) : finDeMesAlertLoans.length > 0 ? (
+                <div className="loans-alert-banner" style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', color: '#b45309' }}>
+                  <span className="alert-icon">⚠️</span>
+                  <div className="alert-content">
+                    <strong>ALERTA DE COBRO (Faltan {daysToCierreMes} días para el cierre):</strong>{' '}
+                    Hay {finDeMesAlertLoans.length} {finDeMesAlertLoans.length === 1 ? 'cobro pendiente programado' : 'cobros pendientes programados'} para este mes:{' '}
+                    {finDeMesAlertLoans.map((l, idx) => (
+                      <span key={l.id}>
+                        {idx > 0 ? ', ' : ''}<strong>{l.trabajador}</strong> ({l.empresa} - S/ {l.monto.toFixed(2)} el {formatDisplayDate(l.fechaInicioPago)})
+                      </span>
+                    ))}
+                  </div>
+                  <button type="button" className="alert-close-btn" style={{ color: '#b45309' }} onClick={() => setHideTodayAlert(true)}>×</button>
+                </div>
+              ) : null
+            )}
+
+            {/* KPI Dashboard */}
+            <div className="loans-kpis-grid">
+              <div className="loans-kpi-card kpi-accent">
+                <span className="loans-kpi-label" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
+                  Total Activo Prestado
+                </span>
+                <div className="loans-kpi-value">
+                  S/ {loans.reduce((sum, l) => sum + (l.estado === 'Pendiente' ? l.monto : 0), 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                </div>
+                <span className="loans-kpi-sub">Suma de préstamos con cobro pendiente</span>
+              </div>
+
+              <div className="loans-kpi-card">
+                <span className="loans-kpi-label" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
+                  Cobros Pendientes
+                </span>
+                <div className="loans-kpi-value">
+                  {loans.filter(l => l.estado === 'Pendiente').length} de {loans.length} registros
+                </div>
+                <span className="loans-kpi-sub">Préstamos que faltan descontar</span>
+              </div>
+
+              <div className="loans-kpi-card kpi-warning">
+                <span className="loans-kpi-label" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>
+                  Días para Cierre de Mes (Corte)
+                </span>
+                <div className="loans-kpi-value">
+                  {daysToCierreMes === 0 ? '¡Corte de planilla hoy!' : `${daysToCierreMes} días`}
+                </div>
+                <span className="loans-kpi-sub">
+                  Fecha de corte hábil: <strong>{formatDisplayDate(lastBusinessDayOfMonth.toISOString().split('T')[0])}</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Fila de Contenido */}
+            <div className="loans-content-grid">
+              {/* Columna Izquierda: Formulario de Registro */}
+              <div className="loans-form-card">
+                <h3>Registrar Solicitud</h3>
+                <form className="loans-form" onSubmit={handleAddLoan}>
+                  <div className="loans-form-group">
+                    <label>Trabajador *</label>
+                    <input
+                      type="text"
+                      className="loans-input"
+                      value={newLoanTrabajador}
+                      onChange={(e) => setNewLoanTrabajador(e.target.value)}
+                      placeholder="Nombre del trabajador"
+                      required
+                    />
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Empresa *</label>
+                    <select
+                      className="loans-select"
+                      value={newLoanEmpresa}
+                      onChange={(e) => setNewLoanEmpresa(e.target.value)}
+                    >
+                      <option value="BLISSCORP">BLISSCORP</option>
+                      <option value="BLISSFARMA">BLISSFARMA</option>
+                      <option value="SKINBLISS">SKINBLISS</option>
+                    </select>
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Monto (S/) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="loans-input"
+                      value={newLoanMonto}
+                      onChange={(e) => setNewLoanMonto(e.target.value)}
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Motivo</label>
+                    <input
+                      type="text"
+                      className="loans-input"
+                      value={newLoanMotivo}
+                      onChange={(e) => setNewLoanMotivo(e.target.value)}
+                      placeholder="Ej. Salud, Adelanto"
+                    />
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Fecha de Desembolso *</label>
+                    <input
+                      type="date"
+                      className="loans-input"
+                      value={newLoanFechaDesembolso}
+                      onChange={(e) => setNewLoanFechaDesembolso(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Modalidad de Pago</label>
+                    <select
+                      className="loans-select"
+                      value={newLoanModalidad}
+                      onChange={(e) => setNewLoanModalidad(e.target.value)}
+                    >
+                      <option value="Pago Único">Pago Único</option>
+                      <option value="Pago en Cuotas">Pago en Cuotas</option>
+                    </select>
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Fecha de Inicio de Pago *</label>
+                    <input
+                      type="date"
+                      className="loans-input"
+                      value={newLoanFechaInicioPago}
+                      onChange={(e) => setNewLoanFechaInicioPago(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Mes de Descuento (Si aplica)</label>
+                    <input
+                      type="text"
+                      className="loans-input"
+                      value={newLoanMesDescuento}
+                      onChange={(e) => setNewLoanMesDescuento(e.target.value)}
+                      placeholder="Ej. Gratificación Diciembre"
+                    />
+                  </div>
+
+                  <div className="loans-form-group">
+                    <label>Estado Inicial</label>
+                    <select
+                      className="loans-select"
+                      value={newLoanEstado}
+                      onChange={(e) => setNewLoanEstado(e.target.value)}
+                    >
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Descontado">Descontado</option>
+                    </select>
+                  </div>
+
+                  <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem', justifyContent: 'center' }}>
+                    ➕ Registrar Préstamo
+                  </button>
+                </form>
+              </div>
+
+              {/* Columna Derecha: Tabla de Resultados */}
+              <div className="loans-table-card">
+                <div className="loans-table-header">
+                  <h3>Lista de Préstamos</h3>
+                  <div className="loans-filters">
+                    <select
+                      className="loans-select"
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.5rem' }}
+                      value={loanFilterEmpresa}
+                      onChange={(e) => setLoanFilterEmpresa(e.target.value)}
+                    >
+                      <option value="">(Todas las empresas)</option>
+                      <option value="BLISSCORP">BLISSCORP</option>
+                      <option value="BLISSFARMA">BLISSFARMA</option>
+                      <option value="SKINBLISS">SKINBLISS</option>
+                    </select>
+                    <select
+                      className="loans-select"
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.5rem' }}
+                      value={loanFilterEstado}
+                      onChange={(e) => setLoanFilterEstado(e.target.value)}
+                    >
+                      <option value="">(Todos los estados)</option>
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Descontado">Descontado</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="table-responsive">
+                  <table className="gastos-table">
+                    <thead>
+                      <tr>
+                        <th style={{ color: '#0369a1' }}>Trabajador</th>
+                        <th style={{ color: '#0369a1' }}>Empresa</th>
+                        <th style={{ color: '#0369a1' }}>Monto</th>
+                        <th style={{ color: '#0369a1' }}>Motivo</th>
+                        <th style={{ color: '#0369a1' }}>Desembolso</th>
+                        <th style={{ color: '#0369a1' }}>Inicio Pago</th>
+                        <th style={{ color: '#0369a1' }}>Mes Desc.</th>
+                        <th style={{ color: '#0369a1' }}>Estado</th>
+                        <th style={{ color: '#0369a1', textAlign: 'center' }}>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedLoans.length === 0 ? (
+                        <tr>
+                          <td colSpan="9" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
+                            No hay registros de préstamos que coincidan con los filtros.
+                          </td>
+                        </tr>
+                      ) : (
+                        sortedLoans.map(loan => {
+                          const isToday = loan.estado === 'Pendiente' && loan.fechaInicioPago === todayStr;
+                          const isNext = loan.id === nextPaymentLoanId;
+                          
+                          let rowBg = '';
+                          if (isToday) {
+                            rowBg = 'rgba(239, 68, 68, 0.04)';
+                          } else if (isNext) {
+                            rowBg = 'rgba(37, 99, 235, 0.02)';
+                          }
+
+                          return (
+                            <tr key={loan.id} style={{ background: rowBg }}>
+                              <td style={{ fontWeight: '600' }}>{loan.trabajador}</td>
+                              <td style={{ color: 'var(--text-secondary)' }}>{loan.empresa}</td>
+                              <td style={{ fontWeight: '600' }}>S/ {loan.monto.toFixed(2)}</td>
+                              <td>{loan.motivo}</td>
+                              <td>{formatDisplayDate(loan.fechaDesembolso)}</td>
+                              <td>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                  <span>{formatDisplayDate(loan.fechaInicioPago)}</span>
+                                  {isToday && <span className="loans-badge badge-today">⚠️ HOY</span>}
+                                  {isNext && <span className="loans-badge badge-next">🕒 Próximo Cobro</span>}
+                                </div>
+                              </td>
+                              <td style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>{loan.mesDescuento}</td>
+                              <td>
+                                <span className={`loans-badge ${loan.estado === 'Pendiente' ? 'badge-pending' : 'badge-paid'}`}>
+                                  {loan.estado}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.35rem' }}>
+                                  <button
+                                    type="button"
+                                    className="loans-action-btn btn-pay"
+                                    onClick={() => handleToggleLoanStatus(loan.id)}
+                                    title={loan.estado === 'Pendiente' ? 'Marcar como Cobrado / Descontado' : 'Marcar como Pendiente'}
+                                  >
+                                    {loan.estado === 'Pendiente' ? '✅' : '🔄'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="loans-action-btn btn-delete"
+                                    onClick={() => handleDeleteLoan(loan.id)}
+                                    title="Eliminar Registro"
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         )}
