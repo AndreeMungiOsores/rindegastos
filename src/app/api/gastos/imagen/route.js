@@ -11,7 +11,12 @@ export async function GET(request) {
     const id = searchParams.get('id');
     const path = searchParams.get('path');
     const column = searchParams.get('column') || 'imagendelcomprobante';
-    const columnName = column === 'propina' ? 'cr168_voucher_propina' : 'cr168_imagendelcomprobante';
+    let columnName = 'cr168_imagendelcomprobante';
+    if (column === 'propina') {
+      columnName = 'cr168_voucher_propina';
+    } else if (column === 'evidencia') {
+      columnName = 'cr168_foto_evidencia';
+    }
 
     if (!id && !path) {
       return NextResponse.json({ error: 'Se requiere el parámetro id o path' }, { status: 400 });

@@ -99,6 +99,10 @@ export default function AdminDashboard({ onLogout }) {
   const [isZoomedPropina, setIsZoomedPropina] = useState(false);
   const [zoomPosPropina, setZoomPosPropina] = useState({ x: 50, y: 50 });
 
+  // Control de Zoom para Foto Evidencia (Lupa)
+  const [isZoomedEvidencia, setIsZoomedEvidencia] = useState(false);
+  const [zoomPosEvidencia, setZoomPosEvidencia] = useState({ x: 50, y: 50 });
+
   // Manejador del movimiento del mouse para el zoom de la propina
   const handleMouseMovePropina = (e) => {
     if (!isZoomedPropina) return;
@@ -106,6 +110,15 @@ export default function AdminDashboard({ onLogout }) {
     const x = ((e.clientX - left) / width) * 100;
     const y = ((e.clientY - top) / height) * 100;
     setZoomPosPropina({ x, y });
+  };
+
+  // Manejador del movimiento del mouse para el zoom de la foto evidencia
+  const handleMouseMoveEvidencia = (e) => {
+    if (!isZoomedEvidencia) return;
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - left) / width) * 100;
+    const y = ((e.clientY - top) / height) * 100;
+    setZoomPosEvidencia({ x, y });
   };
 
   // Manejador del movimiento del mouse para el zoom
@@ -124,6 +137,8 @@ export default function AdminDashboard({ onLogout }) {
       setZoomPos({ x: 50, y: 50 });
       setIsZoomedPropina(false);
       setZoomPosPropina({ x: 50, y: 50 });
+      setIsZoomedEvidencia(false);
+      setZoomPosEvidencia({ x: 50, y: 50 });
       setIsEditingComprobante(false);
       setIsEditingVendedor(false);
     }
@@ -1975,6 +1990,49 @@ export default function AdminDashboard({ onLogout }) {
                             transformOrigin: `${zoomPosPropina.x}% ${zoomPosPropina.y}%`
                           } : {}}
                           onClick={() => setIsZoomedPropina(!isZoomedPropina)}
+                        />
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
+                        Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en <strong>↗</strong> para ver en pantalla completa.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Foto de Evidencia (Cargada desde Dataverse) */}
+                  {(activeExpense.cr168_foto_evidencia || activeExpense.cr168_foto_evidencia_url || activeExpense.cr168_foto_evidenciaid) && (
+                    <div style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center' }}>
+                      <span className="info-label" style={{ alignSelf: 'flex-start', fontWeight: 'bold' }}>
+                        Foto de Evidencia (Cargada desde Dataverse)
+                      </span>
+                      <div 
+                        className="comprobante-preview-box"
+                        onMouseMove={handleMouseMoveEvidencia}
+                        onMouseLeave={() => {
+                          if (isZoomedEvidencia) {
+                            setIsZoomedEvidencia(false);
+                            setZoomPosEvidencia({ x: 50, y: 50 });
+                          }
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="btn-expand-floating"
+                          title="Ver en pantalla completa (nueva pestaña)"
+                          onClick={() => {
+                            window.open(`/api/gastos/imagen?id=${activeExpense.cr168_reportedegastosid}&column=evidencia`);
+                          }}
+                        >
+                          ↗
+                        </button>
+                        <img
+                          src={`/api/gastos/imagen?id=${activeExpense.cr168_reportedegastosid}&column=evidencia`}
+                          alt="Foto de Evidencia"
+                          className={`comprobante-img ${isZoomedEvidencia ? 'zoomed' : ''}`}
+                          style={isZoomedEvidencia ? {
+                            transform: 'scale(2.2)',
+                            transformOrigin: `${zoomPosEvidencia.x}% ${zoomPosEvidencia.y}%`
+                          } : {}}
+                          onClick={() => setIsZoomedEvidencia(!isZoomedEvidencia)}
                         />
                       </div>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
