@@ -74,6 +74,7 @@ export default function AdminDashboard({ onLogout }) {
   const [newLoanMotivo, setNewLoanMotivo] = useState('');
   const [newLoanFechaDesembolso, setNewLoanFechaDesembolso] = useState('');
   const [newLoanModalidad, setNewLoanModalidad] = useState('Pago Único');
+  const [newLoanNumeroCuotas, setNewLoanNumeroCuotas] = useState(1);
   const [newLoanFechaInicioPago, setNewLoanFechaInicioPago] = useState('');
   const [newLoanMesDescuento, setNewLoanMesDescuento] = useState('');
   const [newLoanEstado, setNewLoanEstado] = useState('Pendiente');
@@ -172,6 +173,7 @@ export default function AdminDashboard({ onLogout }) {
         motivo: 'Salud',
         fechaDesembolso: '2026-07-10',
         modalidad: 'Pago Único',
+        numeroCuotas: 1,
         fechaInicioPago: '2026-07-31', // Cambiado a fin de mes
         mesDescuento: 'Julio 2026',
         estado: 'Pendiente'
@@ -183,6 +185,7 @@ export default function AdminDashboard({ onLogout }) {
         monto: 800,
         motivo: 'Adelanto de sueldo',
         modalidad: 'Pago en Cuotas',
+        numeroCuotas: 3,
         fechaDesembolso: '2026-07-05',
         fechaInicioPago: '2026-07-31', // Último día hábil
         mesDescuento: 'Julio 2026',
@@ -195,6 +198,7 @@ export default function AdminDashboard({ onLogout }) {
         monto: 2000,
         motivo: 'Calamidad doméstica',
         modalidad: 'Pago Único',
+        numeroCuotas: 1,
         fechaDesembolso: '2026-06-15',
         fechaInicioPago: '2026-06-30',
         mesDescuento: 'Junio 2026',
@@ -207,6 +211,7 @@ export default function AdminDashboard({ onLogout }) {
         monto: 1200,
         motivo: 'Estudios',
         modalidad: 'Pago en Cuotas',
+        numeroCuotas: 2,
         fechaDesembolso: '2026-07-12',
         fechaInicioPago: '2026-08-15',
         mesDescuento: 'Agosto 2026',
@@ -934,6 +939,7 @@ export default function AdminDashboard({ onLogout }) {
     }
     
     const newId = `loan-${Date.now()}`;
+    const numCuotas = newLoanModalidad === 'Pago en Cuotas' ? Math.max(1, parseInt(newLoanNumeroCuotas, 10) || 1) : 1;
     const newRecord = {
       id: newId,
       trabajador: newLoanTrabajador,
@@ -942,6 +948,7 @@ export default function AdminDashboard({ onLogout }) {
       motivo: newLoanMotivo || 'Sin Motivo',
       fechaDesembolso: newLoanFechaDesembolso,
       modalidad: newLoanModalidad,
+      numeroCuotas: numCuotas,
       fechaInicioPago: newLoanFechaInicioPago,
       mesDescuento: newLoanMesDescuento || 'N/A',
       estado: newLoanEstado
@@ -954,6 +961,8 @@ export default function AdminDashboard({ onLogout }) {
     setNewLoanMonto('');
     setNewLoanMotivo('');
     setNewLoanFechaDesembolso('');
+    setNewLoanModalidad('Pago Único');
+    setNewLoanNumeroCuotas(1);
     setNewLoanFechaInicioPago('');
     setNewLoanMesDescuento('');
     setNewLoanEstado('Pendiente');
@@ -2271,12 +2280,34 @@ export default function AdminDashboard({ onLogout }) {
                     <select
                       className="loans-select"
                       value={newLoanModalidad}
-                      onChange={(e) => setNewLoanModalidad(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewLoanModalidad(val);
+                        if (val === 'Pago Único') {
+                          setNewLoanNumeroCuotas(1);
+                        }
+                      }}
                     >
                       <option value="Pago Único">Pago Único</option>
                       <option value="Pago en Cuotas">Pago en Cuotas</option>
                     </select>
                   </div>
+
+                  {newLoanModalidad === 'Pago en Cuotas' && (
+                    <div className="loans-form-group">
+                      <label>Número de Cuotas *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        className="loans-input"
+                        value={newLoanNumeroCuotas}
+                        onChange={(e) => setNewLoanNumeroCuotas(e.target.value)}
+                        placeholder="Ej. 2, 3, 6, 12"
+                        required
+                      />
+                    </div>
+                  )}
 
                   <div className="loans-form-group">
                     <label>Fecha de Inicio de Pago *</label>
@@ -2355,6 +2386,7 @@ export default function AdminDashboard({ onLogout }) {
                         <th style={{ color: '#0369a1' }}>Empresa</th>
                         <th style={{ color: '#0369a1' }}>Monto</th>
                         <th style={{ color: '#0369a1' }}>Motivo</th>
+                        <th style={{ color: '#0369a1' }}>Modalidad / Cuotas</th>
                         <th style={{ color: '#0369a1' }}>Desembolso</th>
                         <th style={{ color: '#0369a1' }}>Inicio Pago</th>
                         <th style={{ color: '#0369a1' }}>Mes Desc.</th>
@@ -2365,7 +2397,7 @@ export default function AdminDashboard({ onLogout }) {
                     <tbody>
                       {sortedLoans.length === 0 ? (
                         <tr>
-                          <td colSpan="9" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
+                          <td colSpan="10" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
                             No hay registros de préstamos que coincidan con los filtros.
                           </td>
                         </tr>
@@ -2387,6 +2419,11 @@ export default function AdminDashboard({ onLogout }) {
                               <td style={{ color: 'var(--text-secondary)' }}>{loan.empresa}</td>
                               <td style={{ fontWeight: '600' }}>S/ {loan.monto.toFixed(2)}</td>
                               <td>{loan.motivo}</td>
+                              <td>
+                                <span style={{ fontSize: '0.82rem', fontWeight: '500' }}>
+                                  {loan.modalidad === 'Pago en Cuotas' ? `Cuotas (${loan.numeroCuotas || 1})` : 'Pago Único'}
+                                </span>
+                              </td>
                               <td>{formatDisplayDate(loan.fechaDesembolso)}</td>
                               <td>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
