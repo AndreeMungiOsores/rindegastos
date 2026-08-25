@@ -1,5 +1,5 @@
 /**
- * Lista de áreas y personal mapeado desde AREAS.xlsx
+ * Lista de áreas y personal mapeado desde AREAS.xlsx (37 registros)
  */
 export const VENDOR_AREAS_DATA = [
   { NOMBRES: "CASTRO CAPUÑAY MEDALY ALEJANDRINA", AREA: "ADMINISTRACION" },
@@ -25,6 +25,7 @@ export const VENDOR_AREAS_DATA = [
   { NOMBRES: "VALLE-RIESTRA PADRÓ LUZ MARÍA", AREA: "MARKETING Y COMUNICACIONES" },
   { NOMBRES: "VILCHES MURO MARIA ALEJANDRA", AREA: "MARKETING Y COMUNICACIONES" },
   { NOMBRES: "LAQUI CHALAN GONZALO SEBASTIAN", AREA: "TI" },
+  { NOMBRES: "MUNGI OSORES ANDREE CRISTHIAN", AREA: "TI" },
   { NOMBRES: "MURAKAMI FUNG ADRIAN MARCEL", AREA: "TI" },
   { NOMBRES: "CASTRO ITURREGUI YAHAIRA", AREA: "VISITA" },
   { NOMBRES: "CUBA CUENTAS PAOLA IRMA", AREA: "VISITA" },
@@ -54,7 +55,7 @@ function normalize(str) {
 
 /**
  * Retorna el equipo/área correspondiente a un nombre de vendedor.
- * @param {string} vendorName - Nombre del vendedor (ej. "Berjuli Hernández", "Jennifer Gasla")
+ * @param {string} vendorName - Nombre del vendedor (ej. "Berjuli Hernández", "Andree Mungi")
  * @returns {string} El nombre del equipo o "Sin Asignar" / "S/D"
  */
 export function getVendorArea(vendorName) {
