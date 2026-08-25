@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { getVendorArea } from '../lib/vendorAreaMatcher.js';
 
 /**
  * Formatea una fecha YYYY-MM-DD o ISO a formato DD/MM/YYYY sin desfasajes de zona horaria local.
@@ -1582,6 +1583,11 @@ export default function AdminDashboard({ onLogout }) {
                     <div className="info-row" style={{ marginBottom: isEditingVendedor ? '0.85rem' : '0.75rem' }}>
                       <span className="info-label">Vendedor</span>
                       <span className="info-value">{activeExpense.cr168_vendedor || 'S/D'}</span>
+                    </div>
+
+                    <div className="info-row" style={{ marginBottom: isEditingVendedor ? '0.85rem' : '0.75rem' }}>
+                      <span className="info-label">Equipo</span>
+                      <span className="info-value">{getVendorArea(activeExpense.cr168_vendedor)}</span>
                     </div>
 
                     {isEditingVendedor ? (
