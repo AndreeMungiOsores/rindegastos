@@ -1718,6 +1718,7 @@ body {
   padding: 0.35rem 0.75rem;
   box-shadow: var(--shadow-sm);
   transition: var(--transition-fast);
+  cursor: pointer;
 }
 
 .subtabs-right-filter:focus-within,
@@ -1734,6 +1735,7 @@ body {
   align-items: center;
   gap: 0.35rem;
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .top-filter-select {

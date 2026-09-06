@@ -58,6 +58,7 @@ export default function AdminDashboard({ onLogout }) {
   // Dropdown de exportación
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const dropdownRef = useRef(null);
+  const topVendorSelectRef = useRef(null);
 
   // Módulos y Navegación del Panel Lateral
   const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores'
@@ -1295,12 +1296,24 @@ export default function AdminDashboard({ onLogout }) {
               </div>
 
               {rindegastosSubTab === 'estadisticas' && (
-                <div className="subtabs-right-filter">
+                <div
+                  className="subtabs-right-filter"
+                  onClick={() => {
+                    if (topVendorSelectRef.current) {
+                      if (typeof topVendorSelectRef.current.showPicker === 'function') {
+                        topVendorSelectRef.current.showPicker();
+                      } else {
+                        topVendorSelectRef.current.focus();
+                      }
+                    }
+                  }}
+                >
                   <label htmlFor="topVendorFilterSelect" className="top-filter-label">
                     <span>👤</span> Vendedor:
                   </label>
                   <select
                     id="topVendorFilterSelect"
+                    ref={topVendorSelectRef}
                     className="top-filter-select"
                     value={vendedorFilter}
                     onChange={(e) => setVendedorFilter(e.target.value)}
