@@ -1335,97 +1335,6 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                 </section>
 
-                {/* Sección 2 Columnas: Gastos por Equipo/Área + Top Vendedores/Consumidores */}
-                <div className="analytics-grid-two-columns">
-                  {/* Gastos por Equipo / Área */}
-                  <div className="analytics-section-card">
-                    <div className="analytics-section-header">
-                      <h3 className="analytics-section-title">
-                        <span>🏢</span> Gastos por Equipo / Área
-                      </h3>
-                      <span className="analytics-section-badge">{analyticsData.byArea.length} Áreas Activas</span>
-                    </div>
-                    <div className="bar-distribution-list">
-                      {analyticsData.byArea.length === 0 ? (
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros para mostrar en el filtro seleccionado.</p>
-                      ) : (
-                        analyticsData.byArea.map((item) => {
-                          const areaClass = item.area === 'VISITA' ? 'area-visita' :
-                                            item.area === 'MARKETING Y COMUNICACIONES' ? 'area-marketing' :
-                                            item.area === 'LOGISTICA' ? 'area-logistica' :
-                                            item.area === 'TI' ? 'area-ti' :
-                                            item.area === 'GERENCIA' ? 'area-gerencia' : 'area-admin';
-                          return (
-                            <div key={item.area} className="bar-distribution-item">
-                              <div className="bar-distribution-info">
-                                <span className="bar-distribution-name">{item.area}</span>
-                                <span className="bar-distribution-metrics">
-                                  S/ {item.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({item.percentage.toFixed(1)}%)
-                                </span>
-                              </div>
-                              <div className="progress-track">
-                                <div className={`progress-fill ${areaClass}`} style={{ width: `${Math.min(item.percentage, 100)}%` }}></div>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                <span>{item.count} comprobante{item.count !== 1 ? 's' : ''}</span>
-                                <span>Promedio: S/ {item.avgTicket.toFixed(2)}</span>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Top Consumidores / Vendedores */}
-                  <div className="analytics-section-card">
-                    <div className="analytics-section-header">
-                      <h3 className="analytics-section-title">
-                        <span>🏆</span> Ranking por Consumidor (Top Vendedores)
-                      </h3>
-                      <span className="analytics-section-badge">Top {Math.min(analyticsData.byVendor.length, 7)}</span>
-                    </div>
-                    <div className="ranking-table-wrapper">
-                      {analyticsData.byVendor.length === 0 ? (
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay colaboradores para mostrar.</p>
-                      ) : (
-                        <table className="ranking-table">
-                          <thead>
-                            <tr>
-                              <th style={{ width: '40px' }}>#</th>
-                              <th>Colaborador</th>
-                              <th>Equipo</th>
-                              <th style={{ textAlign: 'right' }}>Facturas</th>
-                              <th style={{ textAlign: 'right' }}>Total S/</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {analyticsData.byVendor.slice(0, 7).map((v, index) => (
-                              <tr key={v.vendor}>
-                                <td>
-                                  <span className={`ranking-badge ${index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : ''}`}>
-                                    {index + 1}
-                                  </span>
-                                </td>
-                                <td style={{ fontWeight: '600' }}>{v.vendor}</td>
-                                <td>
-                                  <span style={{ fontSize: '0.78rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
-                                    {v.area}
-                                  </span>
-                                </td>
-                                <td style={{ textAlign: 'right' }}>{v.count}</td>
-                                <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-color)' }}>
-                                  S/ {v.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
                 {/* Evolución de Gastos por Mes (Ancho completo con gráfico de barras e indicador de tabla a la derecha) */}
                 <div className="analytics-section-card full-width">
                   <div className="analytics-section-header">
@@ -1573,6 +1482,97 @@ export default function AdminDashboard({ onLogout }) {
                                 <td>{m.count} facturas</td>
                                 <td style={{ fontWeight: '700', color: '#0369a1' }}>
                                   S/ {m.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sección 2 Columnas: Gastos por Equipo/Área + Top Vendedores/Consumidores */}
+                <div className="analytics-grid-two-columns">
+                  {/* Gastos por Equipo / Área */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <span>🏢</span> Gastos por Equipo / Área
+                      </h3>
+                      <span className="analytics-section-badge">{analyticsData.byArea.length} Áreas Activas</span>
+                    </div>
+                    <div className="bar-distribution-list">
+                      {analyticsData.byArea.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros para mostrar en el filtro seleccionado.</p>
+                      ) : (
+                        analyticsData.byArea.map((item) => {
+                          const areaClass = item.area === 'VISITA' ? 'area-visita' :
+                                            item.area === 'MARKETING Y COMUNICACIONES' ? 'area-marketing' :
+                                            item.area === 'LOGISTICA' ? 'area-logistica' :
+                                            item.area === 'TI' ? 'area-ti' :
+                                            item.area === 'GERENCIA' ? 'area-gerencia' : 'area-admin';
+                          return (
+                            <div key={item.area} className="bar-distribution-item">
+                              <div className="bar-distribution-info">
+                                <span className="bar-distribution-name">{item.area}</span>
+                                <span className="bar-distribution-metrics">
+                                  S/ {item.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({item.percentage.toFixed(1)}%)
+                                </span>
+                              </div>
+                              <div className="progress-track">
+                                <div className={`progress-fill ${areaClass}`} style={{ width: `${Math.min(item.percentage, 100)}%` }}></div>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                <span>{item.count} comprobante{item.count !== 1 ? 's' : ''}</span>
+                                <span>Promedio: S/ {item.avgTicket.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Top Consumidores / Vendedores */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <span>🏆</span> Ranking por Consumidor (Top Vendedores)
+                      </h3>
+                      <span className="analytics-section-badge">Top {Math.min(analyticsData.byVendor.length, 7)}</span>
+                    </div>
+                    <div className="ranking-table-wrapper">
+                      {analyticsData.byVendor.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay colaboradores para mostrar.</p>
+                      ) : (
+                        <table className="ranking-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: '40px' }}>#</th>
+                              <th>Colaborador</th>
+                              <th>Equipo</th>
+                              <th style={{ textAlign: 'right' }}>Facturas</th>
+                              <th style={{ textAlign: 'right' }}>Total S/</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analyticsData.byVendor.slice(0, 7).map((v, index) => (
+                              <tr key={v.vendor}>
+                                <td>
+                                  <span className={`ranking-badge ${index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : ''}`}>
+                                    {index + 1}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight: '600' }}>{v.vendor}</td>
+                                <td>
+                                  <span style={{ fontSize: '0.78rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {v.area}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>{v.count}</td>
+                                <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-color)' }}>
+                                  S/ {v.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                               </tr>
                             ))}
