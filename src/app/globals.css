@@ -1690,7 +1690,8 @@ body {
   background: var(--bg-primary);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 1rem;
   margin-top: -1.75rem;
   margin-left: -1.5rem;
   margin-right: -1.5rem;
@@ -1698,6 +1699,53 @@ body {
   margin-bottom: 1.5rem;
   border-bottom: 1px solid var(--border-color);
   backdrop-filter: blur(8px);
+}
+
+.subtabs-left-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.subtabs-right-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-fast);
+}
+
+.subtabs-right-filter:focus-within,
+.subtabs-right-filter:hover {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.top-filter-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.top-filter-select {
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  outline: none;
+  cursor: pointer;
+  max-width: 220px;
+  text-overflow: ellipsis;
 }
 
 .subtab-btn {

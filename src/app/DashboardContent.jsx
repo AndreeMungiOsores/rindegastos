@@ -1275,22 +1275,44 @@ export default function AdminDashboard({ onLogout }) {
           <div className="dashboard-container">
             {/* Navegación por Subpestañas (Tabla de Comprobantes vs Estadísticas Financieras) */}
             <nav className="subtabs-navigation">
-              <button
-                type="button"
-                className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
-                onClick={() => setRindegastosSubTab('tabla')}
-              >
-                <span>📋</span>
-                <span>Tabla de Comprobantes</span>
-              </button>
-              <button
-                type="button"
-                className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
-                onClick={() => setRindegastosSubTab('estadisticas')}
-              >
-                <span>📈</span>
-                <span>Estadísticas Financieras</span>
-              </button>
+              <div className="subtabs-left-group">
+                <button
+                  type="button"
+                  className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
+                  onClick={() => setRindegastosSubTab('tabla')}
+                >
+                  <span>📋</span>
+                  <span>Tabla de Comprobantes</span>
+                </button>
+                <button
+                  type="button"
+                  className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
+                  onClick={() => setRindegastosSubTab('estadisticas')}
+                >
+                  <span>📈</span>
+                  <span>Estadísticas Financieras</span>
+                </button>
+              </div>
+
+              <div className="subtabs-right-filter">
+                <label htmlFor="topVendorFilterSelect" className="top-filter-label">
+                  <span>👤</span> Vendedor:
+                </label>
+                <select
+                  id="topVendorFilterSelect"
+                  className="top-filter-select"
+                  value={vendedorFilter}
+                  onChange={(e) => setVendedorFilter(e.target.value)}
+                  title="Filtrar por Vendedor / Colaborador"
+                >
+                  <option value="">(Todos los Vendedores)</option>
+                  {vendorsList.map((vendor) => (
+                    <option key={vendor} value={vendor}>
+                      {vendor}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </nav>
 
             {rindegastosSubTab === 'estadisticas' ? (
