@@ -1294,25 +1294,27 @@ export default function AdminDashboard({ onLogout }) {
                 </button>
               </div>
 
-              <div className="subtabs-right-filter">
-                <label htmlFor="topVendorFilterSelect" className="top-filter-label">
-                  <span>👤</span> Vendedor:
-                </label>
-                <select
-                  id="topVendorFilterSelect"
-                  className="top-filter-select"
-                  value={vendedorFilter}
-                  onChange={(e) => setVendedorFilter(e.target.value)}
-                  title="Filtrar por Vendedor / Colaborador"
-                >
-                  <option value="">(Todos los Vendedores)</option>
-                  {vendorsList.map((vendor) => (
-                    <option key={vendor} value={vendor}>
-                      {vendor}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {rindegastosSubTab === 'estadisticas' && (
+                <div className="subtabs-right-filter">
+                  <label htmlFor="topVendorFilterSelect" className="top-filter-label">
+                    <span>👤</span> Vendedor:
+                  </label>
+                  <select
+                    id="topVendorFilterSelect"
+                    className="top-filter-select"
+                    value={vendedorFilter}
+                    onChange={(e) => setVendedorFilter(e.target.value)}
+                    title="Filtrar por Vendedor / Colaborador"
+                  >
+                    <option value="">(Todos los Vendedores)</option>
+                    {vendorsList.map((vendor) => (
+                      <option key={vendor} value={vendor}>
+                        {vendor}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </nav>
 
             {rindegastosSubTab === 'estadisticas' ? (
