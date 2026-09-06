@@ -61,6 +61,7 @@ export default function AdminDashboard({ onLogout }) {
 
   // Módulos y Navegación del Panel Lateral
   const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores'
+  const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Plataforma de Préstamos MVP
@@ -387,6 +388,130 @@ export default function AdminDashboard({ onLogout }) {
       disbursedCount
     };
   }, [expenses]);
+
+  // Cálculos de Analítica Financiera (memorizados sobre los gastos filtrados)
+  const analyticsData = useMemo(() => {
+    const list = filteredExpenses;
+    const totalAmount = list.reduce((sum, item) => sum + (item.cr168_montototalincluyendoigv || 0), 0);
+    const totalCount = list.length;
+    const avgTicket = totalCount > 0 ? totalAmount / totalCount : 0;
+    const totalTips = list.reduce((sum, item) => sum + (item.cr168_monto_propina || 0), 0);
+
+    const approvedList = list.filter(item => item.cr168_aprobado);
+    const approvedAmount = approvedList.reduce((sum, item) => sum + (item.cr168_montototalincluyendoigv || 0), 0);
+    const approvedCount = approvedList.length;
+
+    const disbursedList = list.filter(item => parseInt(item.cr168_estado, 10) === 553050001);
+    const disbursedAmount = disbursedList.reduce((sum, item) => sum + (item.cr168_montototalincluyendoigv || 0), 0);
+    const disbursedCount = disbursedList.length;
+
+    const pendingDisbursementList = list.filter(item => parseInt(item.cr168_estado, 10) !== 553050001);
+    const pendingDisbursementAmount = pendingDisbursementList.reduce((sum, item) => sum + (item.cr168_montototalincluyendoigv || 0), 0);
+
+    // Agrupación por Equipo / Área
+    const areaMap = new Map();
+    for (const item of list) {
+      const area = getVendorArea(item.cr168_vendedor);
+      const amount = item.cr168_montototalincluyendoigv || 0;
+      if (!areaMap.has(area)) {
+        areaMap.set(area, { area, amount: 0, count: 0 });
+      }
+      const data = areaMap.get(area);
+      data.amount += amount;
+      data.count += 1;
+    }
+    const byArea = Array.from(areaMap.values())
+      .map(item => ({
+        ...item,
+        percentage: totalAmount > 0 ? (item.amount / totalAmount) * 100 : 0,
+        avgTicket: item.count > 0 ? item.amount / item.count : 0
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    // Agrupación por Vendedor (Ranking de Consumidores)
+    const vendorMap = new Map();
+    for (const item of list) {
+      const vendor = item.cr168_vendedor || 'Sin Vendedor';
+      const area = getVendorArea(vendor);
+      const amount = item.cr168_montototalincluyendoigv || 0;
+      if (!vendorMap.has(vendor)) {
+        vendorMap.set(vendor, { vendor, area, amount: 0, count: 0 });
+      }
+      const data = vendorMap.get(vendor);
+      data.amount += amount;
+      data.count += 1;
+    }
+    const byVendor = Array.from(vendorMap.values())
+      .map(item => ({
+        ...item,
+        percentage: totalAmount > 0 ? (item.amount / totalAmount) * 100 : 0,
+        avgTicket: item.count > 0 ? item.amount / item.count : 0
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    // Agrupación por Comercio / Proveedor
+    const merchantMap = new Map();
+    for (const item of list) {
+      const merchant = item.cr168_nombredelcomercio || 'Sin Comercio';
+      const amount = item.cr168_montototalincluyendoigv || 0;
+      if (!merchantMap.has(merchant)) {
+        merchantMap.set(merchant, { merchant, amount: 0, count: 0 });
+      }
+      const data = merchantMap.get(merchant);
+      data.amount += amount;
+      data.count += 1;
+    }
+    const byMerchant = Array.from(merchantMap.values())
+      .map(item => ({
+        ...item,
+        percentage: totalAmount > 0 ? (item.amount / totalAmount) * 100 : 0
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    // Agrupación por Mes (Evolución Mensual)
+    const monthMap = new Map();
+    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+    for (const item of list) {
+      const dateStr = item.cr168_fechadelgasto || item.createdon;
+      if (!dateStr) continue;
+      const clean = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+      const parts = clean.split('-');
+      if (parts.length >= 2) {
+        const year = parts[0];
+        const monthNum = parseInt(parts[1], 10) - 1;
+        const key = `${year}-${parts[1]}`;
+        const label = `${monthNames[monthNum] || parts[1]} ${year}`;
+        const amount = item.cr168_montototalincluyendoigv || 0;
+        const area = getVendorArea(item.cr168_vendedor);
+
+        if (!monthMap.has(key)) {
+          monthMap.set(key, { key, label, totalAmount: 0, count: 0, areas: {} });
+        }
+        const mData = monthMap.get(key);
+        mData.totalAmount += amount;
+        mData.count += 1;
+        mData.areas[area] = (mData.areas[area] || 0) + amount;
+      }
+    }
+    const byMonth = Array.from(monthMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+
+    return {
+      totalAmount,
+      totalCount,
+      avgTicket,
+      totalTips,
+      approvedAmount,
+      approvedCount,
+      disbursedAmount,
+      disbursedCount,
+      pendingDisbursementAmount,
+      byArea,
+      byVendor,
+      byMerchant,
+      byMonth
+    };
+  }, [filteredExpenses]);
 
   // Calcular la suma de monto SOLO para las filas que estén seleccionadas por el usuario
   const selectedSum = useMemo(() => {
@@ -1164,408 +1289,645 @@ export default function AdminDashboard({ onLogout }) {
               </div>
             </header>
 
-      {/* KPI Cards */}
-      <section className="kpis-grid">
-        <div className="kpi-card">
-          <span className="kpi-label">Monto Total Registrado</span>
-          <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          <span className="kpi-sub">Total de {stats.totalCount} facturas</span>
-        </div>
-        <div className="kpi-card approved">
-          <span className="kpi-label">Gastos Aprobados</span>
-          <span className="kpi-value">{stats.approvedCount}</span>
-          <span className="kpi-sub"><strong>{stats.pendingApprovalCount}</strong> pendientes de aprobación</span>
-        </div>
-        <div className="kpi-card reimbursed">
-          <span className="kpi-label">Gastos Desembolsados</span>
-          <span className="kpi-value">{stats.disbursedCount}</span>
-          <span className="kpi-sub">Con voucher de pago cargado</span>
-        </div>
-        <div className="kpi-card pending">
-          <span className="kpi-label">Pendientes de Desembolso</span>
-          <span className="kpi-value">{stats.pendingDisbursementCount}</span>
-          <span className="kpi-sub">Esperando comprobante de pago</span>
-        </div>
-      </section>
-
-      {/* Banner de Suma de Filas Seleccionadas */}
-      {selectedIds.length > 0 && (
-        <div style={{
-          background: 'rgba(37, 99, 235, 0.08)',
-          border: '1px solid rgba(37, 99, 235, 0.2)',
-          borderRadius: '12px',
-          padding: '1.25rem 1.5rem',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          boxShadow: 'var(--shadow-sm)',
-          animation: 'fadeIn var(--transition-fast)'
-        }}>
-          <div>
-            <span style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', fontWeight: 'bold' }}>
-              Selección Activa
-            </span>
-            <strong style={{ fontSize: '1.1rem', color: 'var(--text-primary)' }}>{selectedIds.length} filas seleccionadas</strong>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 'bold' }}>
-              Monto total de filas seleccionadas
-            </span>
-            <strong style={{ fontSize: '1.5rem', color: 'var(--accent-color)', fontFamily: 'var(--font-title)', fontWeight: '700' }}>
-              S/ {selectedSum.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </strong>
-          </div>
-        </div>
-      )}
-
-      {/* Controls Panel */}
-      <section className="controls-panel">
-        <div className="search-filter-row">
-          <div className="search-wrapper">
-            <span className="search-icon">🔍</span>
-            <input
-              type="text"
-              placeholder="Buscar por vendedor, comercio, comprobante..."
-              className="search-input"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          {/* Filtro de Rango de Fechas (Calendario Visual) */}
-          <div className="calendar-popover-container" ref={calendarRef}>
-            <button
-              type="button"
-              className={`calendar-trigger-btn ${filterStartDate ? 'active-filter' : ''}`}
-              onClick={() => setShowCalendarPopover(prev => !prev)}
-              title="Filtrar por rango de fecha del gasto"
-            >
-              📅 {filterStartDate ? `${formatDisplayDate(filterStartDate)} - ${filterEndDate ? formatDisplayDate(filterEndDate) : '...'}` : 'Filtrar por fecha'}
-              {filterStartDate && (
-                <span 
-                  className="clear-date-btn" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFilterStartDate(null);
-                    setFilterEndDate(null);
-                    setShowCalendarPopover(false);
-                  }}
-                  title="Limpiar filtro de fecha"
-                >
-                  ×
-                </span>
-              )}
-            </button>
-            {showCalendarPopover && renderCalendarCard()}
-          </div>
-
-          <div className="action-group">
-            <div className="export-dropdown-container" ref={dropdownRef}>
-              <button 
+            {/* Navegación por Subpestañas (Tabla de Comprobantes vs Estadísticas Financieras) */}
+            <nav className="subtabs-navigation">
+              <button
                 type="button"
-                className="btn btn-success" 
-                onClick={() => {
-                  if (!isExporting && filteredExpenses.length > 0) {
-                    setShowExportDropdown(prev => !prev);
-                  }
-                }}
-                title="Exportar a Excel"
-                disabled={filteredExpenses.length === 0 || isExporting}
+                className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
+                onClick={() => setRindegastosSubTab('tabla')}
               >
-                {isExporting ? `📦 ${exportStatus}` : '📊 Exportar Excel ▾'}
+                <span>📋</span>
+                <span>Tabla de Comprobantes</span>
               </button>
-              {showExportDropdown && (
-                <div className="export-dropdown-menu">
-                  <button 
-                    type="button" 
-                    className="export-dropdown-item" 
-                    onClick={() => {
-                      setShowExportDropdown(false);
-                      handleExportExcelOnly();
-                    }}
-                  >
-                    📄 Exportar solo excel
-                  </button>
-                  <button 
-                    type="button" 
-                    className="export-dropdown-item" 
-                    onClick={() => {
-                      setShowExportDropdown(false);
-                      handleExportExcelWithImages();
-                    }}
-                  >
-                    📦 Exportar excel con comprobantes (ZIP)
-                  </button>
+              <button
+                type="button"
+                className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
+                onClick={() => setRindegastosSubTab('estadisticas')}
+              >
+                <span>📈</span>
+                <span>Estadísticas Financieras</span>
+              </button>
+            </nav>
+
+            {rindegastosSubTab === 'estadisticas' ? (
+              <div className="analytics-dashboard-container">
+                {/* Resumen Ejecutivo KPI Cards */}
+                <section className="analytics-kpis-grid">
+                  <div className="analytics-kpi-card">
+                    <span className="analytics-kpi-label">Monto Total Analizado</span>
+                    <span className="analytics-kpi-value">S/ {analyticsData.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="analytics-kpi-sub">En {analyticsData.totalCount} comprobantes activos</span>
+                  </div>
+                  <div className="analytics-kpi-card success">
+                    <span className="analytics-kpi-label">Ticket Promedio por Comprobante</span>
+                    <span className="analytics-kpi-value">S/ {analyticsData.avgTicket.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="analytics-kpi-sub">Gasto promedio rendido</span>
+                  </div>
+                  <div className="analytics-kpi-card purple">
+                    <span className="analytics-kpi-label">Total en Propinas Rendidas</span>
+                    <span className="analytics-kpi-value">S/ {analyticsData.totalTips.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="analytics-kpi-sub">Vouchers de propina adicionados</span>
+                  </div>
+                  <div className="analytics-kpi-card warning">
+                    <span className="analytics-kpi-label">Monto Pendiente de Desembolso</span>
+                    <span className="analytics-kpi-value">S/ {analyticsData.pendingDisbursementAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="analytics-kpi-sub">{analyticsData.totalCount - analyticsData.disbursedCount} comprobantes por liquidar</span>
+                  </div>
+                </section>
+
+                {/* Sección 2 Columnas: Gastos por Equipo/Área + Top Vendedores/Consumidores */}
+                <div className="analytics-grid-two-columns">
+                  {/* Gastos por Equipo / Área */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <span>🏢</span> Gastos por Equipo / Área
+                      </h3>
+                      <span className="analytics-section-badge">{analyticsData.byArea.length} Áreas Activas</span>
+                    </div>
+                    <div className="bar-distribution-list">
+                      {analyticsData.byArea.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros para mostrar en el filtro seleccionado.</p>
+                      ) : (
+                        analyticsData.byArea.map((item) => {
+                          const areaClass = item.area === 'VISITA' ? 'area-visita' :
+                                            item.area === 'MARKETING Y COMUNICACIONES' ? 'area-marketing' :
+                                            item.area === 'LOGISTICA' ? 'area-logistica' :
+                                            item.area === 'TI' ? 'area-ti' :
+                                            item.area === 'GERENCIA' ? 'area-gerencia' : 'area-admin';
+                          return (
+                            <div key={item.area} className="bar-distribution-item">
+                              <div className="bar-distribution-info">
+                                <span className="bar-distribution-name">{item.area}</span>
+                                <span className="bar-distribution-metrics">
+                                  S/ {item.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({item.percentage.toFixed(1)}%)
+                                </span>
+                              </div>
+                              <div className="progress-track">
+                                <div className={`progress-fill ${areaClass}`} style={{ width: `${Math.min(item.percentage, 100)}%` }}></div>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                <span>{item.count} comprobante{item.count !== 1 ? 's' : ''}</span>
+                                <span>Promedio: S/ {item.avgTicket.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Top Consumidores / Vendedores */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <span>🏆</span> Ranking por Consumidor (Top Vendedores)
+                      </h3>
+                      <span className="analytics-section-badge">Top {Math.min(analyticsData.byVendor.length, 7)}</span>
+                    </div>
+                    <div className="ranking-table-wrapper">
+                      {analyticsData.byVendor.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay colaboradores para mostrar.</p>
+                      ) : (
+                        <table className="ranking-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: '40px' }}>#</th>
+                              <th>Colaborador</th>
+                              <th>Equipo</th>
+                              <th style={{ textAlign: 'right' }}>Facturas</th>
+                              <th style={{ textAlign: 'right' }}>Total S/</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analyticsData.byVendor.slice(0, 7).map((v, index) => (
+                              <tr key={v.vendor}>
+                                <td>
+                                  <span className={`ranking-badge ${index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : ''}`}>
+                                    {index + 1}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight: '600' }}>{v.vendor}</td>
+                                <td>
+                                  <span style={{ fontSize: '0.78rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {v.area}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>{v.count}</td>
+                                <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-color)' }}>
+                                  S/ {v.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-            <button className="btn btn-primary" onClick={fetchExpenses} title="Refrescar datos" disabled={isExporting}>
-              🔄 Sincronizar
-            </button>
-          </div>
-        </div>
 
-        {/* Bulk actions */}
-        {selectedIds.length > 0 && (
-          <div className="bulk-actions-wrapper">
-            <span className="selected-count">
-              Seleccionados: <strong>{selectedIds.length}</strong> de {filteredExpenses.length} gastos filtrados
-            </span>
-            <div className="action-buttons">
-              <button className="btn btn-success" onClick={() => { setShowDisburseModal(true); setDisburseFile(null); }}>
-                💸 Generar desembolso
-              </button>
-              <button 
-                className="btn btn-primary" 
-                onClick={handleApproveSelected}
-                disabled={isUpdating}
-              >
-                {isUpdating ? 'Procesando...' : '✓ Aprobar registros'}
-              </button>
-              <button className="btn btn-secondary" onClick={handleDeselectAll}>
-                Cancelar Selección
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
+                {/* Sección 2 Columnas: Gastos por Mes y Área + Top Comercios/Proveedores */}
+                <div className="analytics-grid-two-columns">
+                  {/* Evolución Mensual desglosada por Área */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <span>📅</span> Evolución de Gastos por Mes
+                      </h3>
+                      <span className="analytics-section-badge">{analyticsData.byMonth.length} Meses Registrados</span>
+                    </div>
+                    <div className="ranking-table-wrapper">
+                      {analyticsData.byMonth.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros de fecha disponibles.</p>
+                      ) : (
+                        <table className="monthly-matrix-table">
+                          <thead>
+                            <tr>
+                              <th>Mes / Período</th>
+                              <th>Comprobantes</th>
+                              <th>Monto Total S/</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analyticsData.byMonth.map((m) => (
+                              <tr key={m.key}>
+                                <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{m.label}</td>
+                                <td>{m.count} facturas</td>
+                                <td style={{ fontWeight: '700', color: '#0369a1' }}>
+                                  S/ {m.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
 
-      {/* Main Table Card */}
-      <section className="table-card">
-        {loading ? (
-          <div className="loading-wrapper">
-            <div className="spinner"></div>
-            <p>Obteniendo registros en tiempo real desde Microsoft Dataverse...</p>
-          </div>
-        ) : error ? (
-          <div style={{ padding: '3rem 2rem', textAlign: 'center', color: 'var(--danger-color)' }}>
-            <span style={{ fontSize: '2rem' }}>⚠️</span>
-            <p style={{ marginTop: '1rem', fontWeight: 'bold' }}>{error}</p>
-            <button className="btn btn-secondary" style={{ margin: '1rem auto 0' }} onClick={fetchExpenses}>Reintentar</button>
-          </div>
-        ) : (
-          <div className="table-responsive">
-            <table className="gastos-table">
-              <thead>
-                <tr>
-                  <th className="checkbox-cell">
-                    <input
-                      type="checkbox"
-                      className="custom-checkbox"
-                      checked={filteredExpenses.length > 0 && selectedIds.length === filteredExpenses.length}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          handleSelectAllFiltered();
-                        } else {
-                          handleDeselectAll();
-                        }
-                      }}
-                    />
-                  </th>
-                   <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Fecha de creación</span>
-                      <select
-                        className="header-select-filter"
-                        value={sortField === 'createdon' ? dateOrder : ''}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            setSortField('createdon');
-                            setDateOrder(e.target.value);
-                          }
-                        }}
-                      >
-                        <option value="" disabled={sortField === 'createdon'}>Ordenar</option>
-                        <option value="desc">Más recientes</option>
-                        <option value="asc">Más antiguos</option>
-                      </select>
+                  {/* Top Comercios y Proveedores */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <span>🛍️</span> Top Comercios / Proveedores
+                      </h3>
+                      <span className="analytics-section-badge">Top {Math.min(analyticsData.byMerchant.length, 5)}</span>
                     </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Fecha de gasto</span>
-                      <select
-                        className="header-select-filter"
-                        value={sortField === 'cr168_fechadelgasto' ? dateOrder : ''}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            setSortField('cr168_fechadelgasto');
-                            setDateOrder(e.target.value);
-                          }
-                        }}
-                      >
-                        <option value="" disabled={sortField === 'cr168_fechadelgasto'}>Ordenar</option>
-                        <option value="desc">Más recientes</option>
-                        <option value="asc">Más antiguos</option>
-                      </select>
+                    <div className="bar-distribution-list">
+                      {analyticsData.byMerchant.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay comercios registrados.</p>
+                      ) : (
+                        analyticsData.byMerchant.slice(0, 5).map((m, idx) => (
+                          <div key={m.merchant} className="bar-distribution-item">
+                            <div className="bar-distribution-info">
+                              <span className="bar-distribution-name">
+                                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>#{idx + 1}</span> {m.merchant}
+                              </span>
+                              <span className="bar-distribution-metrics">
+                                S/ {m.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="progress-track">
+                              <div className="progress-fill" style={{ width: `${Math.min(m.percentage, 100)}%`, background: 'linear-gradient(90deg, #0284c7, #38bdf8)' }}></div>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              <span>{m.count} facturas</span>
+                              <span>{m.percentage.toFixed(1)}% del total</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Empresa</span>
-                      <select
-                        className="header-select-filter"
-                        value={empresaFilter}
-                        onChange={(e) => setEmpresaFilter(e.target.value)}
-                      >
-                        <option value="">(Todos)</option>
-                        {empresasList.map(emp => (
-                          <option key={emp} value={emp}>{emp}</option>
-                        ))}
-                      </select>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* KPI Cards */}
+                <section className="kpis-grid">
+                  <div className="kpi-card">
+                    <span className="kpi-label">Monto Total Registrado</span>
+                    <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="kpi-sub">Total de {stats.totalCount} facturas</span>
+                  </div>
+                  <div className="kpi-card approved">
+                    <span className="kpi-label">Gastos Aprobados</span>
+                    <span className="kpi-value">{stats.approvedCount}</span>
+                    <span className="kpi-sub"><strong>{stats.pendingApprovalCount}</strong> pendientes de aprobación</span>
+                  </div>
+                  <div className="kpi-card reimbursed">
+                    <span className="kpi-label">Gastos Desembolsados</span>
+                    <span className="kpi-value">{stats.disbursedCount}</span>
+                    <span className="kpi-sub">Con voucher de pago cargado</span>
+                  </div>
+                  <div className="kpi-card pending">
+                    <span className="kpi-label">Pendientes de Desembolso</span>
+                    <span className="kpi-value">{stats.pendingDisbursementCount}</span>
+                    <span className="kpi-sub">Esperando comprobante de pago</span>
+                  </div>
+                </section>
+
+                {/* Banner de Suma de Filas Seleccionadas */}
+                {selectedIds.length > 0 && (
+                  <div style={{
+                    background: 'rgba(37, 99, 235, 0.08)',
+                    border: '1px solid rgba(37, 99, 235, 0.2)',
+                    borderRadius: '12px',
+                    padding: '1.25rem 1.5rem',
+                    marginBottom: '1.5rem',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    boxShadow: 'var(--shadow-sm)',
+                    animation: 'fadeIn var(--transition-fast)'
+                  }}>
+                    <div>
+                      <span style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', fontWeight: 'bold' }}>
+                        Selección Activa
+                      </span>
+                      <strong style={{ fontSize: '1.1rem', color: 'var(--text-primary)' }}>{selectedIds.length} filas seleccionadas</strong>
                     </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Equipo</span>
-                      <select
-                        className="header-select-filter"
-                        value={equipoFilter}
-                        onChange={(e) => setEquipoFilter(e.target.value)}
-                      >
-                        <option value="">(Todos)</option>
-                        {equiposList.map(eq => (
-                          <option key={eq} value={eq}>{eq}</option>
-                        ))}
-                      </select>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 'bold' }}>
+                        Monto total de filas seleccionadas
+                      </span>
+                      <strong style={{ fontSize: '1.5rem', color: 'var(--accent-color)', fontFamily: 'var(--font-title)', fontWeight: '700' }}>
+                        S/ {selectedSum.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </strong>
                     </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Vendedor</span>
-                      <select
-                        className="header-select-filter"
-                        value={vendedorFilter}
-                        onChange={(e) => setVendedorFilter(e.target.value)}
-                      >
-                        <option value="">(Todos)</option>
-                        {vendorsList.map(v => (
-                          <option key={v} value={v}>{v}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Comercio</span>
-                    </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Comprobante</span>
-                    </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Monto</span>
-                    </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Aprobado</span>
-                      <select
-                        className="header-select-filter"
-                        value={aprobadoFilter}
-                        onChange={(e) => setAprobadoFilter(e.target.value)}
-                      >
-                        <option value="">(Todos)</option>
-                        <option value="true">True</option>
-                        <option value="false">False</option>
-                      </select>
-                    </div>
-                  </th>
-                  <th>
-                    <div className="header-with-filter">
-                      <span className="header-label" style={{ color: '#0369a1' }}>Estado</span>
-                      <select
-                        className="header-select-filter"
-                        value={estadoFilter}
-                        onChange={(e) => setEstadoFilter(e.target.value)}
-                      >
-                        <option value="">(Todos)</option>
-                        {statesList.map(s => (
-                          <option key={s.val} value={s.val}>{s.text}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedExpenses.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                        <span style={{ fontSize: '2.5rem' }}>📂</span>
-                        <p style={{ fontWeight: '500' }}>No se encontraron gastos con los filtros seleccionados.</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  sortedExpenses.map((item) => {
-                    const isSelected = selectedIds.includes(item.cr168_reportedegastosid);
-                    const formattedDate = formatDisplayDate(item.cr168_fechadelgasto);
-                    
-                    return (
-                      <tr
-                        key={item.cr168_reportedegastosid}
-                        className={isSelected ? 'selected' : ''}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <td className="checkbox-cell" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            className="custom-checkbox"
-                            checked={isSelected}
-                            onChange={() => handleSelectItem(item.cr168_reportedegastosid)}
-                          />
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })}>
-                          {formatDisplayDate(item.createdon)}
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })}>
-                          {formattedDate}
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })} style={{ color: 'var(--text-secondary)' }}>
-                          {item.cr168_empresa || 'Sin Empresa'}
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })} style={{ color: 'var(--text-secondary)', fontWeight: '500' }}>
-                          {getVendorArea(item.cr168_vendedor)}
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '500' }}>
-                          {item.cr168_vendedor || 'Sin Vendedor'}
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })}>
-                          {item.cr168_nombredelcomercio || 'Sin Comercio'}
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })}>
-                          <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155' }}>
-                            {item.cr168_numerodecomprobante || 'S/N'}
-                          </code>
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
-                          S/ {(item.cr168_montototalincluyendoigv || 0).toFixed(2)}
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })}>
-                          <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
-                            {item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False')}
-                          </span>
-                        </td>
-                        <td onClick={() => setActiveExpense({ ...item })}>
-                          <span className={`badge ${item.cr168_estado === 553050001 ? 'badge-reimbursed' : 'badge-pending'}`}>
-                            {item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+
+                {/* Controls Panel */}
+                <section className="controls-panel">
+                  <div className="search-filter-row">
+                    <div className="search-wrapper">
+                      <span className="search-icon">🔍</span>
+                      <input
+                        type="text"
+                        placeholder="Buscar por vendedor, comercio, comprobante..."
+                        className="search-input"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Filtro de Rango de Fechas (Calendario Visual) */}
+                    <div className="calendar-popover-container" ref={calendarRef}>
+                      <button
+                        type="button"
+                        className={`calendar-trigger-btn ${filterStartDate ? 'active-filter' : ''}`}
+                        onClick={() => setShowCalendarPopover(prev => !prev)}
+                        title="Filtrar por rango de fecha del gasto"
+                      >
+                        📅 {filterStartDate ? `${formatDisplayDate(filterStartDate)} - ${filterEndDate ? formatDisplayDate(filterEndDate) : '...'}` : 'Filtrar por fecha'}
+                        {filterStartDate && (
+                          <span 
+                            className="clear-date-btn" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFilterStartDate(null);
+                              setFilterEndDate(null);
+                            }}
+                            title="Limpiar filtro de fecha"
+                          >
+                            ✕
+                          </span>
+                        )}
+                      </button>
+
+                      {showCalendarPopover && renderCalendarPopover()}
+                    </div>
+
+                    {/* Menú Desplegable de Exportación Excel / ZIP */}
+                    <div className="export-dropdown-container" ref={dropdownRef}>
+                      <button
+                        type="button"
+                        className="export-btn"
+                        onClick={() => setShowExportDropdown(prev => !prev)}
+                        disabled={isExporting || filteredExpenses.length === 0}
+                      >
+                        📊 {isExporting ? 'Procesando...' : 'Exportar Excel'} ▾
+                      </button>
+
+                      {showExportDropdown && (
+                        <div className="export-dropdown-menu">
+                          <button
+                            type="button"
+                            className="export-menu-item"
+                            onClick={() => {
+                              setShowExportDropdown(false);
+                              handleExportExcelOnly();
+                            }}
+                          >
+                            <span>📄</span>
+                            <div>
+                              <strong>Exportar solo excel</strong>
+                              <small>Descarga directa en formato .xlsx</small>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            className="export-menu-item"
+                            onClick={() => {
+                              setShowExportDropdown(false);
+                              handleExportZipWithImages();
+                            }}
+                          >
+                            <span>📦</span>
+                            <div>
+                              <strong>Exportar excel con comprobantes (ZIP)</strong>
+                              <small>Incluye imágenes renombradas en carpeta</small>
+                            </div>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      className="sync-btn"
+                      onClick={fetchExpenses}
+                      disabled={loading}
+                    >
+                      🔄 Sincronizar
+                    </button>
+                  </div>
+
+                  <div className="action-buttons-row">
+                    <button
+                      type="button"
+                      className="approve-btn"
+                      onClick={handleApproveSelected}
+                      disabled={selectedIds.length === 0 || isUpdating}
+                    >
+                      ✓ {isUpdating ? 'Aprobando...' : `Aprobar registros (${selectedIds.length})`}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="disburse-btn"
+                      onClick={() => setShowDisburseModal(true)}
+                      disabled={selectedIds.length === 0 || isUpdating}
+                    >
+                      💼 Enviar correo y marcar como desembolsado ({selectedIds.length})
+                    </button>
+
+                    {selectedIds.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn-text-secondary"
+                        onClick={handleDeselectAll}
+                      >
+                        Deseleccionar todo
+                      </button>
+                    )}
+                  </div>
+
+                  {exportStatus && (
+                    <div className="export-status-banner">
+                      <span>⏳</span>
+                      <span>{exportStatus}</span>
+                    </div>
+                  )}
+                </section>
+
+                {/* Expenses Data Table */}
+                <section className="table-container">
+                  {loading ? (
+                    <div className="loading-state">
+                      <div className="spinner"></div>
+                      <p>Cargando datos desde Microsoft Dataverse...</p>
+                    </div>
+                  ) : error ? (
+                    <div className="error-state">
+                      <p>❌ {error}</p>
+                      <button type="button" onClick={fetchExpenses}>Reintentar</button>
+                    </div>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th className="checkbox-cell">
+                              <input
+                                type="checkbox"
+                                className="custom-checkbox"
+                                checked={filteredExpenses.length > 0 && selectedIds.length === filteredExpenses.length}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    handleSelectAllFiltered();
+                                  } else {
+                                    handleDeselectAll();
+                                  }
+                                }}
+                              />
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Fecha de creación</span>
+                                <select
+                                  className="header-select-filter"
+                                  value={sortField === 'createdon' ? dateOrder : ''}
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      setSortField('createdon');
+                                      setDateOrder(e.target.value);
+                                    }
+                                  }}
+                                >
+                                  <option value="" disabled={sortField === 'createdon'}>Ordenar</option>
+                                  <option value="desc">Más recientes</option>
+                                  <option value="asc">Más antiguos</option>
+                                </select>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Fecha de gasto</span>
+                                <select
+                                  className="header-select-filter"
+                                  value={sortField === 'cr168_fechadelgasto' ? dateOrder : ''}
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      setSortField('cr168_fechadelgasto');
+                                      setDateOrder(e.target.value);
+                                    }
+                                  }}
+                                >
+                                  <option value="" disabled={sortField === 'cr168_fechadelgasto'}>Ordenar</option>
+                                  <option value="desc">Más recientes</option>
+                                  <option value="asc">Más antiguos</option>
+                                </select>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Empresa</span>
+                                <select
+                                  className="header-select-filter"
+                                  value={empresaFilter}
+                                  onChange={(e) => setEmpresaFilter(e.target.value)}
+                                >
+                                  <option value="">(Todos)</option>
+                                  {empresasList.map(emp => (
+                                    <option key={emp} value={emp}>{emp}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Equipo</span>
+                                <select
+                                  className="header-select-filter"
+                                  value={equipoFilter}
+                                  onChange={(e) => setEquipoFilter(e.target.value)}
+                                >
+                                  <option value="">(Todos)</option>
+                                  {equiposList.map(eq => (
+                                    <option key={eq} value={eq}>{eq}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Vendedor</span>
+                                <select
+                                  className="header-select-filter"
+                                  value={vendedorFilter}
+                                  onChange={(e) => setVendedorFilter(e.target.value)}
+                                >
+                                  <option value="">(Todos)</option>
+                                  {vendorsList.map(v => (
+                                    <option key={v} value={v}>{v}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Comercio</span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Comprobante</span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Monto</span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Aprobado</span>
+                                <select
+                                  className="header-select-filter"
+                                  value={aprobadoFilter}
+                                  onChange={(e) => setAprobadoFilter(e.target.value)}
+                                >
+                                  <option value="">(Todos)</option>
+                                  <option value="true">True</option>
+                                  <option value="false">False</option>
+                                </select>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label" style={{ color: '#0369a1' }}>Estado</span>
+                                <select
+                                  className="header-select-filter"
+                                  value={estadoFilter}
+                                  onChange={(e) => setEstadoFilter(e.target.value)}
+                                >
+                                  <option value="">(Todos)</option>
+                                  {statesList.map(s => (
+                                    <option key={s.val} value={s.val}>{s.text}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedExpenses.length === 0 ? (
+                            <tr>
+                              <td colSpan={11} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                                  <span style={{ fontSize: '2.5rem' }}>📂</span>
+                                  <p style={{ fontWeight: '500' }}>No se encontraron gastos con los filtros seleccionados.</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            sortedExpenses.map((item) => {
+                              const isSelected = selectedIds.includes(item.cr168_reportedegastosid);
+                              const formattedDate = formatDisplayDate(item.cr168_fechadelgasto);
+                              
+                              return (
+                                <tr
+                                  key={item.cr168_reportedegastosid}
+                                  className={isSelected ? 'selected' : ''}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  <td className="checkbox-cell" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type="checkbox"
+                                      className="custom-checkbox"
+                                      checked={isSelected}
+                                      onChange={() => handleSelectItem(item.cr168_reportedegastosid)}
+                                    />
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })}>
+                                    {formatDisplayDate(item.createdon)}
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })}>
+                                    {formattedDate}
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })} style={{ color: 'var(--text-secondary)' }}>
+                                    {item.cr168_empresa || 'Sin Empresa'}
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })} style={{ color: 'var(--text-secondary)', fontWeight: '500' }}>
+                                    {getVendorArea(item.cr168_vendedor)}
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '500' }}>
+                                    {item.cr168_vendedor || 'Sin Vendedor'}
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })}>
+                                    {item.cr168_nombredelcomercio || 'Sin Comercio'}
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })}>
+                                    <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155' }}>
+                                      {item.cr168_numerodecomprobante || 'S/N'}
+                                    </code>
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
+                                    S/ {(item.cr168_montototalincluyendoigv || 0).toFixed(2)}
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })}>
+                                    <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
+                                      {item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False')}
+                                    </span>
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })}>
+                                    <span className={`badge ${item.cr168_estado === 553050001 ? 'badge-reimbursed' : 'badge-pending'}`}>
+                                      {item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
 
       {/* Detail Modal / Drawer */}
       {activeExpense && (
