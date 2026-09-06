@@ -1273,22 +1273,6 @@ export default function AdminDashboard({ onLogout }) {
       <main className="main-content-wrapper">
         {activeModule === 'rindegastos' && (
           <div className="dashboard-container">
-            {/* Header */}
-            <header className="dashboard-header">
-              <div className="header-title">
-                <h1>Rindegastos Administración</h1>
-                <p>Visualización y auditoría de reportes de gastos conectados a Microsoft Dataverse</p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                {tokenInfo && (
-                  <div className="token-status-badge">
-                    <span className="status-dot"></span>
-                    <span>Token Activo (Expira: {tokenInfo.expiresAt})</span>
-                  </div>
-                )}
-              </div>
-            </header>
-
             {/* Navegación por Subpestañas (Tabla de Comprobantes vs Estadísticas Financieras) */}
             <nav className="subtabs-navigation">
               <button
