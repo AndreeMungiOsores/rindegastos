@@ -1594,119 +1594,96 @@ export default function AdminDashboard({ onLogout }) {
                           </span>
                         )}
                       </button>
-
                       {showCalendarPopover && renderCalendarPopover()}
                     </div>
 
-                    {/* Menú Desplegable de Exportación Excel / ZIP */}
-                    <div className="export-dropdown-container" ref={dropdownRef}>
-                      <button
-                        type="button"
-                        className="export-btn"
-                        onClick={() => setShowExportDropdown(prev => !prev)}
-                        disabled={isExporting || filteredExpenses.length === 0}
-                      >
-                        📊 {isExporting ? 'Procesando...' : 'Exportar Excel'} ▾
+                    <div className="action-group">
+                      <div className="export-dropdown-container" ref={dropdownRef}>
+                        <button 
+                          type="button"
+                          className="btn btn-success" 
+                          onClick={() => {
+                            if (!isExporting && filteredExpenses.length > 0) {
+                              setShowExportDropdown(prev => !prev);
+                            }
+                          }}
+                          title="Exportar a Excel"
+                          disabled={filteredExpenses.length === 0 || isExporting}
+                        >
+                          {isExporting ? `📦 ${exportStatus}` : '📊 Exportar Excel ▾'}
+                        </button>
+                        {showExportDropdown && (
+                          <div className="export-dropdown-menu">
+                            <button 
+                              type="button" 
+                              className="export-dropdown-item" 
+                              onClick={() => {
+                                setShowExportDropdown(false);
+                                handleExportExcelOnly();
+                              }}
+                            >
+                              📄 Exportar solo excel
+                            </button>
+                            <button 
+                              type="button" 
+                              className="export-dropdown-item" 
+                              onClick={() => {
+                                setShowExportDropdown(false);
+                                handleExportZipWithImages();
+                              }}
+                            >
+                              📦 Exportar excel con comprobantes (ZIP)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <button className="btn btn-primary" onClick={fetchExpenses} title="Refrescar datos" disabled={isExporting}>
+                        🔄 Sincronizar
                       </button>
-
-                      {showExportDropdown && (
-                        <div className="export-dropdown-menu">
-                          <button
-                            type="button"
-                            className="export-menu-item"
-                            onClick={() => {
-                              setShowExportDropdown(false);
-                              handleExportExcelOnly();
-                            }}
-                          >
-                            <span>📄</span>
-                            <div>
-                              <strong>Exportar solo excel</strong>
-                              <small>Descarga directa en formato .xlsx</small>
-                            </div>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="export-menu-item"
-                            onClick={() => {
-                              setShowExportDropdown(false);
-                              handleExportZipWithImages();
-                            }}
-                          >
-                            <span>📦</span>
-                            <div>
-                              <strong>Exportar excel con comprobantes (ZIP)</strong>
-                              <small>Incluye imágenes renombradas en carpeta</small>
-                            </div>
-                          </button>
-                        </div>
-                      )}
                     </div>
-
-                    <button
-                      type="button"
-                      className="sync-btn"
-                      onClick={fetchExpenses}
-                      disabled={loading}
-                    >
-                      🔄 Sincronizar
-                    </button>
                   </div>
 
-                  <div className="action-buttons-row">
-                    <button
-                      type="button"
-                      className="approve-btn"
-                      onClick={handleApproveSelected}
-                      disabled={selectedIds.length === 0 || isUpdating}
-                    >
-                      ✓ {isUpdating ? 'Aprobando...' : `Aprobar registros (${selectedIds.length})`}
-                    </button>
-
-                    <button
-                      type="button"
-                      className="disburse-btn"
-                      onClick={() => setShowDisburseModal(true)}
-                      disabled={selectedIds.length === 0 || isUpdating}
-                    >
-                      💼 Enviar correo y marcar como desembolsado ({selectedIds.length})
-                    </button>
-
-                    {selectedIds.length > 0 && (
-                      <button
-                        type="button"
-                        className="btn-text-secondary"
-                        onClick={handleDeselectAll}
-                      >
-                        Deseleccionar todo
-                      </button>
-                    )}
-                  </div>
-
-                  {exportStatus && (
-                    <div className="export-status-banner">
-                      <span>⏳</span>
-                      <span>{exportStatus}</span>
+                  {/* Bulk actions */}
+                  {selectedIds.length > 0 && (
+                    <div className="bulk-actions-wrapper">
+                      <span className="selected-count">
+                        Seleccionados: <strong>{selectedIds.length}</strong> de {filteredExpenses.length} gastos filtrados
+                      </span>
+                      <div className="action-buttons">
+                        <button className="btn btn-success" onClick={() => { setShowDisburseModal(true); setDisburseFile(null); }}>
+                          💼 Enviar correo y marcar como desembolsado ({selectedIds.length})
+                        </button>
+                        <button 
+                          className="btn btn-primary" 
+                          onClick={handleApproveSelected}
+                          disabled={isUpdating}
+                        >
+                          {isUpdating ? 'Procesando...' : '✓ Aprobar registros'}
+                        </button>
+                        <button className="btn btn-secondary" onClick={handleDeselectAll}>
+                          Cancelar Selección
+                        </button>
+                      </div>
                     </div>
                   )}
                 </section>
 
                 {/* Expenses Data Table */}
-                <section className="table-container">
+                <section className="table-card">
                   {loading ? (
-                    <div className="loading-state">
+                    <div className="loading-wrapper">
                       <div className="spinner"></div>
-                      <p>Cargando datos desde Microsoft Dataverse...</p>
+                      <p>Obteniendo registros en tiempo real desde Microsoft Dataverse...</p>
                     </div>
                   ) : error ? (
-                    <div className="error-state">
-                      <p>❌ {error}</p>
-                      <button type="button" onClick={fetchExpenses}>Reintentar</button>
+                    <div style={{ padding: '3rem 2rem', textAlign: 'center', color: 'var(--danger-color)' }}>
+                      <span style={{ fontSize: '2rem' }}>⚠️</span>
+                      <p style={{ marginTop: '1rem', fontWeight: 'bold' }}>{error}</p>
+                      <button className="btn btn-secondary" style={{ margin: '1rem auto 0' }} onClick={fetchExpenses}>Reintentar</button>
                     </div>
                   ) : (
-                    <div className="table-wrapper">
-                      <table className="data-table">
+                    <div className="table-responsive">
+                      <table className="gastos-table">
                         <thead>
                           <tr>
                             <th className="checkbox-cell">
