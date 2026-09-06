@@ -1426,16 +1426,134 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                 </div>
 
-                {/* Sección 2 Columnas: Gastos por Mes y Área + Top Comercios/Proveedores */}
-                <div className="analytics-grid-two-columns">
-                  {/* Evolución Mensual desglosada por Área */}
-                  <div className="analytics-section-card">
-                    <div className="analytics-section-header">
-                      <h3 className="analytics-section-title">
-                        <span>📅</span> Evolución de Gastos por Mes
-                      </h3>
-                      <span className="analytics-section-badge">{analyticsData.byMonth.length} Meses Registrados</span>
+                {/* Evolución de Gastos por Mes (Ancho completo con gráfico de barras e indicador de tabla a la derecha) */}
+                <div className="analytics-section-card full-width">
+                  <div className="analytics-section-header">
+                    <h3 className="analytics-section-title">
+                      <span>📅</span> Evolución de Gastos por Mes
+                    </h3>
+                    <span className="analytics-section-badge">{analyticsData.byMonth.length} Meses Registrados</span>
+                  </div>
+
+                  <div className="monthly-chart-and-table-grid">
+                    {/* Columna Izquierda: Gráfico de Barras SVG (Eje Y: Monto S/, Eje X: Meses/Año) */}
+                    <div className="monthly-bar-chart-card">
+                      <span className="chart-header-subtitle">Gráfico de Tendencia Mensual (S/)</span>
+                      
+                      {analyticsData.byMonth.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros de fecha para generar el gráfico.</p>
+                      ) : (() => {
+                        const amounts = analyticsData.byMonth.map(m => m.totalAmount);
+                        const rawMax = Math.max(...amounts, 100);
+                        const maxVal = Math.ceil(rawMax / 1000) * 1000 || 1000;
+                        const ticks = [maxVal, maxVal * 0.75, maxVal * 0.5, maxVal * 0.25, 0];
+                        const N = analyticsData.byMonth.length;
+                        const plotWidth = 430;
+                        const plotHeight = 170;
+                        const marginLeft = 75;
+                        const marginTop = 20;
+
+                        return (
+                          <div className="svg-chart-wrapper">
+                            <svg viewBox="0 0 520 220" preserveAspectRatio="xMidYMid meet">
+                              <defs>
+                                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#2563eb" />
+                                  <stop offset="100%" stopColor="#38bdf8" />
+                                </linearGradient>
+                              </defs>
+
+                              {/* Ticks y Líneas de Cuadrícula Eje Y */}
+                              {ticks.map((t, idx) => {
+                                const fraction = 1 - (t / maxVal);
+                                const lineY = marginTop + fraction * plotHeight;
+                                return (
+                                  <g key={idx}>
+                                    <line
+                                      x1={marginLeft}
+                                      y1={lineY}
+                                      x2={marginLeft + plotWidth}
+                                      y2={lineY}
+                                      stroke="#e2e8f0"
+                                      strokeDasharray="3 3"
+                                    />
+                                    <text
+                                      x={marginLeft - 8}
+                                      y={lineY + 4}
+                                      textAnchor="end"
+                                      fontSize="10"
+                                      fontWeight="600"
+                                      fill="#64748b"
+                                    >
+                                      S/ {t >= 1000 ? `${(t / 1000).toFixed(1)}k` : t.toFixed(0)}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+
+                              {/* Barras verticales del Eje X */}
+                              {analyticsData.byMonth.map((m, i) => {
+                                const slotWidth = plotWidth / N;
+                                const barWidth = Math.min(slotWidth * 0.48, 38);
+                                const centerX = marginLeft + (i + 0.5) * slotWidth;
+                                const barX = centerX - barWidth / 2;
+                                const barHeight = (m.totalAmount / maxVal) * plotHeight;
+                                const barY = marginTop + plotHeight - barHeight;
+
+                                // Formato corto para etiqueta del mes (ej. "Abril 2026" -> "Abr 2026")
+                                const labelParts = m.label.split(' ');
+                                const shortLabel = labelParts.length === 2 ? `${labelParts[0].substring(0, 3)} ${labelParts[1]}` : m.label;
+
+                                return (
+                                  <g key={m.key}>
+                                    <rect
+                                      x={barX}
+                                      y={barY}
+                                      width={barWidth}
+                                      height={Math.max(barHeight, 3)}
+                                      rx="4"
+                                      ry="4"
+                                      fill="url(#barGradient)"
+                                      className="chart-bar-rect"
+                                    >
+                                      <title>{`${m.label}: S/ ${m.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2 })} (${m.count} facturas)`}</title>
+                                    </rect>
+
+                                    {/* Texto sobre la barra */}
+                                    {barHeight > 12 && (
+                                      <text
+                                        x={centerX}
+                                        y={barY - 5}
+                                        textAnchor="middle"
+                                        fontSize="9"
+                                        fontWeight="700"
+                                        fill="#0284c7"
+                                      >
+                                        S/ {m.totalAmount >= 1000 ? `${(m.totalAmount / 1000).toFixed(1)}k` : m.totalAmount.toFixed(0)}
+                                      </text>
+                                    )}
+
+                                    {/* Etiqueta del Eje X */}
+                                    <text
+                                      x={centerX}
+                                      y="212"
+                                      textAnchor="middle"
+                                      fontSize="10"
+                                      fontWeight="600"
+                                      fill="#475569"
+                                    >
+                                      {shortLabel}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </svg>
+                          </div>
+                        );
+                      })()}
                     </div>
+
+                    {/* Columna Derecha: Tabla de Evolución de Gastos por Mes */}
                     <div className="ranking-table-wrapper">
                       {analyticsData.byMonth.length === 0 ? (
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros de fecha disponibles.</p>
@@ -1460,41 +1578,6 @@ export default function AdminDashboard({ onLogout }) {
                             ))}
                           </tbody>
                         </table>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Top Comercios y Proveedores */}
-                  <div className="analytics-section-card">
-                    <div className="analytics-section-header">
-                      <h3 className="analytics-section-title">
-                        <span>🛍️</span> Top Comercios / Proveedores
-                      </h3>
-                      <span className="analytics-section-badge">Top {Math.min(analyticsData.byMerchant.length, 5)}</span>
-                    </div>
-                    <div className="bar-distribution-list">
-                      {analyticsData.byMerchant.length === 0 ? (
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay comercios registrados.</p>
-                      ) : (
-                        analyticsData.byMerchant.slice(0, 5).map((m, idx) => (
-                          <div key={m.merchant} className="bar-distribution-item">
-                            <div className="bar-distribution-info">
-                              <span className="bar-distribution-name">
-                                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>#{idx + 1}</span> {m.merchant}
-                              </span>
-                              <span className="bar-distribution-metrics">
-                                S/ {m.amount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                            <div className="progress-track">
-                              <div className="progress-fill" style={{ width: `${Math.min(m.percentage, 100)}%`, background: 'linear-gradient(90deg, #0284c7, #38bdf8)' }}></div>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                              <span>{m.count} facturas</span>
-                              <span>{m.percentage.toFixed(1)}% del total</span>
-                            </div>
-                          </div>
-                        ))
                       )}
                     </div>
                   </div>
