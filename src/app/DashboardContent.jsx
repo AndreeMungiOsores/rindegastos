@@ -29,6 +29,7 @@ export default function AdminDashboard({ onLogout }) {
   const [vendedorFilter, setVendedorFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
   const [aprobadoFilter, setAprobadoFilter] = useState('');
+  const [soloBuzon, setSoloBuzon] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Ordenamiento de Fecha
@@ -391,9 +392,11 @@ export default function AdminDashboard({ onLogout }) {
         }
       }
 
-      return matchesEmpresa && matchesEquipo && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange;
+      const matchesBuzon = soloBuzon ? (item.cr168_detalle || '').startsWith('[Factura Correo]') : true;
+
+      return matchesEmpresa && matchesEquipo && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange && matchesBuzon;
     });
-  }, [expenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
+  }, [expenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, soloBuzon, searchTerm, filterStartDate, filterEndDate]);
 
   // Ordenamiento de gastos basado en la columna de fecha activa (Gasto o Creación)
   const sortedExpenses = useMemo(() => {
@@ -1953,8 +1956,17 @@ export default function AdminDashboard({ onLogout }) {
                               </div>
                             </th>
                             <th>
-                              <div className="header-with-filter">
+                              <div className="header-with-filter" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.3rem' }}>
                                 <span className="header-label" style={{ color: '#0369a1' }}>Comercio</span>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '500', color: soloBuzon ? '#0369a1' : '#64748b', whiteSpace: 'nowrap' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={soloBuzon}
+                                    onChange={(e) => setSoloBuzon(e.target.checked)}
+                                    style={{ accentColor: '#0369a1', width: '12px', height: '12px', cursor: 'pointer' }}
+                                  />
+                                  Solo buzón proveedores
+                                </label>
                               </div>
                             </th>
                             <th>
@@ -2042,7 +2054,7 @@ export default function AdminDashboard({ onLogout }) {
                                   <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '500' }}>
                                     {item.cr168_vendedor || 'Sin Vendedor'}
                                   </td>
-                                  <td onClick={() => setActiveExpense({ ...item })} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                  <td onClick={() => setActiveExpense({ ...item })} style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
                                     <span>{item.cr168_nombredelcomercio || 'Sin Comercio'}</span>
                                     {(item.cr168_detalle || '').startsWith('[Factura Correo]') && (
                                       <span className="badge-buzon">📬 De buzón proveedores</span>
