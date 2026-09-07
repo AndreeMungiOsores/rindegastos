@@ -75,6 +75,72 @@ export async function getExpense(id) {
 }
 
 /**
+ * Crea un nuevo registro de reporte de gastos en Dataverse.
+ * @param {Object} expenseData - Datos del nuevo gasto
+ * @returns {Promise<Object>} El gasto creado con su ID en Dataverse
+ */
+export async function createExpense(expenseData) {
+  console.log('[DataverseClient] Creando nuevo registro de gasto en Dataverse...', expenseData);
+  const endpoint = 'cr168_reportedegastoses';
+  let token = await getAccessToken();
+  const url = `${DATAVERSE_BASE_URL}/${endpoint}`;
+
+  try {
+    const response = await axios.post(url, expenseData, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
+        'OData-MaxVersion': '4.0',
+        'OData-Version': '4.0',
+        'Prefer': 'return=representation'
+      }
+    });
+
+    let createdData = response.data || {};
+    let createdId = createdData.cr168_reportedegastosid;
+
+    if (!createdId && response.headers['odata-entityid']) {
+      const match = response.headers['odata-entityid'].match(/\(([^)]+)\)/);
+      if (match) createdId = match[1];
+    }
+
+    return {
+      ...createdData,
+      id: createdId || createdData.cr168_reportedegastosid
+    };
+  } catch (error) {
+    if (error.response && error.response.status === 401) {
+      console.warn('[DataverseClient] Error 401 en createExpense. Invalidando caché y reintentando...');
+      invalidateCache();
+      token = await getAccessToken();
+      const retryResponse = await axios.post(url, expenseData, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+          'Prefer': 'return=representation'
+        }
+      });
+      let createdData = retryResponse.data || {};
+      let createdId = createdData.cr168_reportedegastosid;
+      if (!createdId && retryResponse.headers['odata-entityid']) {
+        const match = retryResponse.headers['odata-entityid'].match(/\(([^)]+)\)/);
+        if (match) createdId = match[1];
+      }
+      return {
+        ...createdData,
+        id: createdId || createdData.cr168_reportedegastosid
+      };
+    }
+    console.error('[DataverseClient] Error al crear gasto en Dataverse:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+/**
  * Actualiza un registro de reporte de gastos específico por su ID
  */
 export async function updateExpense(id, updateData) {

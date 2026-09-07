@@ -83,6 +83,10 @@ export default function AdminDashboard({ onLogout }) {
   const [newLoanMesDescuento, setNewLoanMesDescuento] = useState('');
   const [newLoanEstado, setNewLoanEstado] = useState('Pendiente');
 
+  // Estado para la sincronización diaria de facturas desde el buzón de correo
+  const [isSyncingInvoices, setIsSyncingInvoices] = useState(false);
+  const [syncBanner, setSyncBanner] = useState(null);
+
   // Filtro de Rango de Fechas (Calendario Visual)
   const [filterStartDate, setFilterStartDate] = useState(null); // 'YYYY-MM-DD'
   const [filterEndDate, setFilterEndDate] = useState(null); // 'YYYY-MM-DD'
@@ -262,6 +266,44 @@ export default function AdminDashboard({ onLogout }) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Función para sincronizar facturas PDF desde el buzón proveedores.pe@blisscorp.lat
+  const handleSyncInvoices = async () => {
+    if (isSyncingInvoices) return;
+    setIsSyncingInvoices(true);
+    setSyncBanner({ type: 'info', text: 'Buscando facturas en .PDF en proveedores.pe@blisscorp.lat...' });
+
+    try {
+      const res = await fetch('/api/cron/sync-invoices', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.details || data.error || 'Error en la sincronización');
+      }
+
+      if (data.processedCount > 0) {
+        setSyncBanner({
+          type: 'success',
+          text: `¡Éxito! Se ingresaron ${data.processedCount} nueva(s) factura(s) a nombre de Adrián Murakami.`
+        });
+        await fetchExpenses();
+      } else {
+        setSyncBanner({
+          type: 'info',
+          text: 'No hay facturas nuevas en formato .PDF en el buzón de correo.'
+        });
+      }
+    } catch (err) {
+      console.error('[Dashboard] Error en handleSyncInvoices:', err);
+      setSyncBanner({
+        type: 'error',
+        text: `Error al sincronizar buzón: ${err.message}`
+      });
+    } finally {
+      setIsSyncingInvoices(false);
+      setTimeout(() => setSyncBanner(null), 8000);
     }
   };
 
@@ -1296,43 +1338,62 @@ export default function AdminDashboard({ onLogout }) {
                   </button>
                 </div>
 
-                {rindegastosSubTab === 'estadisticas' && (
-                  <div
-                    className="subtabs-right-filter"
-                    onClick={() => {
-                      if (topVendorSelectRef.current) {
-                        if (typeof topVendorSelectRef.current.showPicker === 'function') {
-                          topVendorSelectRef.current.showPicker();
-                        } else {
-                          topVendorSelectRef.current.focus();
-                        }
-                      }
-                    }}
+                <div className="subtabs-right-group">
+                  <button
+                    type="button"
+                    className="sync-invoices-btn"
+                    onClick={handleSyncInvoices}
+                    disabled={isSyncingInvoices}
+                    title="Sincronizar facturas .PDF del buzón proveedores.pe@blisscorp.lat a nombre de Adrián Murakami"
                   >
-                    <label htmlFor="topVendorFilterSelect" className="top-filter-label">
-                      <span>👤</span> Vendedor:
-                    </label>
-                    <select
-                      id="topVendorFilterSelect"
-                      ref={topVendorSelectRef}
-                      className="top-filter-select"
-                      value={vendedorFilter}
-                      onChange={(e) => setVendedorFilter(e.target.value)}
-                      title="Filtrar por Vendedor / Colaborador"
+                    <span className={isSyncingInvoices ? 'spin-icon' : ''}>🔄</span>
+                    <span>{isSyncingInvoices ? 'Sincronizando...' : 'Sincronizar Facturas (Buzón)'}</span>
+                  </button>
+
+                  {rindegastosSubTab === 'estadisticas' && (
+                    <div
+                      className="subtabs-right-filter"
+                      onClick={() => {
+                        if (topVendorSelectRef.current) {
+                          if (typeof topVendorSelectRef.current.showPicker === 'function') {
+                            topVendorSelectRef.current.showPicker();
+                          } else {
+                            topVendorSelectRef.current.focus();
+                          }
+                        }
+                      }}
                     >
-                      <option value="">(Todos los Vendedores)</option>
-                      {vendorsList.map((vendor) => (
-                        <option key={vendor} value={vendor}>
-                          {vendor}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                      <label htmlFor="topVendorFilterSelect" className="top-filter-label">
+                        <span>👤</span> Vendedor:
+                      </label>
+                      <select
+                        id="topVendorFilterSelect"
+                        ref={topVendorSelectRef}
+                        className="top-filter-select"
+                        value={vendedorFilter}
+                        onChange={(e) => setVendedorFilter(e.target.value)}
+                        title="Filtrar por Vendedor / Colaborador"
+                      >
+                        <option value="">(Todos los Vendedores)</option>
+                        {vendorsList.map((vendor) => (
+                          <option key={vendor} value={vendor}>
+                            {vendor}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
             </nav>
 
             <div className="dashboard-container">
+              {syncBanner && (
+                <div className={`sync-banner sync-banner-${syncBanner.type}`} role="status">
+                  <span>{syncBanner.type === 'success' ? '✅' : syncBanner.type === 'error' ? '❌' : 'ℹ️'}</span>
+                  <span>{syncBanner.text}</span>
+                </div>
+              )}
 
             {rindegastosSubTab === 'estadisticas' ? (
               <div className="analytics-dashboard-container">
