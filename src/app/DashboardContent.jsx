@@ -1388,8 +1388,8 @@ export default function AdminDashboard({ onLogout }) {
                             <svg viewBox="0 0 520 220" preserveAspectRatio="xMidYMid meet">
                               <defs>
                                 <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#2563eb" />
-                                  <stop offset="100%" stopColor="#38bdf8" />
+                                  <stop offset="0%" stopColor="#132840" />
+                                  <stop offset="100%" stopColor="#a69bfc" />
                                 </linearGradient>
                               </defs>
 
