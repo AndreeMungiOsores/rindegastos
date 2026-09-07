@@ -1449,15 +1449,15 @@ export default function AdminDashboard({ onLogout }) {
                                       <title>{`${m.label}: S/ ${m.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2 })} (${m.count} facturas)`}</title>
                                     </rect>
 
-                                    {/* Texto sobre la barra */}
-                                    {barHeight > 12 && (
+                                    {/* Texto sobre la barra (Muestra el monto para todas las barras con gasto > 0) */}
+                                    {m.totalAmount > 0 && (
                                       <text
                                         x={centerX}
                                         y={barY - 5}
                                         textAnchor="middle"
                                         fontSize="9"
                                         fontWeight="700"
-                                        fill="#0284c7"
+                                        fill="#132840"
                                       >
                                         S/ {m.totalAmount >= 1000 ? `${(m.totalAmount / 1000).toFixed(1)}k` : m.totalAmount.toFixed(0)}
                                       </text>
