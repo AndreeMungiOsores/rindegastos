@@ -151,26 +151,26 @@ body {
   box-shadow: var(--shadow-md);
 }
 
-.kpi-card::after {
+.kpi-card::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 4px;
-  background: var(--accent-color);
+  width: 4px;
+  height: 100%;
+  background: var(--bliss-orange);
 }
 
-.kpi-card.approved::after {
+.kpi-card.approved::before {
   background: var(--success-color);
 }
 
-.kpi-card.pending::after {
-  background: var(--warning-color);
+.kpi-card.reimbursed::before {
+  background: #8b5cf6;
 }
 
-.kpi-card.reimbursed::after {
-  background: #7c3aed;
+.kpi-card.pending::before {
+  background: #f59e0b;
 }
 
 .kpi-label {
