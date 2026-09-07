@@ -63,7 +63,7 @@ export default function AdminDashboard({ onLogout }) {
   // Módulos y Navegación del Panel Lateral
   const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores'
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // Plataforma de Préstamos MVP
   const [loans, setLoans] = useState([]);
