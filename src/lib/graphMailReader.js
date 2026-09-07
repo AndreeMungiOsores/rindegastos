@@ -37,6 +37,7 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
     console.log(`[GraphMailReader] Se encontraron ${messages.length} correos con adjuntos en ${targetMailbox}.`);
 
     const filteredInvoices = [];
+    const seenThreadKeys = new Set();
 
     for (const msg of messages) {
       const attachments = msg.attachments || [];
@@ -50,16 +51,37 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
 
       if (pdfAttachments.length > 0) {
         const primaryPdf = pdfAttachments[0];
+        const pdfFileName = primaryPdf.name || `Factura_${Date.now()}.pdf`;
+        const pdfNameKey = pdfFileName.toLowerCase().trim();
+
+        // Normalizar asunto para identificar el hilo si conversationId no estuviera disponible
+        const normalizedSubject = (msg.subject || '')
+          .replace(/^(re|fwd|rv|fw):\s*/i, '')
+          .trim()
+          .toLowerCase();
+
+        // Identificador único del hilo + nombre de PDF
+        const threadId = msg.conversationId || normalizedSubject;
+        const threadKey = `${threadId}::${pdfNameKey}`;
+
+        // Al estar ordenados por receivedDateTime desc, la primera coincidencia es el más reciente.
+        if (seenThreadKeys.has(threadKey)) {
+          console.log(`[GraphMailReader] Omitiendo versión anterior en el mismo hilo: "${msg.subject}" (PDF: ${pdfFileName})`);
+          continue;
+        }
+
+        seenThreadKeys.add(threadKey);
         const pdfBuffer = primaryPdf.contentBytes ? Buffer.from(primaryPdf.contentBytes, 'base64') : null;
 
         filteredInvoices.push({
           messageId: msg.id,
+          conversationId: msg.conversationId || null,
           subject: msg.subject || 'Sin Asunto',
           senderName: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || 'Proveedor Desconocido',
           senderEmail: msg.from?.emailAddress?.address || '',
           receivedDateTime: msg.receivedDateTime || new Date().toISOString(),
           bodyPreview: msg.bodyPreview || '',
-          pdfFileName: primaryPdf.name || `Factura_${Date.now()}.pdf`,
+          pdfFileName: pdfFileName,
           pdfBuffer: pdfBuffer,
           pdfBase64: primaryPdf.contentBytes || null
         });

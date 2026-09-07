@@ -18,8 +18,15 @@ async function handleInvoiceSync() {
   try {
     // 1. Obtener gastos existentes en Dataverse para evitar duplicar facturas ya registradas
     const existingExpenses = await getExpenses();
+    
+    // Normalizar asuntos (quitar prefijos Re:, Fwd:) y guardar nombres de PDF existentes
+    const normalizeSubject = (str) => (str || '').replace(/^(re|fwd|rv|fw):\s*/i, '').trim().toLowerCase();
+    
     const registeredSubjects = new Set(
-      existingExpenses.map(e => (e.cr168_detalle || '').toLowerCase()).filter(Boolean)
+      existingExpenses.map(e => normalizeSubject(e.cr168_detalle)).filter(Boolean)
+    );
+    const registeredPdfs = new Set(
+      existingExpenses.map(e => (e.cr168_voucher_desembolso_name || '').toLowerCase().trim()).filter(Boolean)
     );
 
     // 2. Consultar correos con adjuntos .PDF desde el buzón compartido (incluyendo leídos y no leídos)
@@ -42,12 +49,15 @@ async function handleInvoiceSync() {
     // 3. Procesar cada correo e ingresarlo en Dataverse asignado a Adrián Marcel Murakami Fung
     for (const item of invoiceEmails) {
       try {
-        const detailKey = `[factura correo] ${item.subject}`.toLowerCase();
-        
-        // Verificar si el correo ya fue registrado previamente en Dataverse
-        const isDuplicate = Array.from(registeredSubjects).some(detail => detail.includes(item.subject.toLowerCase()));
-        if (isDuplicate) {
-          console.log(`[InvoiceCronSync] Omitiendo factura duplicada: "${item.subject}"`);
+        const itemNormSubject = normalizeSubject(item.subject);
+        const itemPdfName = (item.pdfFileName || '').toLowerCase().trim();
+
+        // Verificar si el PDF o el asunto del hilo ya fue registrado previamente en Dataverse
+        const isDuplicatePdf = itemPdfName && registeredPdfs.has(itemPdfName);
+        const isDuplicateSubject = itemNormSubject && Array.from(registeredSubjects).some(subj => subj && (subj.includes(itemNormSubject) || itemNormSubject.includes(subj)));
+
+        if (isDuplicatePdf || isDuplicateSubject) {
+          console.log(`[InvoiceCronSync] Omitiendo factura duplicada en Dataverse: "${item.subject}" (PDF: ${item.pdfFileName})`);
           skippedInvoices.push(item.subject);
           continue;
         }
