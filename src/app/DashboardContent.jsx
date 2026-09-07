@@ -2042,8 +2042,11 @@ export default function AdminDashboard({ onLogout }) {
                                   <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '500' }}>
                                     {item.cr168_vendedor || 'Sin Vendedor'}
                                   </td>
-                                  <td onClick={() => setActiveExpense({ ...item })}>
-                                    {item.cr168_nombredelcomercio || 'Sin Comercio'}
+                                  <td onClick={() => setActiveExpense({ ...item })} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                    <span>{item.cr168_nombredelcomercio || 'Sin Comercio'}</span>
+                                    {(item.cr168_detalle || '').startsWith('[Factura Correo]') && (
+                                      <span className="badge-buzon">📬 De buzón proveedores</span>
+                                    )}
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })}>
                                     <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155' }}>
