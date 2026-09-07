@@ -1624,7 +1624,7 @@ export default function AdminDashboard({ onLogout }) {
                   <div className="analytics-section-card">
                     <div className="analytics-section-header">
                       <h3 className="analytics-section-title">
-                        <span>🏆</span> Ranking por Consumidor (Top Vendedores)
+                        <span>🏆</span> Ranking por Consumidor
                       </h3>
                       <span className="analytics-section-badge">Top {Math.min(analyticsData.byVendor.length, 7)}</span>
                     </div>
