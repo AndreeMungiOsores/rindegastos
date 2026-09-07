@@ -21,7 +21,7 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
     ? '$filter=hasAttachments eq true' 
     : '$filter=isRead eq false and hasAttachments eq true';
 
-  const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(targetMailbox)}/messages?${filterQuery}&$expand=attachments&$top=50&$orderby=receivedDateTime desc`;
+  const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(targetMailbox)}/messages?${filterQuery}&$expand=attachments&$top=50`;
 
   try {
     const response = await axios.get(url, {
@@ -31,8 +31,10 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
       }
     });
 
-    const messages = response.data.value || [];
-    console.log(`[GraphMailReader] Se encontraron ${messages.length} correos no leídos con adjuntos en ${targetMailbox}.`);
+    const messages = (response.data.value || []).sort(
+      (a, b) => new Date(b.receivedDateTime || 0) - new Date(a.receivedDateTime || 0)
+    );
+    console.log(`[GraphMailReader] Se encontraron ${messages.length} correos con adjuntos en ${targetMailbox}.`);
 
     const filteredInvoices = [];
 
