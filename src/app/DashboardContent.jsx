@@ -721,6 +721,46 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
+  // Guardar SOLO los campos de Control de Finanzas (aprobado + estado).
+  // Handler separado para evitar que campos vacíos de detalle rechacen el PATCH en Dataverse.
+  const handleSaveFinanzas = async () => {
+    if (!activeExpense) return;
+
+    const isDesembolsado = parseInt(activeExpense.cr168_estado, 10) === 553050001;
+    const hasExistingVoucher = !!activeExpense.cr168_voucher_desembolso;
+
+    if (isDesembolsado && !hasExistingVoucher && (!drawerVoucherFile || drawerVoucherFile === 'replace_request')) {
+      alert('Por favor, adjunta el comprobante (voucher) de desembolso para poder guardar con el estado Desembolsado.');
+      return;
+    }
+    if (drawerVoucherFile === 'replace_request') {
+      alert('Por favor, selecciona un archivo de comprobante nuevo o cancela el reemplazo.');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const formData = new FormData();
+      formData.append('cr168_aprobado', activeExpense.cr168_aprobado);
+      formData.append('cr168_estado', parseInt(activeExpense.cr168_estado, 10));
+      if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
+        formData.append('voucher', drawerVoucherFile);
+      }
+      const res = await fetch(`/api/gastos?id=${activeExpense.cr168_reportedegastosid}`, {
+        method: 'PATCH',
+        body: formData
+      });
+      if (!res.ok) throw new Error('Error al actualizar en Dataverse.');
+      alert('Control de finanzas actualizado con éxito.');
+      setActiveExpense(null);
+      await fetchExpenses();
+    } catch (err) {
+      alert(`Error al guardar control de finanzas: ${err.message}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   // Helper para generar el libro de trabajo Excel en memoria
   const generateExcelWorkbook = async () => {
     const ExcelJS = await import('exceljs');
@@ -2469,6 +2509,17 @@ export default function AdminDashboard({ onLogout }) {
                         )}
                       </div>
                     )}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleSaveFinanzas}
+                        disabled={isUpdating}
+                        style={{ fontSize: '0.82rem', padding: '0.4rem 1rem' }}
+                      >
+                        {isUpdating ? 'Guardando...' : '💾 Guardar Control de Finanzas'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
