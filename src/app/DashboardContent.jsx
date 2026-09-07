@@ -1273,62 +1273,66 @@ export default function AdminDashboard({ onLogout }) {
       {/* Main Content Area */}
       <main className="main-content-wrapper">
         {activeModule === 'rindegastos' && (
-          <div className="dashboard-container">
+          <>
             {/* Navegación por Subpestañas (Tabla de Comprobantes vs Estadísticas Financieras) */}
             <nav className="subtabs-navigation">
-              <div className="subtabs-left-group">
-                <button
-                  type="button"
-                  className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
-                  onClick={() => setRindegastosSubTab('tabla')}
-                >
-                  <span>📋</span>
-                  <span>Tabla de Comprobantes</span>
-                </button>
-                <button
-                  type="button"
-                  className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
-                  onClick={() => setRindegastosSubTab('estadisticas')}
-                >
-                  <span>📈</span>
-                  <span>Estadísticas Financieras</span>
-                </button>
-              </div>
-
-              {rindegastosSubTab === 'estadisticas' && (
-                <div
-                  className="subtabs-right-filter"
-                  onClick={() => {
-                    if (topVendorSelectRef.current) {
-                      if (typeof topVendorSelectRef.current.showPicker === 'function') {
-                        topVendorSelectRef.current.showPicker();
-                      } else {
-                        topVendorSelectRef.current.focus();
-                      }
-                    }
-                  }}
-                >
-                  <label htmlFor="topVendorFilterSelect" className="top-filter-label">
-                    <span>👤</span> Vendedor:
-                  </label>
-                  <select
-                    id="topVendorFilterSelect"
-                    ref={topVendorSelectRef}
-                    className="top-filter-select"
-                    value={vendedorFilter}
-                    onChange={(e) => setVendedorFilter(e.target.value)}
-                    title="Filtrar por Vendedor / Colaborador"
+              <div className="subtabs-inner">
+                <div className="subtabs-left-group">
+                  <button
+                    type="button"
+                    className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
+                    onClick={() => setRindegastosSubTab('tabla')}
                   >
-                    <option value="">(Todos los Vendedores)</option>
-                    {vendorsList.map((vendor) => (
-                      <option key={vendor} value={vendor}>
-                        {vendor}
-                      </option>
-                    ))}
-                  </select>
+                    <span>📋</span>
+                    <span>Tabla de Comprobantes</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
+                    onClick={() => setRindegastosSubTab('estadisticas')}
+                  >
+                    <span>📈</span>
+                    <span>Estadísticas Financieras</span>
+                  </button>
                 </div>
-              )}
+
+                {rindegastosSubTab === 'estadisticas' && (
+                  <div
+                    className="subtabs-right-filter"
+                    onClick={() => {
+                      if (topVendorSelectRef.current) {
+                        if (typeof topVendorSelectRef.current.showPicker === 'function') {
+                          topVendorSelectRef.current.showPicker();
+                        } else {
+                          topVendorSelectRef.current.focus();
+                        }
+                      }
+                    }}
+                  >
+                    <label htmlFor="topVendorFilterSelect" className="top-filter-label">
+                      <span>👤</span> Vendedor:
+                    </label>
+                    <select
+                      id="topVendorFilterSelect"
+                      ref={topVendorSelectRef}
+                      className="top-filter-select"
+                      value={vendedorFilter}
+                      onChange={(e) => setVendedorFilter(e.target.value)}
+                      title="Filtrar por Vendedor / Colaborador"
+                    >
+                      <option value="">(Todos los Vendedores)</option>
+                      {vendorsList.map((vendor) => (
+                        <option key={vendor} value={vendor}>
+                          {vendor}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             </nav>
+
+            <div className="dashboard-container">
 
             {rindegastosSubTab === 'estadisticas' ? (
               <div className="analytics-dashboard-container">
@@ -2606,7 +2610,8 @@ export default function AdminDashboard({ onLogout }) {
         </div>
       )}
           </div>
-        )}
+        </>
+      )}
 
         {activeModule === 'prestamos' && (
           <div className="loans-module-container">
