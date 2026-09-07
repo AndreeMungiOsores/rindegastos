@@ -5,16 +5,23 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const DEFAULT_SHARED_MAILBOX = 'proveedores.pe@blisscorp.lat';
 
 /**
- * Obtiene los correos no leídos del buzón compartido 'proveedores.pe@blisscorp.lat'
- * que contengan al menos un archivo adjunto en formato .PDF.
+ * Obtiene los correos con adjuntos en formato .PDF del buzón compartido 'proveedores.pe@blisscorp.lat'.
+ * Por defecto incluye correos leídos y no leídos para no omitir correos abiertos en Outlook.
+ * @param {Object} [options]
+ * @param {boolean} [options.includeRead=true] - Si es true, incluye correos leídos y no leídos
  * @returns {Promise<Array>} Lista de correos filtrados con metadatos y adjuntos PDF
  */
-export async function fetchUnreadInvoiceEmails() {
+export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
   const targetMailbox = process.env.MICROSOFT_SHARED_MAILBOX || DEFAULT_SHARED_MAILBOX;
-  console.log(`[GraphMailReader] Solicitando correos no leídos con adjuntos de ${targetMailbox}...`);
+  console.log(`[GraphMailReader] Solicitando correos con adjuntos PDF de ${targetMailbox} (includeRead: ${includeRead})...`);
   
   const token = await getAccessToken('https://graph.microsoft.com/.default');
-  const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(targetMailbox)}/messages?$filter=isRead eq false and hasAttachments eq true&$expand=attachments&$top=50`;
+  
+  const filterQuery = includeRead 
+    ? '$filter=hasAttachments eq true' 
+    : '$filter=isRead eq false and hasAttachments eq true';
+
+  const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(targetMailbox)}/messages?${filterQuery}&$expand=attachments&$top=50&$orderby=receivedDateTime desc`;
 
   try {
     const response = await axios.get(url, {

@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { fetchUnreadInvoiceEmails, markEmailAsRead } from '../../../../lib/graphMailReader.js';
-import { createExpense, uploadFileToExpense } from '../../../../lib/dataverseClient.js';
+import { createExpense, getExpenses, uploadFileToExpense } from '../../../../lib/dataverseClient.js';
 
 export async function GET() {
   return await handleInvoiceSync();
@@ -16,31 +16,56 @@ async function handleInvoiceSync() {
   console.log('[InvoiceCronSync] Iniciando proceso diario de sincronización de facturas desde proveedores.pe@blisscorp.lat...');
 
   try {
-    // 1. Consultar correos no leídos con adjuntos .PDF desde el buzón compartido
-    const invoiceEmails = await fetchUnreadInvoiceEmails();
+    // 1. Obtener gastos existentes en Dataverse para evitar duplicar facturas ya registradas
+    const existingExpenses = await getExpenses();
+    const registeredSubjects = new Set(
+      existingExpenses.map(e => (e.cr168_detalle || '').toLowerCase()).filter(Boolean)
+    );
+
+    // 2. Consultar correos con adjuntos .PDF desde el buzón compartido (incluyendo leídos y no leídos)
+    const invoiceEmails = await fetchUnreadInvoiceEmails({ includeRead: true });
 
     if (invoiceEmails.length === 0) {
-      console.log('[InvoiceCronSync] No se encontraron nuevas facturas en PDF pendientes por procesar.');
+      console.log('[InvoiceCronSync] No se encontraron facturas en PDF en el buzón.');
       return NextResponse.json({
         success: true,
-        message: 'No hay facturas nuevas en formato PDF para procesar.',
+        message: 'No hay facturas en formato PDF para procesar.',
         processedCount: 0,
         executionTimeMs: Date.now() - startTime
       });
     }
 
     const processedInvoices = [];
+    const skippedInvoices = [];
     const errors = [];
 
-    // 2. Procesar cada correo e ingresarlo en Dataverse asignado a Adrián Murakami
+    // 3. Procesar cada correo e ingresarlo en Dataverse asignado a Adrián Marcel Murakami Fung
     for (const item of invoiceEmails) {
       try {
-        console.log(`[InvoiceCronSync] Procesando correo "${item.subject}" de ${item.senderName}...`);
+        const detailKey = `[factura correo] ${item.subject}`.toLowerCase();
+        
+        // Verificar si el correo ya fue registrado previamente en Dataverse
+        const isDuplicate = Array.from(registeredSubjects).some(detail => detail.includes(item.subject.toLowerCase()));
+        if (isDuplicate) {
+          console.log(`[InvoiceCronSync] Omitiendo factura duplicada: "${item.subject}"`);
+          skippedInvoices.push(item.subject);
+          continue;
+        }
+
+        console.log(`[InvoiceCronSync] Procesando factura correo "${item.subject}" de ${item.senderName}...`);
+
+        // Extraer un nombre de comercio limpio a partir del remitente o asunto
+        let cleanMerchant = item.senderName || 'Proveedor General';
+        if (item.senderEmail && item.senderEmail.includes('cabify')) {
+          cleanMerchant = 'Cabify / Facturación Logistics';
+        } else if (cleanMerchant.toLowerCase().includes('facturacion logistics')) {
+          cleanMerchant = 'Facturación Logistics';
+        }
 
         const newExpensePayload = {
-          cr168_vendedor: 'Adrián Murakami',
-          cr168_empresa: 'BlissCorp',
-          cr168_nombredelcomercio: item.senderName || 'Proveedor General',
+          cr168_vendedor: 'Adrián Marcel Murakami Fung',
+          cr168_empresa: 'BLISSCORP S.A.C',
+          cr168_nombredelcomercio: cleanMerchant,
           cr168_fechadelgasto: item.receivedDateTime,
           cr168_detalle: `[Factura Correo] ${item.subject}\nRemitente: ${item.senderEmail}\n${item.bodyPreview || ''}`.substring(0, 2000),
           cr168_aprobado: false,
@@ -63,8 +88,11 @@ async function handleInvoiceSync() {
           console.log(`[InvoiceCronSync] Archivo PDF "${item.pdfFileName}" adjuntado al gasto ${expenseId}.`);
         }
 
-        // Marcar correo como leído en Microsoft Graph para no duplicarlo
+        // Marcar correo como leído en Microsoft Graph
         await markEmailAsRead(item.messageId);
+
+        // Agregar al set local para evitar duplicados en la misma iteración
+        registeredSubjects.add(detailKey);
 
         processedInvoices.push({
           expenseId,
