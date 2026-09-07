@@ -174,12 +174,13 @@ body {
 }
 
 .kpi-label {
+  font-family: var(--font-title);
   font-size: 0.78rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-secondary);
   margin-bottom: 0.5rem;
-  font-weight: 600;
 }
 
 .kpi-value {
@@ -1856,11 +1857,12 @@ body {
 }
 
 .analytics-kpi-label {
-  font-size: 0.8rem;
+  font-family: var(--font-title);
+  font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
   color: var(--text-secondary);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .analytics-kpi-value {
