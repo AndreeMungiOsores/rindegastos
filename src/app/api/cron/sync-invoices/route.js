@@ -116,7 +116,8 @@ async function handleInvoiceSync() {
         await markEmailAsRead(item.messageId);
 
         // Agregar al set local para evitar duplicados en la misma iteración
-        registeredSubjects.add(detailKey);
+        registeredSubjects.add(itemNormSubject);
+        registeredPdfs.add(itemPdfName);
 
         processedInvoices.push({
           expenseId,
