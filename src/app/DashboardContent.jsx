@@ -2457,10 +2457,14 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                 </div>
 
-                {/* Columna de Imagen */}
+                {/* Columna de Comprobante / Imagen / PDF */}
                 <div className="image-column">
                   <span className="info-label" style={{ alignSelf: 'flex-start', fontWeight: 'bold' }}>
-                    Foto del Comprobante (Cargada desde Dataverse)
+                    {activeExpense.cr168_imagendelcomprobante_url
+                      ? 'Foto del Comprobante (Cargada desde Dataverse)'
+                      : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
+                      ? 'Comprobante PDF (Adjunto del Buzón)'
+                      : 'Foto del Comprobante'}
                   </span>
                   <div 
                     className="comprobante-preview-box"
@@ -2495,6 +2499,25 @@ export default function AdminDashboard({ onLogout }) {
                           onClick={() => setIsZoomed(!isZoomed)}
                         />
                       </>
+                    ) : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]'))) ? (
+                      <>
+                        <button
+                          type="button"
+                          className="btn-expand-floating"
+                          title="Ver PDF en pantalla completa (nueva pestaña)"
+                          onClick={() => {
+                            window.open(`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}`);
+                          }}
+                        >
+                          ↗
+                        </button>
+                        <iframe
+                          src={`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}`}
+                          title="Previsualización PDF Comprobante"
+                          className="pdf-preview-iframe"
+                          style={{ width: '100%', height: '100%', border: 'none', minHeight: '340px', borderRadius: '12px' }}
+                        />
+                      </>
                     ) : (
                       <div className="no-image-text">
                         <span>📷</span>
@@ -2503,7 +2526,11 @@ export default function AdminDashboard({ onLogout }) {
                     )}
                   </div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
-                    Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en <strong>↗</strong> para ver en pantalla completa.
+                    {activeExpense.cr168_imagendelcomprobante_url
+                      ? 'Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en ↗ para ver en pantalla completa.'
+                      : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
+                      ? 'Previsualizando documento PDF adjunto del buzón. Haz clic en ↗ para abrir en nueva pestaña.'
+                      : ''}
                   </span>
 
                   {/* Voucher de Propina (Cargado desde Dataverse) */}
