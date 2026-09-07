@@ -323,6 +323,32 @@ export default function AdminDashboard({ onLogout }) {
   useEffect(() => {
     fetchExpenses();
     fetchTokenStatus();
+
+    // Auto-sync del buzón: ejecutar una vez por día en background al montar la app.
+    // Se guarda la fecha de último sync en localStorage para no repetir en el mismo día.
+    const today = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    const lastBuzonSync = localStorage.getItem('lastBuzonSyncDate');
+    if (lastBuzonSync !== today) {
+      // Ejecutar en background sin bloquear la UI
+      fetch('/api/cron/sync-invoices', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            localStorage.setItem('lastBuzonSyncDate', today);
+            if (data.processedCount > 0) {
+              setSyncBanner({
+                type: 'success',
+                text: `📬 Sync automático: ${data.processedCount} nueva(s) factura(s) del buzón ingresadas.`
+              });
+              fetchExpenses();
+              setTimeout(() => setSyncBanner(null), 10000);
+            }
+          }
+        })
+        .catch(err => {
+          console.warn('[AutoBuzonSync] Error en sync automático diario:', err.message);
+        });
+    }
   }, []);
 
   // Lista única de equipos/áreas para el selector de filtros
