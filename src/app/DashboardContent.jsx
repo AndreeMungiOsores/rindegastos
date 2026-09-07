@@ -1125,7 +1125,7 @@ export default function AdminDashboard({ onLogout }) {
   // Estado del banner de alerta de hoy
   const [hideTodayAlert, setHideTodayAlert] = useState(false);
 
-  const renderCalendarCard = () => {
+  const renderCalendarPopover = () => {
     const monthNames = [
       'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
       'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
