@@ -1,0 +1,697 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integración Portal de Gastos BlissCorp ➔ ERP (Niuxpro)</title>
+  <style>
+    :root {
+      --primary: #132840;
+      --primary-light: #1e3a5f;
+      --accent: #e4652e;
+      --accent-soft: rgba(228, 101, 46, 0.12);
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --border: #e2e8f0;
+      --success: #16a34a;
+      --code-bg: #0f172a;
+      --code-text: #38bdf8;
+      --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg);
+      color: var(--text-main);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Progress Bar */
+    .progress-bar-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 5px;
+      background: #e2e8f0;
+      z-index: 100;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Header */
+    header.deck-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 2rem;
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      height: 60px;
+    }
+
+    .brand-title {
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .brand-title span.tag {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.15rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .deck-counter {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    /* Main Slides Container */
+    main.deck-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 2rem;
+    }
+
+    .slide {
+      position: absolute;
+      width: 100%;
+      max-width: 1080px;
+      height: calc(100% - 1rem);
+      max-height: 640px;
+      background: var(--card-bg);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06);
+      padding: 2.5rem 3rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      opacity: 0;
+      transform: translateY(20px);
+      pointer-events: none;
+      transition: opacity 0.35s ease, transform 0.35s ease;
+      overflow-y: auto;
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    /* Slide Header */
+    .slide-header {
+      margin-bottom: 1.5rem;
+    }
+
+    .slide-eyebrow {
+      font-size: 0.8rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+    }
+
+    .slide-title {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--primary);
+      line-height: 1.25;
+    }
+
+    .slide-subtitle {
+      font-size: 1rem;
+      color: var(--text-muted);
+      margin-top: 0.35rem;
+    }
+
+    /* Slide Body Components */
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 1.25rem;
+    }
+
+    /* Layout Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.1rem;
+    }
+
+    .card {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .card-primary {
+      background: rgba(19, 40, 64, 0.03);
+      border-left: 4px solid var(--primary);
+    }
+
+    .card-accent {
+      background: rgba(228, 101, 46, 0.04);
+      border-left: 4px solid var(--accent);
+    }
+
+    .card-success {
+      background: rgba(22, 163, 74, 0.04);
+      border-left: 4px solid var(--success);
+    }
+
+    .card h4 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .card p, .card ul {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .card ul {
+      list-style-type: none;
+      padding-left: 0;
+    }
+
+    .card ul li {
+      margin-bottom: 0.4rem;
+      position: relative;
+      padding-left: 1.1rem;
+    }
+
+    .card ul li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    /* Diagram visual */
+    .flow-diagram {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f1f5f9;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 0.5rem 0;
+      border: 1px solid var(--border);
+    }
+
+    .flow-node {
+      background: #ffffff;
+      border: 2px solid var(--primary);
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      width: 28%;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .flow-node strong {
+      display: block;
+      color: var(--primary);
+      font-size: 0.92rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .flow-node small {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .flow-arrow {
+      color: var(--accent);
+      font-size: 1.4rem;
+      font-weight: bold;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .flow-arrow span {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-top: 0.2rem;
+    }
+
+    /* Code Block */
+    pre.code-box {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 1rem 1.25rem;
+      border-radius: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      overflow-x: auto;
+      border: 1px solid #1e293b;
+    }
+
+    /* Highlight badge */
+    .pill {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: #e2e8f0;
+      color: var(--primary);
+    }
+
+    .pill-green {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    /* Footer Controls */
+    footer.deck-footer {
+      height: 64px;
+      background: #ffffff;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 2rem;
+    }
+
+    .footer-hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .btn-nav {
+      background: var(--primary);
+      color: #ffffff;
+      border: none;
+      padding: 0.55rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: background 0.2s ease;
+    }
+
+    .btn-nav:hover {
+      background: var(--primary-light);
+    }
+
+    .btn-nav:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-nav.accent {
+      background: var(--accent);
+    }
+
+    .btn-nav.accent:hover {
+      background: #cf531d;
+    }
+
+    @media (max-width: 800px) {
+      .slide {
+        padding: 1.5rem;
+      }
+      .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+      }
+      .flow-diagram {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .flow-node {
+        width: 100%;
+      }
+      .flow-arrow {
+        transform: rotate(90deg);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Barra de progreso -->
+  <div class="progress-bar-container" aria-hidden="true">
+    <div class="progress-bar-fill" id="progressBar"></div>
+  </div>
+
+  <!-- Cabecera -->
+  <header class="deck-header">
+    <div class="brand-title">
+      BLISSCORP <span class="tag">Integración ERP</span>
+    </div>
+    <div class="deck-counter" id="slideCounter" aria-live="polite">
+      1 / 7
+    </div>
+  </header>
+
+  <!-- Contenedor de Diapositivas -->
+  <main class="deck-viewport" id="deckViewport">
+
+    <!-- SLIDE 1: Portada -->
+    <section class="slide active" role="region" aria-roledescription="slide" aria-label="Portada de Integración">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Proyecto de Automatización Contable</div>
+        <h1 class="slide-title">Conexión de Gastos hacia el ERP (Niuxpro)</h1>
+        <p class="slide-subtitle">Objetivo: Traspaso automatizado de rendiciones y facturas validadas sin doble digitación.</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card card-primary">
+            <h4>1. Fuente de Gastos</h4>
+            <p>Gastos reportados por vendedores en campo + facturas recibidas en el buzón <code>proveedores.pe</code>.</p>
+          </div>
+          <div class="card card-accent">
+            <h4>2. Filtro y Aprobación</h4>
+            <p>Finanzas audita, aprueba y sube vouchers bancarios en el Portal Administrador.</p>
+          </div>
+          <div class="card card-success">
+            <h4>3. Destino en el ERP</h4>
+            <p>Recepción automática vía API REST para generación de provisión contable o cuenta por pagar.</p>
+          </div>
+        </div>
+      </div>
+      <div class="footer-note">
+        <small style="color: var(--text-muted);">Usa las flechas del teclado <strong>◀ ▶</strong> o los botones inferiores para navegar.</small>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: Arquitectura Actual -->
+    <section class="slide" role="region" aria-roledescription="slide" aria-label="Cómo funcionamos hoy">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Arquitectura Actual</div>
+        <h2 class="slide-title">¿Cómo se gestionan los datos hoy en BlissCorp?</h2>
+        <p class="slide-subtitle">Centralización de la información antes de enviarla a contabilidad.</p>
+      </div>
+      <div class="slide-body">
+        <div class="flow-diagram">
+          <div class="flow-node">
+            <strong>📲 Entradas</strong>
+            <small>• Vendedores en campo<br>• Buzón automático proveedores</small>
+          </div>
+          <div class="flow-arrow">➔ <span>Consolida</span></div>
+          <div class="flow-node" style="border-color: var(--accent);">
+            <strong>☁️ Dataverse (Microsoft)</strong>
+            <small>Base central única con comprobantes, importes y RUCs</small>
+          </div>
+          <div class="flow-arrow">➔ <span>Gestiona</span></div>
+          <div class="flow-node">
+            <strong>🖥️ Portal Administrador</strong>
+            <small>Revisión, Aprobación y Desembolso por Finanzas</small>
+          </div>
+        </div>
+
+        <div class="card card-primary" style="margin-top: 0.5rem;">
+          <p><strong>Garantía de calidad:</strong> Al ERP <em>nunca</em> llegan datos crudos o sin validar. Solo viaja lo que Finanzas ya auditó y autorizó formalmente.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: El Disparador -->
+    <section class="slide" role="region" aria-roledescription="slide" aria-label="Momento de Integración">
+      <div class="slide-header">
+        <div class="slide-eyebrow">El Disparador (Trigger)</div>
+        <h2 class="slide-title">¿En qué momento viaja la información al ERP?</h2>
+        <p class="slide-subtitle">Definición de reglas de negocio para no saturar ni duplicar asientos.</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card card-accent">
+            <h4>Momento A: Al Aprobar (Recomendado)</h4>
+            <ul>
+              <li><strong>Evento:</strong> Finanzas marca <code>Aprobado = True</code>.</li>
+              <li><strong>Efecto en ERP:</strong> Genera la provisión del gasto (gasto vs. cuenta por pagar al empleado/proveedor).</li>
+              <li><strong>Ventaja:</strong> Refleja el compromiso contable de inmediato.</li>
+            </ul>
+          </div>
+          <div class="card card-primary">
+            <h4>Momento B: Al Desembolsar</h4>
+            <ul>
+              <li><strong>Evento:</strong> Finanzas cambia estado a <code>Desembolsado</code> y adjunta voucher.</li>
+              <li><strong>Efecto en ERP:</strong> Cancela la cuenta por pagar y asienta la salida de bancos.</li>
+              <li><strong>Ventaja:</strong> Registra la operación bancaria con sustento adjunto.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: Adaptación a Niuxpro -->
+    <section class="slide" role="region" aria-roledescription="slide" aria-label="Alineación técnica">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Compatibilidad con el Proveedor</div>
+        <h2 class="slide-title">Adaptándonos a su estándar habitual (Niuxpro)</h2>
+        <p class="slide-subtitle">Utilizaremos la misma arquitectura técnica que ya implementan en Bliss Map.</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card">
+            <h4>1. Seguridad</h4>
+            <p>Tráfico 100% cifrado por <strong>HTTPS</strong> y autenticación mediante cabecera <code>X-Api-Key</code>.</p>
+          </div>
+          <div class="card">
+            <h4>2. Multi-empresa</h4>
+            <p>Mismo alcance de grupo: cada registro declara explícitamente su <code>empresa</code> (BLISSCORP, BLISSFARMA, SKINBLISS).</p>
+          </div>
+          <div class="card">
+            <h4>3. Idempotencia</h4>
+            <p>Se envía un <code>uuid_gasto</code> único por cada rendición para evitar cualquier riesgo de duplicidad en el ERP.</p>
+          </div>
+        </div>
+
+        <div class="card card-success">
+          <p><strong>Cero fricción:</strong> No solicitamos que el ERP cambie su forma de trabajar; construimos el emisor ajustándonos a su modelo REST habitual.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: Propuesta de Payload -->
+    <section class="slide" role="region" aria-roledescription="slide" aria-label="Estructura de Datos">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Estructura del Envío</div>
+        <h2 class="slide-title">Propuesta de Payload (JSON que enviaríamos)</h2>
+        <p class="slide-subtitle">Estructura limpia con todos los campos fiscales y comprobantes adjuntos.</p>
+      </div>
+      <div class="slide-body">
+        <pre class="code-box">
+POST https://blisscorp.niuxpro.com/e/action/.../gastos/receive
+Headers: 
+  Content-Type: application/json
+  X-Api-Key: &lt;api_key_blisscorp&gt;
+
+{
+  "uuid_gasto": "e2b19283-49d7-ef11-b8e9-002248085421",
+  "empresa": "BLISSCORP",
+  "vendedor": "Adrián Marcel Murakami Fung",
+  "fecha_gasto": "2026-09-03",
+  "comercio": {
+    "ruc": "20601234567",
+    "razon_social": "CABIFY LOGISTICS PERU SAC"
+  },
+  "comprobante": {
+    "tipo": "FACTURA",
+    "serie_numero": "F001-0004821",
+    "moneda": "PEN",
+    "monto_total": 230.50
+  },
+  "concepto": "Movilidad corporativa traslado clientes",
+  "adjunto_url": "https://.../voucher/download?id=..."
+}</pre>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: Método de Conexión -->
+    <section class="slide" role="region" aria-roledescription="slide" aria-label="Método de Conexión">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Implementación Técnica</div>
+        <h2 class="slide-title">Envío directo desde Microsoft Dataverse</h2>
+        <p class="slide-subtitle">Ventajas de conectar la base de datos directamente al ERP.</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card card-primary">
+            <h4>¿Cómo se ejecuta?</h4>
+            <ul>
+              <li>Un <strong>Power Automate Cloud Flow</strong> en Microsoft 365 monitorea la tabla de gastos.</li>
+              <li>Al cambiar a <em>Aprobado</em>, el flujo toma el registro, arma el JSON y lo envía al endpoint del ERP.</li>
+              <li>El ERP responde con su código de confirmación (ej: <code>asiento_id</code>) y queda guardado en la tabla.</li>
+            </ul>
+          </div>
+          <div class="card card-accent">
+            <h4>Beneficios para el Negocio</h4>
+            <ul>
+              <li><strong>Alta resiliencia:</strong> Si el ERP entra en mantenimiento, el conector reintenta automáticamente sin perder datos.</li>
+              <li><strong>Rendimiento intacto:</strong> El portal web no se ralentiza esperando la respuesta del ERP.</li>
+              <li><strong>Auditoría visual:</strong> Bitácora completa de envíos, horas y respuestas dentro de Microsoft 365.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: Checklist para la Reunión -->
+    <section class="slide" role="region" aria-roledescription="slide" aria-label="Checklist de la Reunión">
+      <div class="slide-header">
+        <div class="slide-eyebrow">Plan de Acción</div>
+        <h2 class="slide-title">¿Qué necesitamos del proveedor del ERP?</h2>
+        <p class="slide-subtitle">Puntos a coordinar con Fernando / equipo de Niuxpro en la reunión.</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card">
+            <h4>Entregables Técnicos</h4>
+            <ul>
+              <li><strong>Endpoint receptor:</strong> URL para el método <code>POST</code> de gastos.</li>
+              <li><strong>Esquema JSON:</strong> Nombre y tipo de campos obligatorios requeridos por su sistema.</li>
+              <li><strong>Ambiente Test:</strong> Acceso a Sandbox / endpoint de pruebas y su respectiva API Key.</li>
+            </ul>
+          </div>
+          <div class="card card-success">
+            <h4>Homologación Contable</h4>
+            <ul>
+              <li><strong>Cuentas Contables:</strong> Catálogo para mapear categorías de gasto (Movilidad, Viáticos, etc.).</li>
+              <li><strong>Centros de Costo:</strong> Códigos asignados a cada área (TI, Marketing, Visita Médica).</li>
+              <li><strong>Proveedores nuevos:</strong> Si se requiere auto-creación o proveedor genérico para gastos menores.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Pie de controles -->
+  <footer class="deck-footer">
+    <div class="footer-hint">
+      Navegación: Teclas <strong>◀ / ▶</strong> o barra espaciadora
+    </div>
+    <div class="nav-buttons">
+      <button class="btn-nav" id="btnPrev" aria-label="Diapositiva anterior">◀ Anterior</button>
+      <button class="btn-nav accent" id="btnNext" aria-label="Siguiente diapositiva">Siguiente ▶</button>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const slides = document.querySelectorAll('.slide');
+      const counter = document.getElementById('slideCounter');
+      const progressBar = document.getElementById('progressBar');
+      const btnPrev = document.getElementById('btnPrev');
+      const btnNext = document.getElementById('btnNext');
+      let current = 0;
+      const total = slides.length;
+
+      function updateSlide(index) {
+        slides.forEach((s, i) => {
+          s.classList.toggle('active', i === index);
+        });
+
+        counter.textContent = `${index + 1} / ${total}`;
+        progressBar.style.width = `${((index + 1) / total) * 100}%`;
+
+        btnPrev.disabled = index === 0;
+        btnNext.textContent = index === total - 1 ? 'Reiniciar ↺' : 'Siguiente ▶';
+      }
+
+      function nextSlide() {
+        if (current < total - 1) {
+          current++;
+        } else {
+          current = 0;
+        }
+        updateSlide(current);
+      }
+
+      function prevSlide() {
+        if (current > 0) {
+          current--;
+          updateSlide(current);
+        }
+      }
+
+      btnNext.addEventListener('click', nextSlide);
+      btnPrev.addEventListener('click', prevSlide);
+
+      // Teclado
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          nextSlide();
+        } else if (e.key === 'ArrowLeft' || e.key === 'Backspace') {
+          e.preventDefault();
+          prevSlide();
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          current = 0;
+          updateSlide(current);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          current = total - 1;
+          updateSlide(current);
+        }
+      });
+
+      updateSlide(current);
+    })();
+  </script>
+</body>
+</html>
