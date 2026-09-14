@@ -39,6 +39,9 @@ export default function AdminDashboard({ onLogout }) {
   // Elemento seleccionado para ver detalle
   const [activeExpense, setActiveExpense] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCheckingErp, setIsCheckingErp] = useState(false);
+  const [isSendingErp, setIsSendingErp] = useState(false);
+  const [erpBanner, setErpBanner] = useState(null);
   
   // Estado del token (obtenido del backend)
   const [tokenInfo, setTokenInfo] = useState(null);
@@ -305,6 +308,85 @@ export default function AdminDashboard({ onLogout }) {
     } finally {
       setIsSyncingInvoices(false);
       setTimeout(() => setSyncBanner(null), 8000);
+    }
+  };
+
+  // Probar conectividad con el ERP Sea Fácil (Niuxpro)
+  const handlePingErp = async () => {
+    if (isCheckingErp) return;
+    setIsCheckingErp(true);
+    try {
+      const res = await fetch('/api/erp/send-expense?ping=true');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`✅ Conexión exitosa con el ERP Sea Fácil:\n${JSON.stringify(data.data, null, 2)}`);
+      } else {
+        alert(`⚠️ No se pudo conectar con el ERP: ${data.error || 'Error desconocido'}`);
+      }
+    } catch (err) {
+      alert(`❌ Error al probar conexión con ERP: ${err.message}`);
+    } finally {
+      setIsCheckingErp(false);
+    }
+  };
+
+  // Enviar un comprobante a Sea Fácil vía API
+  const handleSendToErp = async (expenseId) => {
+    if (!expenseId || isSendingErp) return;
+    setIsSendingErp(true);
+    setErpBanner({ type: 'info', text: 'Despachando comprobante hacia Sea Fácil (Niuxpro)...' });
+
+    try {
+      const res = await fetch('/api/erp/send-expense', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expenseId })
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error en la respuesta del ERP');
+      }
+
+      const itemResult = data.results && data.results[0] ? data.results[0] : null;
+      const erpData = itemResult?.erpResult?.data;
+      const alreadyProcessed = itemResult?.erpResult?.alreadyProcessed;
+
+      if (alreadyProcessed) {
+        setErpBanner({
+          type: 'success',
+          text: `ℹ️ El comprobante ya estaba registrado en Sea Fácil (ID Compra: #${erpData?.id_compra || 'OK'}).`
+        });
+        alert(`ℹ️ El comprobante ya existe en Sea Fácil:\nID Compra: #${erpData?.id_compra || ''}\nEstado: ${erpData?.estado || 'GE'}`);
+      } else if (erpData?.estado === 'VA') {
+        setErpBanner({
+          type: 'success',
+          text: `✅ ¡Éxito! Comprobante recibido y VALIDADO en el ERP Sea Fácil (ID Compra: #${erpData.id_compra}).`
+        });
+        alert(`✅ Comprobante recibido y validado en Sea Fácil:\nID Compra: #${erpData.id_compra}\nEstado: VALIDADO (VA)\nDestino Contable: ${erpData.destino || 'RC'}`);
+      } else if (erpData?.estado === 'OB') {
+        const obs = erpData.observaciones ? erpData.observaciones.join('\n• ') : 'Pendiente de resolución en ERP';
+        setErpBanner({
+          type: 'warning',
+          text: `⚠️ Comprobante recibido en Sea Fácil con observaciones (ID: #${erpData.id_compra}).`
+        });
+        alert(`⚠️ Comprobante recibido en Sea Fácil pero quedó OBSERVADO:\nID Compra: #${erpData.id_compra}\nObservaciones:\n• ${obs}`);
+      } else {
+        setErpBanner({
+          type: 'info',
+          text: `Comprobante procesado por el ERP: ${data.message || 'Completado'}`
+        });
+      }
+    } catch (err) {
+      console.error('[Dashboard] Error al enviar gasto a ERP:', err);
+      setErpBanner({
+        type: 'error',
+        text: `Error al enviar a ERP: ${err.message}`
+      });
+      alert(`❌ Error al enviar comprobante a Sea Fácil: ${err.message}`);
+    } finally {
+      setIsSendingErp(false);
+      setTimeout(() => setErpBanner(null), 10000);
     }
   };
 
@@ -1407,7 +1489,19 @@ export default function AdminDashboard({ onLogout }) {
                   </button>
                 </div>
 
-                <div className="subtabs-right-group">
+                <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handlePingErp}
+                    disabled={isCheckingErp}
+                    title="Verificar conexión con ERP Sea Fácil (Niuxpro)"
+                    style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                  >
+                    <span>{isCheckingErp ? '⏳' : '🔌'}</span>
+                    <span>{isCheckingErp ? 'Probando...' : 'Probar Conexión ERP'}</span>
+                  </button>
+
                   <button
                     type="button"
                     className="sync-invoices-btn"
@@ -1461,6 +1555,13 @@ export default function AdminDashboard({ onLogout }) {
                 <div className={`sync-banner sync-banner-${syncBanner.type}`} role="status">
                   <span>{syncBanner.type === 'success' ? '✅' : syncBanner.type === 'error' ? '❌' : 'ℹ️'}</span>
                   <span>{syncBanner.text}</span>
+                </div>
+              )}
+
+              {erpBanner && (
+                <div className={`sync-banner sync-banner-${erpBanner.type}`} role="status">
+                  <span>{erpBanner.type === 'success' ? '✅' : erpBanner.type === 'error' ? '❌' : erpBanner.type === 'warning' ? '⚠️' : 'ℹ️'}</span>
+                  <span>{erpBanner.text}</span>
                 </div>
               )}
 
@@ -2535,12 +2636,29 @@ export default function AdminDashboard({ onLogout }) {
                         )}
                       </div>
                     )}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => handleSendToErp(activeExpense.cr168_reportedegastosid)}
+                        disabled={isSendingErp || isUpdating}
+                        style={{
+                          fontSize: '0.82rem',
+                          padding: '0.4rem 0.9rem',
+                          backgroundColor: '#132840',
+                          color: '#ffffff',
+                          borderColor: '#132840'
+                        }}
+                        title="Despachar este comprobante a Sea Fácil vía API multipart/form-data"
+                      >
+                        {isSendingErp ? '🚀 Enviando a ERP...' : '🚀 Enviar a ERP (Sea Fácil)'}
+                      </button>
+
                       <button
                         type="button"
                         className="btn btn-primary"
                         onClick={handleSaveFinanzas}
-                        disabled={isUpdating}
+                        disabled={isUpdating || isSendingErp}
                         style={{ fontSize: '0.82rem', padding: '0.4rem 1rem' }}
                       >
                         {isUpdating ? 'Guardando...' : '💾 Guardar Control de Finanzas'}
