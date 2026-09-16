@@ -1593,22 +1593,19 @@ body {
 .loans-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 1rem;
+  align-items: center;
+  background: var(--navy-900);
+  border-radius: var(--radius-lg);
+  padding: 1rem var(--space-6);
+  color: var(--text-onbrand);
+  box-shadow: var(--shadow-sm);
 }
 
 .loans-header-title h2 {
-  font-size: 1.5rem;
-  font-weight: 750;
-  color: var(--text-primary);
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--text-onbrand);
   font-family: var(--font-title);
-  margin: 0 0 0.25rem 0;
-}
-
-.loans-header-title p {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
   margin: 0;
 }
 
@@ -1655,22 +1652,19 @@ body {
 }
 
 .loans-kpi-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  padding: 1.25rem;
+  padding: 1.1rem 1.2rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  box-shadow: var(--shadow-sm);
+  gap: 0.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
-.loans-kpi-card.kpi-warning {
-  border-left: 4px solid #f59e0b;
-}
-
+.loans-kpi-card.kpi-warning,
 .loans-kpi-card.kpi-accent {
-  border-left: 4px solid var(--accent-color);
+  border-left: 1px solid var(--border-subtle);
 }
 
 .loans-kpi-value {
@@ -1687,10 +1681,10 @@ body {
 
 /* Split Form and Table layout */
 .loans-content-grid {
-  display: grid;
-  grid-template-columns: 340px 1fr;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   gap: 1.5rem;
-  align-items: start;
 }
 
 .loans-form-card {
@@ -1775,6 +1769,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .loans-table-header {

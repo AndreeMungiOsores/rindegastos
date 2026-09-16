@@ -194,3 +194,194 @@ export async function uploadFileToExpense(id, fileBuffer, fileName) {
     throw err;
   }
 }
+
+/**
+ * Obtiene todos los préstamos registrados junto con sus cuotas vinculadas.
+ * @returns {Promise<Array>} Lista de préstamos con sus cuotas consolidadas
+ */
+export async function getLoans() {
+  console.log('[DataverseClient] Consultando lista de préstamos y cuotas...');
+  const [prestamosRes, cuotasRes] = await Promise.all([
+    request('GET', 'cr168_prestamos?$orderby=createdon desc'),
+    request('GET', 'cr168_tabla2s?$orderby=cr168_numerocuota asc')
+  ]);
+
+  const prestamos = prestamosRes.value || [];
+  const cuotas = cuotasRes.value || [];
+
+  // Indexar cuotas por el ID del préstamo padre
+  const cuotasMap = new Map();
+  for (const c of cuotas) {
+    const parentId = c._cr168_prestamoid_value;
+    if (!cuotasMap.has(parentId)) {
+      cuotasMap.set(parentId, []);
+    }
+    cuotasMap.get(parentId).push(c);
+  }
+
+  // Consolidar préstamos con métricas calculadas
+  return prestamos.map(p => {
+    const pCuotas = cuotasMap.get(p.cr168_prestamoid) || [];
+    const totalCobrado = pCuotas
+      .filter(c => c.cr168_estadocuota === 'Descontado')
+      .reduce((sum, c) => sum + (c.cr168_monto || 0), 0);
+    const cuotasPagadas = pCuotas.filter(c => c.cr168_estadocuota === 'Descontado').length;
+    const saldoPendiente = Math.max(0, (p.cr168_monto || 0) - totalCobrado);
+
+    return {
+      ...p,
+      cuotas: pCuotas,
+      totalCobrado,
+      cuotasPagadas,
+      totalCuotas: pCuotas.length,
+      saldoPendiente
+    };
+  });
+}
+
+/**
+ * Crea un nuevo préstamo en Dataverse y genera automáticamente sus cuotas asociadas.
+ * @param {Object} loanData - Datos del formulario de préstamo
+ * @returns {Promise<Object>} Préstamo creado con sus cuotas
+ */
+export async function createLoan(loanData) {
+  const {
+    trabajador,
+    empresa,
+    monto,
+    motivo,
+    modalidad,
+    numeroCuotas,
+    fechaDesembolso,
+    fechaInicioPago,
+    mesDescuento
+  } = loanData;
+
+  const numCuotas = modalidad === 'Pago en Cuotas' ? Math.max(1, parseInt(numeroCuotas, 10) || 1) : 1;
+  const totalMonto = parseFloat(monto) || 0;
+  const cuotaBase = numCuotas > 1 ? Math.floor((totalMonto / numCuotas) * 100) / 100 : totalMonto;
+
+  const codigo = `PRE-${Date.now().toString().slice(-6)}`;
+
+  // Fecha fin calculada para préstamos en cuotas
+  let fechaFin = fechaInicioPago;
+  if (numCuotas > 1 && fechaInicioPago) {
+    const startDate = new Date(`${fechaInicioPago}T00:00:00`);
+    startDate.setMonth(startDate.getMonth() + (numCuotas - 1));
+    const lastDayOfMonth = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+    fechaFin = lastDayOfMonth.toISOString().split('T')[0];
+  }
+
+  const prestamoPayload = {
+    cr168_codigo: codigo,
+    cr168_colaborador: trabajador,
+    cr168_empresa: empresa,
+    cr168_monto: totalMonto,
+    cr168_numerocuotas: numCuotas,
+    cr168_montocuota: cuotaBase,
+    cr168_motivo: motivo || 'Sin Motivo',
+    cr168_modalidad: modalidad,
+    cr168_fechadesembolso: fechaDesembolso,
+    cr168_fechainiciopago: fechaInicioPago,
+    cr168_fechafinpago: fechaFin,
+    cr168_estadoprestamo: 'Vigente'
+  };
+
+  const createdPrestamo = await request('POST', 'cr168_prestamos', prestamoPayload);
+  const prestamoId = createdPrestamo.cr168_prestamoid;
+
+  // Generar cuotas
+  const monthNames = [
+    'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
+    'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
+  ];
+
+  const cuotasCreadas = [];
+  let sumaCuotasPrevias = 0;
+
+  for (let i = 1; i <= numCuotas; i++) {
+    const isLast = i === numCuotas;
+    const montoCuota = isLast ? Number((totalMonto - sumaCuotasPrevias).toFixed(2)) : cuotaBase;
+    sumaCuotasPrevias += cuotaBase;
+
+    let cuotaDate = new Date(`${fechaInicioPago}T00:00:00`);
+    if (i > 1) {
+      cuotaDate.setMonth(cuotaDate.getMonth() + (i - 1));
+      // Último día de ese mes
+      cuotaDate = new Date(cuotaDate.getFullYear(), cuotaDate.getMonth() + 1, 0);
+    }
+    const fechaProgStr = cuotaDate.toISOString().split('T')[0];
+    const mesNombre = mesDescuento && numCuotas === 1
+      ? mesDescuento
+      : `${monthNames[cuotaDate.getMonth()]} ${cuotaDate.getFullYear()}`;
+
+    const cuotaPayload = {
+      cr168_codigocuota: `${codigo}-C${String(i).padStart(2, '0')}`,
+      cr168_numerocuota: i,
+      cr168_mes: mesNombre,
+      cr168_monto: montoCuota,
+      cr168_fechaprogramada: fechaProgStr,
+      cr168_estadocuota: 'Pendiente',
+      cr168_observacion: isLast && numCuotas > 1 && montoCuota !== cuotaBase ? 'Ajuste de céntimos en última cuota' : null,
+      'cr168_prestamoid@odata.bind': `/cr168_prestamos(${prestamoId})`
+    };
+
+    const createdCuota = await request('POST', 'cr168_tabla2s', cuotaPayload);
+    cuotasCreadas.push(createdCuota);
+  }
+
+  return {
+    ...createdPrestamo,
+    cuotas: cuotasCreadas
+  };
+}
+
+/**
+ * Actualiza el estado de una cuota individual (Pendiente ↔ Descontado)
+ * y actualiza el estado general del préstamo si todas sus cuotas quedan descontadas.
+ * @param {string} cuotaId - UUID de la cuota en Dataverse
+ * @param {string} nuevoEstado - 'Pendiente' | 'Descontado'
+ * @returns {Promise<Object>} Resultado de la actualización
+ */
+export async function updateCuotaStatus(cuotaId, nuevoEstado) {
+  const fechaCobro = nuevoEstado === 'Descontado' ? new Date().toISOString().split('T')[0] : null;
+
+  await request('PATCH', `cr168_tabla2s(${cuotaId})`, {
+    cr168_estadocuota: nuevoEstado,
+    cr168_fechacobro: fechaCobro
+  });
+
+  // Consultar la cuota para saber a qué préstamo pertenece
+  const cuota = await request('GET', `cr168_tabla2s(${cuotaId})?$select=_cr168_prestamoid_value`);
+  const parentId = cuota._cr168_prestamoid_value;
+
+  if (parentId) {
+    // Obtener todas las cuotas del préstamo para verificar si está totalmente liquidado
+    const siblingCuotasRes = await request('GET', `cr168_tabla2s?$filter=_cr168_prestamoid_value eq ${parentId}&$select=cr168_estadocuota`);
+    const allDescontadas = (siblingCuotasRes.value || []).every(c => c.cr168_estadocuota === 'Descontado');
+    const nuevoEstadoPrestamo = allDescontadas ? 'Liquidado' : 'Vigente';
+
+    await request('PATCH', `cr168_prestamos(${parentId})`, {
+      cr168_estadoprestamo: nuevoEstadoPrestamo
+    });
+  }
+
+  return { success: true, cuotaId, nuevoEstado };
+}
+
+/**
+ * Elimina un préstamo y todas sus cuotas vinculadas en Dataverse.
+ * @param {string} prestamoId - UUID del préstamo matriz
+ * @returns {Promise<Object>} Resultado de la eliminación
+ */
+export async function deleteLoan(prestamoId) {
+  // 1. Obtener y eliminar cuotas asociadas
+  const cuotasRes = await request('GET', `cr168_tabla2s?$filter=_cr168_prestamoid_value eq ${prestamoId}&$select=cr168_tabla2id`);
+  for (const c of cuotasRes.value || []) {
+    await request('DELETE', `cr168_tabla2s(${c.cr168_tabla2id})`);
+  }
+
+  // 2. Eliminar préstamo matriz
+  await request('DELETE', `cr168_prestamos(${prestamoId})`);
+  return { success: true, prestamoId };
+}
