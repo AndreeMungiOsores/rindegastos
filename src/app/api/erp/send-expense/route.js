@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { getExpense } from '../../../../lib/dataverseClient.js';
@@ -27,6 +27,31 @@ async function fetchExpenseVoucherBuffer(expenseId) {
     return Buffer.from(response.data);
   } catch (err) {
     console.warn(`[ErpSendRoute] No se pudo descargar voucher binario para el gasto ${expenseId}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Descarga la imagen del comprobante (foto) desde Dataverse.
+ * Se envía como parte `evidencia` en el multipart hacia Sea Fácil.
+ */
+async function fetchExpenseImageBuffer(expenseId) {
+  try {
+    const token = await getAccessToken();
+    const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${expenseId})/cr168_imagendelcomprobante/$value?size=full`;
+    const response = await axios({
+      method: 'GET',
+      url,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/octet-stream'
+      },
+      responseType: 'arraybuffer',
+      timeout: 30000
+    });
+    return Buffer.from(response.data);
+  } catch (err) {
+    console.warn(`[ErpSendRoute] No se pudo descargar imagen del comprobante para el gasto ${expenseId}:`, err.message);
     return null;
   }
 }
@@ -81,18 +106,25 @@ export async function POST(request) {
           continue;
         }
 
-        // Descargar voucher o PDF original si existe en Dataverse
+        // Descargar voucher/PDF si existe en Dataverse
         let voucherBuffer = null;
         let fileName = expense.cr168_voucher_desembolso_name || `Comprobante_${id.substring(0, 8)}.pdf`;
         if (expense.cr168_voucher_desembolso) {
           voucherBuffer = await fetchExpenseVoucherBuffer(id);
         }
 
+        // Descargar imagen del comprobante para enviarla como evidencia
+        // (obligatoria para gastos tipo ATP según validación del ERP)
+        const imagenBuffer = await fetchExpenseImageBuffer(id);
+        const imagenNombre = `evidencia_${id.substring(0, 8)}.jpg`;
+
         // Despachar hacia Niuxpro
         const erpResponse = await sendExpenseToErp({
           expense,
           pdfBuffer: voucherBuffer,
-          pdfFileName: fileName
+          pdfFileName: fileName,
+          evidenciaBuffer: imagenBuffer,
+          evidenciaFileName: imagenNombre
         });
 
         results.push({

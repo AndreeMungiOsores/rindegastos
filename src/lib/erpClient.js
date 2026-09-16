@@ -1,4 +1,5 @@
-﻿import axios from 'axios';
+import axios from 'axios';
+import { resolveEmployeeDni } from './employeeDni.js';
 
 const DEFAULT_ERP_BASE_URL = 'https://blisscorp.niuxpro.com/e';
 const DEFAULT_ERP_API_KEY = 'CMP1_CMP0001_20d681b08659d5d827b5146af234c7e9';
@@ -146,6 +147,10 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
 
   const tipoGastoCode = getExpenseTypeCode(expense['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || expense.cr168_tipodegasto);
 
+  // Resolver DNI del colaborador desde la tabla de nómina
+  const colaboradorNombre = expense.cr168_vendedor || '';
+  const empleadoResuelto = resolveEmployeeDni(colaboradorNombre);
+
   return {
     codigo_empresa: codigoEmpresa,
     uuid_envio: uuidEnvio,
@@ -185,8 +190,8 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
       detalle: (expense.cr168_detalle || 'Rendición de gasto').substring(0, 300),
       rendido_por: {
         tipo_documento: 'DNI',
-        numero_documento: '00000000',
-        nombre: expense.cr168_vendedor || 'Colaborador Bliss'
+        ...(empleadoResuelto ? { numero_documento: empleadoResuelto.dni } : {}),
+        nombre: colaboradorNombre || 'Colaborador Bliss'
       },
       area: 'General',
       marca: expense.cr168_marca || '',

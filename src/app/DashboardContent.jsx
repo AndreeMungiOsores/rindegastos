@@ -67,7 +67,7 @@ export default function AdminDashboard({ onLogout }) {
   // Módulos y Navegación del Panel Lateral
   const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores'
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const sidebarCollapsed = false;
 
   // Plataforma de Préstamos MVP
   const [loans, setLoans] = useState([]);
@@ -299,11 +299,26 @@ export default function AdminDashboard({ onLogout }) {
           text: 'No hay facturas nuevas en formato .PDF en el buzón de correo.'
         });
       }
+
+      // También enriquecer nuevos gastos de PowerApps pendientes si existen
+      try {
+        const enrichRes = await fetch('/api/cron/enrich-expenses', { method: 'POST' });
+        const enrichData = await enrichRes.json();
+        if (enrichData.success && enrichData.processedCount > 0) {
+          setSyncBanner({
+            type: 'success',
+            text: `¡Éxito! Se enriquecieron ${enrichData.processedCount} nuevo(s) gasto(s) con IA.`
+          });
+          await fetchExpenses();
+        }
+      } catch (enrichErr) {
+        console.warn('[Dashboard] Error en enrich-expenses manual:', enrichErr.message);
+      }
     } catch (err) {
       console.error('[Dashboard] Error en handleSyncInvoices:', err);
       setSyncBanner({
         type: 'error',
-        text: `Error al sincronizar buzón: ${err.message}`
+        text: `Error al sincronizar: ${err.message}`
       });
     } finally {
       setIsSyncingInvoices(false);
@@ -321,7 +336,7 @@ export default function AdminDashboard({ onLogout }) {
       if (res.ok && data.success) {
         alert(`✅ Conexión exitosa con el ERP Sea Fácil:\n${JSON.stringify(data.data, null, 2)}`);
       } else {
-        alert(`⚠️ No se pudo conectar con el ERP: ${data.error || 'Error desconocido'}`);
+        alert(`! No se pudo conectar con el ERP: ${data.error || 'Error desconocido'}`);
       }
     } catch (err) {
       alert(`❌ Error al probar conexión con ERP: ${err.message}`);
@@ -368,9 +383,9 @@ export default function AdminDashboard({ onLogout }) {
         const obs = erpData.observaciones ? erpData.observaciones.join('\n• ') : 'Pendiente de resolución en ERP';
         setErpBanner({
           type: 'warning',
-          text: `⚠️ Comprobante recibido en Sea Fácil con observaciones (ID: #${erpData.id_compra}).`
+          text: `! Comprobante recibido en Sea Fácil con observaciones (ID: #${erpData.id_compra}).`
         });
-        alert(`⚠️ Comprobante recibido en Sea Fácil pero quedó OBSERVADO:\nID Compra: #${erpData.id_compra}\nObservaciones:\n• ${obs}`);
+        alert(`! Comprobante recibido en Sea Fácil pero quedó OBSERVADO:\nID Compra: #${erpData.id_compra}\nObservaciones:\n• ${obs}`);
       } else {
         setErpBanner({
           type: 'info',
@@ -431,6 +446,23 @@ export default function AdminDashboard({ onLogout }) {
           console.warn('[AutoBuzonSync] Error en sync automático diario:', err.message);
         });
     }
+
+    // Auto-enriquecimiento de gastos nuevos (PowerApps): ejecutar en background al montar la app
+    fetch('/api/cron/enrich-expenses', { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.processedCount > 0) {
+          setSyncBanner({
+            type: 'success',
+            text: `Enriquecimiento IA: ${data.processedCount} nuevo(s) gasto(s) procesado(s) exitosamente.`
+          });
+          fetchExpenses();
+          setTimeout(() => setSyncBanner(null), 8000);
+        }
+      })
+      .catch(err => {
+        console.warn('[AutoEnrichExpenses] Error en enriquecimiento en background:', err.message);
+      });
   }, []);
 
   // Lista única de equipos/áreas para el selector de filtros
@@ -880,6 +912,37 @@ export default function AdminDashboard({ onLogout }) {
       const formattedDate = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
       const createdDate = item.createdon ? formatDisplayDate(item.createdon) : '';
 
+      // ── Desglose de importes (prioriza datos reales extraídos por IA de Dataverse) ──
+      const total    = Number(item.cr168_montototalincluyendoigv || 0);
+      const propina  = Number(item.cr168_monto_propina || 0);
+      const tipoComp = (item.cr168_tipodecomprobante || '').toLowerCase();
+
+      const tieneDatosIA = item.cr168_base_gravada != null || item.cr168_tasa_igv != null;
+
+      let tasaIgv, baseGravada, igv, rc, inafecto;
+
+      if (tieneDatosIA) {
+        tasaIgv     = item.cr168_tasa_igv != null ? Number(item.cr168_tasa_igv) : (tipoComp.includes('banco') ? 0 : 18);
+        baseGravada = item.cr168_base_gravada != null ? Number(Number(item.cr168_base_gravada).toFixed(2)) : 0;
+        igv         = item.cr168_igv_monto != null ? Number(Number(item.cr168_igv_monto).toFixed(2)) : 0;
+        rc          = item.cr168_recargo_consumo != null ? Number(Number(item.cr168_recargo_consumo).toFixed(2)) : 0;
+        inafecto    = item.cr168_inafecto != null ? Number(Number(item.cr168_inafecto).toFixed(2)) : 0;
+      } else {
+        const esBanco = tipoComp.includes('banco') || tipoComp.includes('financier');
+        const esInafecto = esBanco;
+        tasaIgv = esInafecto ? 0 : 18;
+        if (esInafecto) {
+          baseGravada = 0;
+          igv         = 0;
+          inafecto    = Number(total.toFixed(2));
+        } else {
+          baseGravada = Number((total / (1 + tasaIgv / 100)).toFixed(2));
+          igv         = Number((total - baseGravada).toFixed(2));
+          inafecto    = 0;
+        }
+        rc = 0;
+      }
+
       return [
         item.cr168_vendedor || '',
         item.cr168_empresa || '',
@@ -894,32 +957,48 @@ export default function AdminDashboard({ onLogout }) {
         item.cr168_doctor || '',
         item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || item.cr168_tipodegasto || '',
         item.cr168_marca || '',
-        item.cr168_montototalincluyendoigv || 0,
+        // ── Importes desglosados ──
+        total,
+        propina,
+        tasaIgv,
+        baseGravada,
+        igv,
+        rc,
+        inafecto,
+        // ── Otros ──
         item.cr168_detalle || '',
-        item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False'),
+        item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'Sí' : 'No'),
         item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'
       ];
     });
 
     // Definir columnas con sus respectivos encabezados
     const columns = [
-      { name: 'Vendedor', filterButton: true },
-      { name: 'Empresa', filterButton: true },
-      { name: 'RUC Empresa', filterButton: true },
-      { name: 'Fecha de Creación', filterButton: true },
-      { name: 'Fecha de Gasto', filterButton: true },
-      { name: 'RUC del Comercio', filterButton: true },
-      { name: 'Nombre del Comercio', filterButton: true },
-      { name: 'Tipo de Comprobante', filterButton: true },
-      { name: 'Número de Comprobante', filterButton: true },
-      { name: 'Clínica', filterButton: true },
-      { name: 'Doctor', filterButton: true },
-      { name: 'Tipo de Gasto', filterButton: true },
-      { name: 'Marca', filterButton: true },
-      { name: 'Monto Total (Inc. IGV)', filterButton: true },
-      { name: 'Detalle', filterButton: true },
-      { name: 'Aprobado', filterButton: true },
-      { name: 'Estado', filterButton: true }
+      { name: 'Vendedor',               filterButton: true },
+      { name: 'Empresa',                filterButton: true },
+      { name: 'RUC Empresa',            filterButton: true },
+      { name: 'Fecha de Creación',      filterButton: true },
+      { name: 'Fecha de Gasto',         filterButton: true },
+      { name: 'RUC del Comercio',       filterButton: true },
+      { name: 'Nombre del Comercio',    filterButton: true },
+      { name: 'Tipo de Comprobante',    filterButton: true },
+      { name: 'Número de Comprobante',  filterButton: true },
+      { name: 'Clínica',               filterButton: true },
+      { name: 'Doctor',                 filterButton: true },
+      { name: 'Tipo de Gasto',          filterButton: true },
+      { name: 'Marca',                  filterButton: true },
+      // ── Importes (columnas contables) ──
+      { name: 'Total (Inc. IGV)',        filterButton: true },
+      { name: 'Propina',                filterButton: true },
+      { name: 'Tasa IGV (%)',           filterButton: true },
+      { name: 'Base Imponible',         filterButton: true },
+      { name: 'IGV',                    filterButton: true },
+      { name: 'Recargo al Consumo (RC)',filterButton: true },
+      { name: 'Inafecto',              filterButton: true },
+      // ── Otros ──
+      { name: 'Detalle',               filterButton: true },
+      { name: 'Aprobado',              filterButton: true },
+      { name: 'Estado',                filterButton: true }
     ];
 
     // Agregar tabla de datos con estilo formal en Excel
@@ -936,20 +1015,29 @@ export default function AdminDashboard({ onLogout }) {
       rows: rows,
     });
 
+    // Formato numérico para columnas de importes: Total (14), Propina (15), Base (17), IGV (18), RC (19), Inafecto (20)
+    const importeColIndexes = [14, 15, 17, 18, 19, 20];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // saltar encabezado
+      importeColIndexes.forEach(colIdx => {
+        const cell = row.getCell(colIdx);
+        cell.numFmt = '#,##0.00';
+      });
+    });
+
     // Auto-ajustar el ancho de las columnas
     worksheet.columns.forEach(column => {
       let maxLen = 0;
       column.eachCell({ includeEmpty: true }, (cell) => {
         const val = cell.value ? cell.value.toString() : '';
-        if (val.length > maxLen) {
-          maxLen = val.length;
-        }
+        if (val.length > maxLen) maxLen = val.length;
       });
       column.width = Math.max(maxLen + 4, 12);
     });
 
     return await workbook.xlsx.writeBuffer();
   };
+
 
   // Exportar solo el archivo Excel
   const handleExportExcelOnly = async () => {
@@ -1027,28 +1115,17 @@ export default function AdminDashboard({ onLogout }) {
               extension = '.webp';
             }
 
-            // Obtener prefijo de empresa (sin puntos y saneado)
-            let empresaPrefix = '';
-            if (item.cr168_empresa) {
-              empresaPrefix = item.cr168_empresa.replace(/\./g, '').replace(/[\\/:*?"<>|]/g, '_').trim();
-            }
+            // Nombre de archivo: RUC_NombreComercio_TipoGasto (solicitado por Melissa/Leydi)
+            const rucPart  = (item.cr168_rucdelcomercio || 'SINRUC').replace(/[\\/:*?"<>|]/g, '_').trim();
+            const comercio = (item.cr168_nombredelcomercio || 'SinComercio')
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/[\\/:*?"<>|\s]+/g, '_').trim().substring(0, 40);
+            const tipoGasto = (
+              item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] ||
+              item.cr168_tipodegasto || 'SinTipo'
+            ).replace(/[\\/:*?"<>|\s]+/g, '_').trim().substring(0, 20);
 
-            // Saneamiento del nombre de archivo del comprobante
-            let comprobantePart = '';
-            if (item.cr168_numerodecomprobante) {
-              comprobantePart = item.cr168_numerodecomprobante.replace(/[\\/:*?"<>|]/g, '_').trim();
-            }
-
-            let baseName = '';
-            if (empresaPrefix && comprobantePart) {
-              baseName = `${empresaPrefix} - ${comprobantePart}`;
-            } else if (empresaPrefix) {
-              baseName = `${empresaPrefix} - sin_comprobante_${item.cr168_reportedegastosid}`;
-            } else if (comprobantePart) {
-              baseName = comprobantePart;
-            } else {
-              baseName = `sin_comprobante_${item.cr168_reportedegastosid}`;
-            }
+            let baseName = `${rucPart}_${comercio}_${tipoGasto}`;
 
             // Manejo de nombres duplicados de comprobantes para evitar sobreescritura en el ZIP
             let fileName = `${baseName}${extension}`;
@@ -1393,54 +1470,80 @@ export default function AdminDashboard({ onLogout }) {
     <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Sidebar Navigation */}
       <aside className="sidebar-navigation">
+        {/* ── Logo ─────────────────────────────── */}
         <div className="sidebar-header">
           <div className="logo-container">
-            <span className="logo-icon">🏢</span>
-            {!sidebarCollapsed && <span className="logo-text">Bliss Admin</span>}
+            <div className="logo-mark" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <polyline points="2 17 12 22 22 17"/>
+                <polyline points="2 12 12 17 22 12"/>
+              </svg>
+            </div>
+            {!sidebarCollapsed && (
+              <div className="logo-text-block">
+                <span className="logo-text">Portal Finanzas</span>
+                <span className="logo-sub">Blisscorp</span>
+              </div>
+            )}
           </div>
-          <button 
-            type="button" 
-            className="sidebar-toggle-btn"
-            onClick={() => setSidebarCollapsed(prev => !prev)}
-            title={sidebarCollapsed ? "Expandir menú" : "Contraer menú"}
-          >
-            {sidebarCollapsed ? '▶' : '◀'}
-          </button>
         </div>
 
-        <nav className="sidebar-menu">
+        {/* ── Menu ─────────────────────────────── */}
+        <nav className="sidebar-menu" aria-label="Navegación principal">
+          {!sidebarCollapsed && <span className="menu-group-label">Módulos</span>}
+
           <button
             type="button"
             className={`menu-item ${activeModule === 'rindegastos' ? 'active' : ''}`}
             onClick={() => setActiveModule('rindegastos')}
             title="Panel RindeGastos"
+            aria-current={activeModule === 'rindegastos' ? 'page' : undefined}
           >
-            <span className="menu-icon">📊</span>
-            {!sidebarCollapsed && <span className="menu-label">Panel RindeGastos</span>}
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/>
+              <path d="M14 17h7M17.5 14v7"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Panel Rindegastos</span>}
           </button>
+
           <button
             type="button"
             className={`menu-item ${activeModule === 'prestamos' ? 'active' : ''}`}
             onClick={() => setActiveModule('prestamos')}
             title="Seguimiento de préstamos"
+            aria-current={activeModule === 'prestamos' ? 'page' : undefined}
           >
-            <span className="menu-icon">🤝</span>
-            {!sidebarCollapsed && <span className="menu-label">Seguimiento de préstamos</span>}
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Préstamos</span>}
           </button>
+
+          {!sidebarCollapsed && <span className="menu-group-label">Administración</span>}
+
           <button
             type="button"
             className={`menu-item ${activeModule === 'proveedores' ? 'active' : ''}`}
             onClick={() => setActiveModule('proveedores')}
             title="Portal de Proveedores"
+            aria-current={activeModule === 'proveedores' ? 'page' : undefined}
           >
-            <span className="menu-icon">📦</span>
-            {!sidebarCollapsed && <span className="menu-label">Portal de Proveedores</span>}
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Proveedores</span>}
           </button>
         </nav>
 
+        {/* ── Footer ───────────────────────────── */}
         <div className="sidebar-footer">
           <div className="user-profile">
-            <div className="user-avatar" title="Contabilidad">
+            <div className="user-avatar" title="Contabilidad" aria-label="Usuario: Contabilidad">
               C
             </div>
             {!sidebarCollapsed && (
@@ -1455,8 +1558,13 @@ export default function AdminDashboard({ onLogout }) {
                 className="logout-icon-btn"
                 onClick={onLogout}
                 title="Cerrar Sesión"
+                aria-label="Cerrar sesión"
               >
-                🚪
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
               </button>
             )}
           </div>
@@ -1476,7 +1584,12 @@ export default function AdminDashboard({ onLogout }) {
                     className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
                     onClick={() => setRindegastosSubTab('tabla')}
                   >
-                    <span>📋</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                      <line x1="3" y1="9" x2="21" y2="9"/>
+                      <line x1="3" y1="15" x2="21" y2="15"/>
+                      <line x1="9" y1="3" x2="9" y2="21"/>
+                    </svg>
                     <span>Tabla de Comprobantes</span>
                   </button>
                   <button
@@ -1484,7 +1597,11 @@ export default function AdminDashboard({ onLogout }) {
                     className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
                     onClick={() => setRindegastosSubTab('estadisticas')}
                   >
-                    <span>📈</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <line x1="18" y1="20" x2="18" y2="10"/>
+                      <line x1="12" y1="20" x2="12" y2="4"/>
+                      <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
                     <span>Estadísticas Financieras</span>
                   </button>
                 </div>
@@ -1498,7 +1615,12 @@ export default function AdminDashboard({ onLogout }) {
                     title="Verificar conexión con ERP Sea Fácil (Niuxpro)"
                     style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                   >
-                    <span>{isCheckingErp ? '⏳' : '🔌'}</span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                      <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                      <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                      <circle cx="12" cy="20" r="1" fill="currentColor"/>
+                    </svg>
                     <span>{isCheckingErp ? 'Probando...' : 'Probar Conexión ERP'}</span>
                   </button>
 
@@ -1509,8 +1631,12 @@ export default function AdminDashboard({ onLogout }) {
                     disabled={isSyncingInvoices}
                     title="Sincronizar facturas .PDF del buzón proveedores.pe@blisscorp.lat a nombre de Adrián Murakami"
                   >
-                    <span className={isSyncingInvoices ? 'spin-icon' : ''}>🔄</span>
-                    <span>{isSyncingInvoices ? 'Sincronizando...' : 'Sincronizar Facturas (Buzón)'}</span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isSyncingInvoices ? 'spin-icon' : ''} aria-hidden="true">
+                      <polyline points="23 4 23 10 17 10"/>
+                      <polyline points="1 20 1 14 7 14"/>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    <span>{isSyncingInvoices ? 'Sincronizando...' : 'Sincronizar Facturas'}</span>
                   </button>
 
                   {rindegastosSubTab === 'estadisticas' && (
@@ -1527,7 +1653,7 @@ export default function AdminDashboard({ onLogout }) {
                       }}
                     >
                       <label htmlFor="topVendorFilterSelect" className="top-filter-label">
-                        <span>👤</span> Vendedor:
+                        Vendedor:
                       </label>
                       <select
                         id="topVendorFilterSelect"
@@ -1553,14 +1679,14 @@ export default function AdminDashboard({ onLogout }) {
             <div className="dashboard-container">
               {syncBanner && (
                 <div className={`sync-banner sync-banner-${syncBanner.type}`} role="status">
-                  <span>{syncBanner.type === 'success' ? '✅' : syncBanner.type === 'error' ? '❌' : 'ℹ️'}</span>
+                  <span aria-hidden="true">{syncBanner.type === 'success' ? '✓' : syncBanner.type === 'error' ? '✕' : 'i'}</span>
                   <span>{syncBanner.text}</span>
                 </div>
               )}
 
               {erpBanner && (
                 <div className={`sync-banner sync-banner-${erpBanner.type}`} role="status">
-                  <span>{erpBanner.type === 'success' ? '✅' : erpBanner.type === 'error' ? '❌' : erpBanner.type === 'warning' ? '⚠️' : 'ℹ️'}</span>
+                  <span aria-hidden="true">{erpBanner.type === 'success' ? '✓' : erpBanner.type === 'error' ? '✕' : '!'}</span>
                   <span>{erpBanner.text}</span>
                 </div>
               )}
@@ -1570,32 +1696,60 @@ export default function AdminDashboard({ onLogout }) {
                 {/* Resumen Ejecutivo KPI Cards */}
                 <section className="analytics-kpis-grid">
                   <div className="analytics-kpi-card">
-                    <span className="analytics-kpi-label">Monto Total Analizado</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Monto Total Analizado</span>
+                    </div>
                     <span className="analytics-kpi-value">S/ {analyticsData.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span className="analytics-kpi-sub">En {analyticsData.totalCount} comprobantes activos</span>
                   </div>
                   <div className="analytics-kpi-card success">
-                    <span className="analytics-kpi-label">Ticket Promedio por Comprobante</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Ticket Promedio por Comprobante</span>
+                    </div>
                     <span className="analytics-kpi-value">S/ {analyticsData.avgTicket.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span className="analytics-kpi-sub">Gasto promedio rendido</span>
                   </div>
                   <div className="analytics-kpi-card purple">
-                    <span className="analytics-kpi-label">Total en Propinas Rendidas</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Total en Propinas Rendidas</span>
+                    </div>
                     <span className="analytics-kpi-value">S/ {analyticsData.totalTips.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span className="analytics-kpi-sub">Vouchers de propina adicionados</span>
                   </div>
                   <div className="analytics-kpi-card warning">
-                    <span className="analytics-kpi-label">Monto Pendiente de Desembolso</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Monto Pendiente de Desembolso</span>
+                    </div>
                     <span className="analytics-kpi-value">S/ {analyticsData.pendingDisbursementAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span className="analytics-kpi-sub">{analyticsData.totalCount - analyticsData.disbursedCount} comprobantes por liquidar</span>
                   </div>
                 </section>
 
-                {/* Evolución de Gastos por Mes (Ancho completo con gráfico de barras e indicador de tabla a la derecha) */}
+                {/* Evolución de Gastos por Mes */}
                 <div className="analytics-section-card full-width">
                   <div className="analytics-section-header">
                     <h3 className="analytics-section-title">
-                      <span>📅</span> Evolución de Gastos por Mes
+                      Evolución de Gastos por Mes
                     </h3>
                     <span className="analytics-section-badge">{analyticsData.byMonth.length} Meses Registrados</span>
                   </div>
@@ -1754,7 +1908,10 @@ export default function AdminDashboard({ onLogout }) {
                   <div className="analytics-section-card">
                     <div className="analytics-section-header">
                       <h3 className="analytics-section-title">
-                        <span>🏢</span> Gastos por Equipo / Área
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                          <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2M8 7V5a2 2 0 0 0-4 0v2"/>
+                        </svg>
+                        Gastos por Equipo / Área
                       </h3>
                       <span className="analytics-section-badge">{analyticsData.byArea.length} Áreas Activas</span>
                     </div>
@@ -1794,7 +1951,10 @@ export default function AdminDashboard({ onLogout }) {
                   <div className="analytics-section-card">
                     <div className="analytics-section-header">
                       <h3 className="analytics-section-title">
-                        <span>🏆</span> Ranking por Consumidor
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                          <circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+                        </svg>
+                        Ranking por Consumidor
                       </h3>
                       <span className="analytics-section-badge">Top {Math.min(analyticsData.byVendor.length, 7)}</span>
                     </div>
@@ -1844,22 +2004,50 @@ export default function AdminDashboard({ onLogout }) {
                 {/* KPI Cards */}
                 <section className="kpis-grid">
                   <div className="kpi-card">
-                    <span className="kpi-label">Monto Total Registrado</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </span>
+                      <span className="kpi-label">Monto Total Registrado</span>
+                    </div>
                     <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span className="kpi-sub">Total de {stats.totalCount} facturas</span>
                   </div>
                   <div className="kpi-card approved">
-                    <span className="kpi-label">Gastos Aprobados</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </span>
+                      <span className="kpi-label">Gastos Aprobados</span>
+                    </div>
                     <span className="kpi-value">{stats.approvedCount}</span>
-                    <span className="kpi-sub"><strong>{stats.pendingApprovalCount}</strong> pendientes de aprobación</span>
+                    <span className="kpi-sub">{stats.pendingApprovalCount} pendientes de aprobación</span>
                   </div>
                   <div className="kpi-card reimbursed">
-                    <span className="kpi-label">Gastos Desembolsados</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+                        </svg>
+                      </span>
+                      <span className="kpi-label">Gastos Desembolsados</span>
+                    </div>
                     <span className="kpi-value">{stats.disbursedCount}</span>
                     <span className="kpi-sub">Con voucher de pago cargado</span>
                   </div>
                   <div className="kpi-card pending">
-                    <span className="kpi-label">Pendientes de Desembolso</span>
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                      </span>
+                      <span className="kpi-label">Pendientes de Desembolso</span>
+                    </div>
                     <span className="kpi-value">{stats.pendingDisbursementCount}</span>
                     <span className="kpi-sub">Esperando comprobante de pago</span>
                   </div>
@@ -1900,7 +2088,7 @@ export default function AdminDashboard({ onLogout }) {
                 <section className="controls-panel">
                   <div className="search-filter-row">
                     <div className="search-wrapper">
-                      <span className="search-icon">🔍</span>
+                      <span className="search-icon"></span>
                       <input
                         type="text"
                         placeholder="Buscar por vendedor, comercio, comprobante..."
@@ -1918,7 +2106,7 @@ export default function AdminDashboard({ onLogout }) {
                         onClick={() => setShowCalendarPopover(prev => !prev)}
                         title="Filtrar por rango de fecha del gasto"
                       >
-                        📅 {filterStartDate ? `${formatDisplayDate(filterStartDate)} - ${filterEndDate ? formatDisplayDate(filterEndDate) : '...'}` : 'Filtrar por fecha'}
+                         {filterStartDate ? `${formatDisplayDate(filterStartDate)} - ${filterEndDate ? formatDisplayDate(filterEndDate) : '...'}` : 'Filtrar por fecha'}
                         {filterStartDate && (
                           <span 
                             className="clear-date-btn" 
@@ -1949,7 +2137,7 @@ export default function AdminDashboard({ onLogout }) {
                           title="Exportar a Excel"
                           disabled={filteredExpenses.length === 0 || isExporting}
                         >
-                          {isExporting ? `📦 ${exportStatus}` : '📊 Exportar Excel ▾'}
+                          {isExporting ? `${exportStatus}` : 'Exportar Excel ▾'}
                         </button>
                         {showExportDropdown && (
                           <div className="export-dropdown-menu">
@@ -1961,23 +2149,23 @@ export default function AdminDashboard({ onLogout }) {
                                 handleExportExcelOnly();
                               }}
                             >
-                              📄 Exportar solo excel
+                              Exportar solo Excel
                             </button>
                             <button 
                               type="button" 
                               className="export-dropdown-item" 
                               onClick={() => {
                                 setShowExportDropdown(false);
-                                handleExportZipWithImages();
+                                handleExportExcelWithImages();
                               }}
                             >
-                              📦 Exportar excel con comprobantes (ZIP)
+                              Exportar Excel con comprobantes (ZIP)
                             </button>
                           </div>
                         )}
                       </div>
                       <button className="btn btn-primary" onClick={fetchExpenses} title="Refrescar datos" disabled={isExporting}>
-                        🔄 Sincronizar
+                        Sincronizar
                       </button>
                     </div>
                   </div>
@@ -1990,14 +2178,14 @@ export default function AdminDashboard({ onLogout }) {
                       </span>
                       <div className="action-buttons">
                         <button className="btn btn-success" onClick={() => { setShowDisburseModal(true); setDisburseFile(null); }}>
-                          💼 Enviar correo y marcar como desembolsado ({selectedIds.length})
+                          Enviar correo y marcar como desembolsado ({selectedIds.length})
                         </button>
                         <button 
                           className="btn btn-primary" 
                           onClick={handleApproveSelected}
                           disabled={isUpdating}
                         >
-                          {isUpdating ? 'Procesando...' : '✓ Aprobar registros'}
+                          {isUpdating ? 'Procesando...' : 'Aprobar registros'}
                         </button>
                         <button className="btn btn-secondary" onClick={handleDeselectAll}>
                           Cancelar Selección
@@ -2016,7 +2204,7 @@ export default function AdminDashboard({ onLogout }) {
                     </div>
                   ) : error ? (
                     <div style={{ padding: '3rem 2rem', textAlign: 'center', color: 'var(--danger-color)' }}>
-                      <span style={{ fontSize: '2rem' }}>⚠️</span>
+                      <span style={{ fontSize: '2rem' }}>!</span>
                       <p style={{ marginTop: '1rem', fontWeight: 'bold' }}>{error}</p>
                       <button className="btn btn-secondary" style={{ margin: '1rem auto 0' }} onClick={fetchExpenses}>Reintentar</button>
                     </div>
@@ -2041,7 +2229,7 @@ export default function AdminDashboard({ onLogout }) {
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Fecha de creación</span>
+                                <span className="header-label">Fecha creación</span>
                                 <select
                                   className="header-select-filter"
                                   value={sortField === 'createdon' ? dateOrder : ''}
@@ -2060,7 +2248,7 @@ export default function AdminDashboard({ onLogout }) {
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Fecha de gasto</span>
+                                <span className="header-label">Fecha gasto</span>
                                 <select
                                   className="header-select-filter"
                                   value={sortField === 'cr168_fechadelgasto' ? dateOrder : ''}
@@ -2079,7 +2267,7 @@ export default function AdminDashboard({ onLogout }) {
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Empresa</span>
+                                <span className="header-label">Empresa</span>
                                 <select
                                   className="header-select-filter"
                                   value={empresaFilter}
@@ -2094,7 +2282,7 @@ export default function AdminDashboard({ onLogout }) {
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Equipo</span>
+                                <span className="header-label">Equipo</span>
                                 <select
                                   className="header-select-filter"
                                   value={equipoFilter}
@@ -2109,7 +2297,7 @@ export default function AdminDashboard({ onLogout }) {
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Vendedor</span>
+                                <span className="header-label">Vendedor</span>
                                 <select
                                   className="header-select-filter"
                                   value={vendedorFilter}
@@ -2123,46 +2311,46 @@ export default function AdminDashboard({ onLogout }) {
                               </div>
                             </th>
                             <th>
-                              <div className="header-with-filter" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.3rem' }}>
-                                <span className="header-label" style={{ color: '#0369a1' }}>Comercio</span>
-                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '500', color: soloBuzon ? '#0369a1' : '#64748b', whiteSpace: 'nowrap' }}>
+                              <div className="header-with-filter">
+                                <span className="header-label">Comercio</span>
+                                <label className="header-buzon-label">
                                   <input
                                     type="checkbox"
                                     checked={soloBuzon}
                                     onChange={(e) => setSoloBuzon(e.target.checked)}
-                                    style={{ accentColor: '#0369a1', width: '12px', height: '12px', cursor: 'pointer' }}
+                                    className="header-buzon-check"
                                   />
-                                  Solo buzón proveedores
+                                  Solo buzón
                                 </label>
                               </div>
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Comprobante</span>
+                                <span className="header-label">Comprobante</span>
                               </div>
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Monto</span>
+                                <span className="header-label">Monto</span>
                               </div>
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Aprobado</span>
+                                <span className="header-label">Aprobado</span>
                                 <select
                                   className="header-select-filter"
                                   value={aprobadoFilter}
                                   onChange={(e) => setAprobadoFilter(e.target.value)}
                                 >
                                   <option value="">(Todos)</option>
-                                  <option value="true">True</option>
-                                  <option value="false">False</option>
+                                  <option value="true">Sí</option>
+                                  <option value="false">No</option>
                                 </select>
                               </div>
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label" style={{ color: '#0369a1' }}>Estado</span>
+                                <span className="header-label">Estado</span>
                                 <select
                                   className="header-select-filter"
                                   value={estadoFilter}
@@ -2182,7 +2370,9 @@ export default function AdminDashboard({ onLogout }) {
                             <tr>
                               <td colSpan={11} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                                  <span style={{ fontSize: '2.5rem' }}>📂</span>
+                                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                                  </svg>
                                   <p style={{ fontWeight: '500' }}>No se encontraron gastos con los filtros seleccionados.</p>
                                 </div>
                               </td>
@@ -2263,7 +2453,7 @@ export default function AdminDashboard({ onLogout }) {
           <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
             <header className="drawer-header">
               <h2>Detalle del Gasto</h2>
-              <button className="close-btn" onClick={() => setActiveExpense(null)}>×</button>
+              <button className="close-btn" onClick={() => setActiveExpense(null)} aria-label="Cerrar">×</button>
             </header>
 
             <form onSubmit={handleSaveChanges} style={{ display: 'flex', flexDirection: 'column', height: 'calc(100% - 130px)' }}>
@@ -2293,7 +2483,7 @@ export default function AdminDashboard({ onLogout }) {
                           transition: 'all 0.2s ease'
                         }}
                       >
-                        <span>✏️</span>
+                        <span aria-hidden="true">—</span>
                         <span style={{ fontSize: '0.75rem' }}>{isEditingVendedor ? 'Editando' : 'Editar'}</span>
                       </button>
                     </div>
@@ -2368,7 +2558,7 @@ export default function AdminDashboard({ onLogout }) {
                           transition: 'all 0.2s ease'
                         }}
                       >
-                        <span>✏️</span>
+                        <span aria-hidden="true">—</span>
                         <span style={{ fontSize: '0.75rem' }}>{isEditingComprobante ? 'Editando' : 'Editar'}</span>
                       </button>
                     </div>
@@ -2473,12 +2663,12 @@ export default function AdminDashboard({ onLogout }) {
                         </div>
                         <div className="info-row">
                           <span className="info-label">Monto Total (IGV Inc.)</span>
-                          <span className="info-value amount">S/ {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
+                          <span className="info-value amount total-amount">S/ {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
                         </div>
                         {activeExpense.cr168_monto_propina !== undefined && activeExpense.cr168_monto_propina !== null && (
                           <div className="info-row">
                             <span className="info-label">Monto Propina</span>
-                            <span className="info-value amount" style={{ color: '#0284c7' }}>
+                            <span className="info-value amount">
                               S/ {Number(activeExpense.cr168_monto_propina).toFixed(2)}
                             </span>
                           </div>
@@ -2486,6 +2676,58 @@ export default function AdminDashboard({ onLogout }) {
                       </>
                     )}
                   </div>
+
+                  {/* ── Desglose Tributario IA — solo si ya fue procesado ── */}
+                  {(activeExpense.cr168_tasa_igv != null ||
+                    activeExpense.cr168_base_gravada != null ||
+                    activeExpense.cr168_igv_monto != null ||
+                    activeExpense.cr168_recargo_consumo != null ||
+                    activeExpense.cr168_inafecto != null) && (
+                    <div className="detail-section">
+                      <h3>Desglose Tributario</h3>
+
+                      {activeExpense.cr168_tasa_igv != null && (
+                        <div className="info-row">
+                          <span className="info-label">Tasa IGV</span>
+                          <span className="info-value amount">
+                            {activeExpense.cr168_tasa_igv}%
+                          </span>
+                        </div>
+                      )}
+                      {activeExpense.cr168_base_gravada != null && (
+                        <div className="info-row">
+                          <span className="info-label">Base Imponible</span>
+                          <span className="info-value amount">
+                            S/ {Number(activeExpense.cr168_base_gravada).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      {activeExpense.cr168_igv_monto != null && (
+                        <div className="info-row">
+                          <span className="info-label">IGV</span>
+                          <span className="info-value amount">
+                            S/ {Number(activeExpense.cr168_igv_monto).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      {activeExpense.cr168_recargo_consumo != null && activeExpense.cr168_recargo_consumo !== 0 && (
+                        <div className="info-row">
+                          <span className="info-label">Recargo al Consumo</span>
+                          <span className="info-value amount">
+                            S/ {Number(activeExpense.cr168_recargo_consumo).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      {activeExpense.cr168_inafecto != null && activeExpense.cr168_inafecto !== 0 && (
+                        <div className="info-row">
+                          <span className="info-label">Inafecto</span>
+                          <span className="info-value amount">
+                            S/ {Number(activeExpense.cr168_inafecto).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Detalles adicionales (solo si alguno tiene dato) */}
                   {(activeExpense.cr168_clinica ||
@@ -2577,7 +2819,7 @@ export default function AdminDashboard({ onLogout }) {
                                 style={{ fontSize: '0.85rem', color: 'var(--primary-color)', textDecoration: 'underline', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}
                                 title="Ver comprobante actual"
                               >
-                                📄 {activeExpense.cr168_voucher_desembolso_name || 'Ver Voucher actual'}
+                                {activeExpense.cr168_voucher_desembolso_name || 'Ver Voucher actual'}
                               </a>
                               <button
                                 type="button"
@@ -2661,7 +2903,7 @@ export default function AdminDashboard({ onLogout }) {
                         disabled={isUpdating || isSendingErp}
                         style={{ fontSize: '0.82rem', padding: '0.4rem 1rem' }}
                       >
-                        {isUpdating ? 'Guardando...' : '💾 Guardar Control de Finanzas'}
+                        {isUpdating ? 'Guardando...' : 'Guardar Control de Finanzas'}
                       </button>
                     </div>
                   </div>
@@ -2730,16 +2972,20 @@ export default function AdminDashboard({ onLogout }) {
                       </>
                     ) : (
                       <div className="no-image-text">
-                        <span>📷</span>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                          <circle cx="8.5" cy="8.5" r="1.5"/>
+                          <polyline points="21 15 16 10 5 21"/>
+                        </svg>
                         <p>No hay imagen disponible para este comprobante</p>
                       </div>
                     )}
                   </div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
                     {activeExpense.cr168_imagendelcomprobante_url
-                      ? 'Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en ↗ para ver en pantalla completa.'
+                      ? 'Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en para ver en pantalla completa.'
                       : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
-                      ? 'Previsualizando documento PDF adjunto del buzón. Haz clic en ↗ para abrir en nueva pestaña.'
+                      ? 'Previsualizando documento PDF adjunto del buzón. Haz clic en para abrir en nueva pestaña.'
                       : ''}
                   </span>
 
@@ -2872,7 +3118,11 @@ export default function AdminDashboard({ onLogout }) {
                   }
                 }}
               />
-              <span className="file-icon">📁</span>
+              <svg className="file-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
               <strong style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>
                 {disburseFile ? 'Archivo seleccionado' : 'Adjuntar comprobante de desembolso'}
               </strong>
@@ -2881,7 +3131,7 @@ export default function AdminDashboard({ onLogout }) {
               </span>
               {disburseFile && (
                 <div className="file-name-text">
-                  📄 {disburseFile.name} ({Math.round(disburseFile.size / 1024)} KB)
+                  {disburseFile.name} ({Math.round(disburseFile.size / 1024)} KB)
                 </div>
               )}
             </label>
@@ -2925,7 +3175,7 @@ export default function AdminDashboard({ onLogout }) {
             {!hideTodayAlert && (
               todayAlertLoans.length > 0 ? (
                 <div className="loans-alert-banner">
-                  <span className="alert-icon">⚠️</span>
+                  <span className="alert-icon">!</span>
                   <div className="alert-content">
                     <strong>ALERTA DE COBRO HOY ({formatDisplayDate(todayStr)}):</strong>{' '}
                     Se detectaron {todayAlertLoans.length} {todayAlertLoans.length === 1 ? 'pago pendiente' : 'pagos pendientes'} para el día de hoy:{' '}
@@ -2939,7 +3189,7 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
               ) : finDeMesAlertLoans.length > 0 ? (
                 <div className="loans-alert-banner" style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', color: '#b45309' }}>
-                  <span className="alert-icon">⚠️</span>
+                  <span className="alert-icon">!</span>
                   <div className="alert-content">
                     <strong>ALERTA DE COBRO (Faltan {daysToCierreMes} días para el cierre):</strong>{' '}
                     Hay {finDeMesAlertLoans.length} {finDeMesAlertLoans.length === 1 ? 'cobro pendiente programado' : 'cobros pendientes programados'} para este mes:{' '}
@@ -3208,7 +3458,7 @@ export default function AdminDashboard({ onLogout }) {
                               <td>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                                   <span>{formatDisplayDate(loan.fechaInicioPago)}</span>
-                                  {isToday && <span className="loans-badge badge-today">⚠️ HOY</span>}
+                                  {isToday && <span className="loans-badge badge-today">! HOY</span>}
                                   {isNext && <span className="loans-badge badge-next">🕒 Próximo Cobro</span>}
                                 </div>
                               </td>
@@ -3225,16 +3475,26 @@ export default function AdminDashboard({ onLogout }) {
                                     className="loans-action-btn btn-pay"
                                     onClick={() => handleToggleLoanStatus(loan.id)}
                                     title={loan.estado === 'Pendiente' ? 'Marcar como Cobrado / Descontado' : 'Marcar como Pendiente'}
+                                    aria-label={loan.estado === 'Pendiente' ? 'Marcar como cobrado' : 'Marcar como pendiente'}
                                   >
-                                    {loan.estado === 'Pendiente' ? '✅' : '🔄'}
+                                    {loan.estado === 'Pendiente' ? (
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                                    ) : (
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                    )}
                                   </button>
                                   <button
                                     type="button"
                                     className="loans-action-btn btn-delete"
                                     onClick={() => handleDeleteLoan(loan.id)}
                                     title="Eliminar Registro"
+                                    aria-label="Eliminar registro de préstamo"
                                   >
-                                    🗑️
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <polyline points="3 6 5 6 21 6"/>
+                                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                                      <path d="M10 11v6M14 11v6"/>
+                                    </svg>
                                   </button>
                                 </div>
                               </td>
@@ -3253,9 +3513,12 @@ export default function AdminDashboard({ onLogout }) {
         {activeModule === 'proveedores' && (
           <div className="placeholder-module-screen">
             <div className="placeholder-card">
-              <span className="placeholder-icon">📦</span>
+              <svg className="placeholder-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
               <h2>Portal de Proveedores</h2>
-              <p className="status-text">En proceso :D</p>
+              <p className="status-text">En desarrollo</p>
             </div>
           </div>
         )}

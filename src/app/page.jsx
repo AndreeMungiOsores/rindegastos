@@ -75,14 +75,14 @@ export default function Page() {
         alignItems: 'center',
         justifyContent: 'center',
         height: '100vh',
-        backgroundColor: '#f8fafc'
+        backgroundColor: '#F6F1EA'
       }}>
         <div style={{
           width: '30px',
           height: '30px',
-          border: '3px solid rgba(37, 99, 235, 0.1)',
+          border: '3px solid rgba(14, 42, 67, 0.1)',
           borderRadius: '50%',
-          borderTopColor: '#2563eb',
+          borderTopColor: '#0E2A43',
           animation: 'spin 1s linear infinite'
         }}></div>
         <style>{`
@@ -101,52 +101,50 @@ export default function Page() {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        backgroundColor: '#f0f4f8',
-        backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(216, 241, 250, 0.4) 0.1%, rgba(233, 226, 226, 0.2) 90.1%)',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        backgroundColor: '#F6F1EA',
+        fontFamily: '"Inter", -apple-system, "Segoe UI", Roboto, sans-serif',
         padding: '1.5rem'
       }}>
         <div style={{
           width: '100%',
           maxWidth: '420px',
-          backgroundColor: 'rgba(255, 255, 255, 0.85)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.6)',
-          borderRadius: '24px',
+          backgroundColor: '#FFFFFF',
+          border: '1px solid #E1DACD',
+          borderRadius: '14px',
           padding: '2.5rem 2.25rem',
-          boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.08)',
+          boxShadow: '0 12px 32px rgba(14, 42, 67, 0.16)',
           boxSizing: 'border-box'
         }}>
           <div style={{ textAlign: 'center', marginBottom: '2.25rem' }}>
             <div style={{
               width: '60px',
               height: '60px',
-              backgroundColor: '#2563eb',
+              backgroundColor: '#0E2A43',
               color: '#ffffff',
-              borderRadius: '16px',
+              borderRadius: '12px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '1.75rem',
-              fontWeight: 'bold',
+              fontSize: '1.35rem',
+              fontWeight: '700',
               margin: '0 auto 1.25rem',
-              boxShadow: '0 10px 20px -5px rgba(37, 99, 235, 0.3)'
+              letterSpacing: '-0.02em',
+              boxShadow: '0 8px 20px -4px rgba(14, 42, 67, 0.35)'
             }}>
-              RG
+              PF
             </div>
             <h2 style={{
               margin: '0 0 0.5rem 0',
-              color: '#0f172a',
-              fontSize: '1.5rem',
-              fontWeight: '800',
-              letterSpacing: '-0.025em'
+              color: '#0E2A43',
+              fontSize: '1.4rem',
+              fontWeight: '700',
+              letterSpacing: '-0.02em'
             }}>
-              Iniciar Sesión
+              Portal Finanzas
             </h2>
             <p style={{
               margin: 0,
-              color: '#64748b',
+              color: '#4B5768',
               fontSize: '0.875rem',
               lineHeight: '1.5'
             }}>
@@ -157,9 +155,9 @@ export default function Page() {
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <label htmlFor="username" style={{
-                fontSize: '0.8rem',
+                fontSize: '0.75rem',
                 fontWeight: '700',
-                color: '#334155',
+                color: '#4B5768',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em'
               }}>
@@ -174,20 +172,20 @@ export default function Page() {
                 placeholder="Ingresa tu usuario"
                 style={{
                   padding: '0.75rem 1rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '12px',
+                  border: '1px solid #E1DACD',
+                  borderRadius: '10px',
                   fontSize: '0.95rem',
-                  color: '#0f172a',
+                  color: '#1A2430',
                   outline: 'none',
                   transition: 'all 0.2s ease',
-                  backgroundColor: '#ffffff'
+                  backgroundColor: '#FFFFFF'
                 }}
                 onFocus={(e) => {
-                  e.target.style.borderColor = '#2563eb';
-                  e.target.style.boxShadow = '0 0 0 4px rgba(37, 99, 235, 0.1)';
+                  e.target.style.borderColor = '#0E2A43';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(14, 42, 67, 0.1)';
                 }}
                 onBlur={(e) => {
-                  e.target.style.borderColor = '#cbd5e1';
+                  e.target.style.borderColor = '#E1DACD';
                   e.target.style.boxShadow = 'none';
                 }}
               />
@@ -195,9 +193,9 @@ export default function Page() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <label htmlFor="password" style={{
-                fontSize: '0.8rem',
+                fontSize: '0.75rem',
                 fontWeight: '700',
-                color: '#334155',
+                color: '#4B5768',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em'
               }}>
@@ -212,20 +210,20 @@ export default function Page() {
                 placeholder="••••••••"
                 style={{
                   padding: '0.75rem 1rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '12px',
+                  border: '1px solid #E1DACD',
+                  borderRadius: '10px',
                   fontSize: '0.95rem',
-                  color: '#0f172a',
+                  color: '#1A2430',
                   outline: 'none',
                   transition: 'all 0.2s ease',
-                  backgroundColor: '#ffffff'
+                  backgroundColor: '#FFFFFF'
                 }}
                 onFocus={(e) => {
-                  e.target.style.borderColor = '#2563eb';
-                  e.target.style.boxShadow = '0 0 0 4px rgba(37, 99, 235, 0.1)';
+                  e.target.style.borderColor = '#0E2A43';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(14, 42, 67, 0.1)';
                 }}
                 onBlur={(e) => {
-                  e.target.style.borderColor = '#cbd5e1';
+                  e.target.style.borderColor = '#E1DACD';
                   e.target.style.boxShadow = 'none';
                 }}
               />
@@ -233,42 +231,46 @@ export default function Page() {
 
             {error && (
               <div style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
+                backgroundColor: '#FDE7E5',
+                border: '1px solid rgba(185, 28, 28, 0.2)',
                 borderRadius: '10px',
                 padding: '0.75rem 1rem',
-                color: '#dc2626',
+                color: '#B91C1C',
                 fontSize: '0.85rem',
                 textAlign: 'center',
                 fontWeight: '500',
                 lineHeight: '1.4'
               }}>
-                ⚠️ {error}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '6px' }}>
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                {error}
               </div>
             )}
 
             <button
               type="submit"
               style={{
-                backgroundColor: '#2563eb',
-                color: '#ffffff',
+                backgroundColor: '#0E2A43',
+                color: '#FFFFFF',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 padding: '0.85rem',
                 fontSize: '0.95rem',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.15)',
-                marginTop: '0.5rem'
+                boxShadow: '0 4px 12px rgba(14, 42, 67, 0.25)',
+                marginTop: '0.5rem',
+                letterSpacing: '0.01em'
               }}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = '#1d4ed8';
-                e.target.style.boxShadow = '0 6px 16px rgba(29, 78, 216, 0.25)';
+                e.target.style.backgroundColor = '#153A5A';
+                e.target.style.boxShadow = '0 6px 16px rgba(14, 42, 67, 0.35)';
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = '#2563eb';
-                e.target.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.15)';
+                e.target.style.backgroundColor = '#0E2A43';
+                e.target.style.boxShadow = '0 4px 12px rgba(14, 42, 67, 0.25)';
               }}
             >
               Ingresar al Sistema
