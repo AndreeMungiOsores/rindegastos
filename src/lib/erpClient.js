@@ -124,7 +124,7 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
   }
 
   // Importes y regla de cuadre estricto (prioriza desglose tributario real de Dataverse)
-  const total = Number((expense.cr168_montototalincluyendoigv || 0).toFixed(2));
+  const totalRendido = Number((expense.cr168_montototalincluyendoigv || 0).toFixed(2));
   const propina = Number((expense.cr168_monto_propina || 0).toFixed(2));
 
   let baseGravada = 0;
@@ -132,6 +132,7 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
   let igv = 0;
   let inafecto = 0;
   let recargoConsumo = 0;
+  let totalComprobante = totalRendido;
 
   const tieneDatosTributarios =
     expense.cr168_base_gravada != null ||
@@ -146,27 +147,35 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
     inafecto = expense.cr168_inafecto != null ? Number(Number(expense.cr168_inafecto).toFixed(2)) : 0.00;
 
     // Regla de cuadre estricto SUNAT / Niuxpro:
-    // base_gravada + igv + inafecto + recargo_consumo === total
+    // En el comprobante fiscal, el total es la suma de los componentes del comprobante:
+    // base_gravada + igv + inafecto + recargo_consumo.
+    // La propina no forma parte del total del comprobante fiscal (viaja en campo separado).
     const sumaComponentes = Number((baseGravada + igv + inafecto + recargoConsumo).toFixed(2));
-    const dif = Number((total - sumaComponentes).toFixed(2));
-    if (Math.abs(dif) > 0 && Math.abs(dif) <= 0.03) {
-      if (baseGravada > 0) {
-        baseGravada = Number((baseGravada + dif).toFixed(2));
-      } else if (inafecto > 0) {
-        inafecto = Number((inafecto + dif).toFixed(2));
-      }
+
+    if (sumaComponentes > 0) {
+      totalComprobante = sumaComponentes;
+    } else {
+      totalComprobante = propina > 0 && totalRendido > propina
+        ? Number((totalRendido - propina).toFixed(2))
+        : totalRendido;
     }
   } else if (tipoDoc === '14' || (expense.cr168_nombredelcomercio || '').toLowerCase().includes('banco')) {
     // Caso operaciones bancarias: inafectas de IGV
-    inafecto = total;
+    totalComprobante = propina > 0 && totalRendido > propina
+      ? Number((totalRendido - propina).toFixed(2))
+      : totalRendido;
+    inafecto = totalComprobante;
     baseGravada = 0.00;
     igv = 0.00;
     tasaIgv = 0.00;
     recargoConsumo = 0.00;
   } else {
     // Comprobante con IGV estándar (18%)
-    baseGravada = Number((total / 1.18).toFixed(2));
-    igv = Number((total - baseGravada).toFixed(2));
+    totalComprobante = propina > 0 && totalRendido > propina
+      ? Number((totalRendido - propina).toFixed(2))
+      : totalRendido;
+    baseGravada = Number((totalComprobante / 1.18).toFixed(2));
+    igv = Number((totalComprobante - baseGravada).toFixed(2));
     tasaIgv = 18.00;
     inafecto = 0.00;
     recargoConsumo = 0.00;
@@ -207,8 +216,8 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
       item: 1,
       descripcion: expense.cr168_detalle ? expense.cr168_detalle.substring(0, 100) : 'Consumo / Gasto sustentado',
       cantidad: 1,
-      valor_unitario: total,
-      valor_total: total,
+      valor_unitario: totalComprobante,
+      valor_total: totalComprobante,
       afectacion: 'I',
       igv: 0.00
     });
@@ -243,7 +252,7 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
       recargo_consumo: recargoConsumo,
       otros_cargos: 0.00,
       descuentos: 0.00,
-      total: total,
+      total: totalComprobante,
       propina: propina, // Propina viaja aparte y no suma a total
       retencion: 0.00,
       percepcion: 0.00
