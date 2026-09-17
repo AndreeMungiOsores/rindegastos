@@ -63,6 +63,7 @@ export default function AdminDashboard({ onLogout }) {
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const dropdownRef = useRef(null);
   const topVendorSelectRef = useRef(null);
+  const isAutoSyncingRef = useRef(false);
 
   // Módulos y Navegación del Panel Lateral
   const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores'
@@ -211,8 +212,8 @@ export default function AdminDashboard({ onLogout }) {
 
 
   // Cargar datos al iniciar
-  const fetchExpenses = async () => {
-    setLoading(true);
+  const fetchExpenses = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const response = await fetch('/api/gastos');
@@ -220,9 +221,9 @@ export default function AdminDashboard({ onLogout }) {
       const data = await response.json();
       setExpenses(data);
     } catch (err) {
-      setError(err.message);
+      if (!silent) setError(err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -370,52 +371,74 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
+  // Sincronización periódica y automática en segundo plano (Buzón + Enriquecimiento IA)
+  const runAutoSync = async () => {
+    if (isAutoSyncingRef.current) return;
+    isAutoSyncingRef.current = true;
+
+    try {
+      const now = Date.now();
+      const lastSync = parseInt(localStorage.getItem('lastAutoSyncTimestamp') || '0', 10);
+      const COOLDOWN_MS = 2 * 60 * 1000; // 2 minutos de enfriamiento para buzón de Graph
+
+      // 1. Sincronización del buzón de correo proveedores.pe@blisscorp.lat
+      if (now - lastSync >= COOLDOWN_MS) {
+        try {
+          const buzonRes = await fetch('/api/cron/sync-invoices', { method: 'POST' });
+          const buzonData = await buzonRes.json();
+          if (buzonData.success) {
+            localStorage.setItem('lastAutoSyncTimestamp', now.toString());
+            if (buzonData.processedCount > 0) {
+              setSyncBanner({
+                type: 'success',
+                text: `📬 Sync automático: ${buzonData.processedCount} nueva(s) factura(s) del buzón ingresadas.`
+              });
+              fetchExpenses(true);
+              setTimeout(() => setSyncBanner(null), 8000);
+            }
+          }
+        } catch (buzonErr) {
+          console.warn('[AutoSync] Error sincronizando buzón:', buzonErr.message);
+        }
+      }
+
+      // 2. Auto-enriquecimiento IA para nuevos gastos pendientes de PowerApps
+      try {
+        const enrichRes = await fetch('/api/cron/enrich-expenses', { method: 'POST' });
+        const enrichData = await enrichRes.json();
+        if (enrichData.success && enrichData.processedCount > 0) {
+          setSyncBanner({
+            type: 'success',
+            text: `✨ Enriquecimiento IA: ${enrichData.processedCount} gasto(s) procesado(s) exitosamente.`
+          });
+          fetchExpenses(true);
+          setTimeout(() => setSyncBanner(null), 8000);
+        }
+      } catch (enrichErr) {
+        console.warn('[AutoSync] Error en enriquecimiento IA:', enrichErr.message);
+      }
+    } catch (err) {
+      console.warn('[AutoSync] Error general en sync automático:', err.message);
+    } finally {
+      isAutoSyncingRef.current = false;
+    }
+  };
+
   useEffect(() => {
     fetchExpenses();
     fetchTokenStatus();
 
-    // Auto-sync del buzón: ejecutar una vez por día en background al montar la app.
-    // Se guarda la fecha de último sync en localStorage para no repetir en el mismo día.
-    const today = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
-    const lastBuzonSync = localStorage.getItem('lastBuzonSyncDate');
-    if (lastBuzonSync !== today) {
-      // Ejecutar en background sin bloquear la UI
-      fetch('/api/cron/sync-invoices', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            localStorage.setItem('lastBuzonSyncDate', today);
-            if (data.processedCount > 0) {
-              setSyncBanner({
-                type: 'success',
-                text: `📬 Sync automático: ${data.processedCount} nueva(s) factura(s) del buzón ingresadas.`
-              });
-              fetchExpenses();
-              setTimeout(() => setSyncBanner(null), 10000);
-            }
-          }
-        })
-        .catch(err => {
-          console.warn('[AutoBuzonSync] Error en sync automático diario:', err.message);
-        });
-    }
+    // Sincronización inicial en background al montar la app
+    runAutoSync();
 
-    // Auto-enriquecimiento de gastos nuevos (PowerApps): ejecutar en background al montar la app
-    fetch('/api/cron/enrich-expenses', { method: 'POST' })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.processedCount > 0) {
-          setSyncBanner({
-            type: 'success',
-            text: `Enriquecimiento IA: ${data.processedCount} nuevo(s) gasto(s) procesado(s) exitosamente.`
-          });
-          fetchExpenses();
-          setTimeout(() => setSyncBanner(null), 8000);
-        }
-      })
-      .catch(err => {
-        console.warn('[AutoEnrichExpenses] Error en enriquecimiento en background:', err.message);
-      });
+    // Polling recurrente cada 2.5 minutos (150 segundos) mientras la pestaña está activa
+    const syncIntervalId = setInterval(() => {
+      runAutoSync();
+    }, 150000);
+
+    return () => {
+      clearInterval(syncIntervalId);
+    };
   }, []);
 
   // Lista única de equipos/áreas para el selector de filtros

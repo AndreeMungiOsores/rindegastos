@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 import { NextResponse } from 'next/server';
 import { fetchUnreadInvoiceEmails, markEmailAsRead } from '../../../../lib/graphMailReader.js';
 import { createExpense, getExpenses, uploadFileToExpense } from '../../../../lib/dataverseClient.js';

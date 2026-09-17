@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { getAccessToken } from '../../../../lib/tokenManager.js';
@@ -87,12 +88,15 @@ async function handleEnrichExpenses() {
 
     console.log(`[EnrichCron] Se encontraron ${pendingExpenses.length} nuevo(s) gasto(s) para enriquecer con IA.`);
 
+    // Procesar máximo 2 gastos por invocación para mantenerse de forma segura dentro de los 60s
+    const batchToProcess = pendingExpenses.slice(0, 2);
+
     const exitosos = [];
     const alertas = [];
     const errores = [];
 
-    // 2. Procesar cada gasto nuevo
-    for (const g of pendingExpenses) {
+    // 2. Procesar cada gasto del lote
+    for (const g of batchToProcess) {
       const id = g.cr168_reportedegastosid;
       console.log(`[EnrichCron] Procesando gasto: ${g.cr168_vendedor || 'sin vendedor'} | S/ ${g.cr168_montototalincluyendoigv} (ID: ${id})`);
 
@@ -178,6 +182,8 @@ async function handleEnrichExpenses() {
       processedCount: exitosos.length,
       alertCount: alertas.length,
       errorCount: errores.length,
+      hasMore: pendingExpenses.length > batchToProcess.length,
+      remainingCount: Math.max(0, pendingExpenses.length - batchToProcess.length),
       exitosos,
       alertas,
       errores,
