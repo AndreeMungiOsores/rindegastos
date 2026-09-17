@@ -8,37 +8,12 @@ import { pingErp, sendExpenseToErp, getErpExpenseStatus, getCompanyCode } from '
 const DATAVERSE_BASE_URL = 'https://org1123c726.api.crm2.dynamics.com/api/data/v9.2';
 
 /**
- * Descarga el archivo del voucher de desembolso almacenado en Dataverse si existe
+ * Descarga archivos binarios (comprobante, evidencia, propina, voucher) desde Dataverse
  */
-async function fetchExpenseVoucherBuffer(expenseId) {
+async function fetchExpenseBinary(expenseId, columnName) {
   try {
     const token = await getAccessToken();
-    const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${expenseId})/cr168_voucher_desembolso/$value`;
-    const response = await axios({
-      method: 'GET',
-      url,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/octet-stream'
-      },
-      responseType: 'arraybuffer',
-      timeout: 20000
-    });
-    return Buffer.from(response.data);
-  } catch (err) {
-    console.warn(`[ErpSendRoute] No se pudo descargar voucher binario para el gasto ${expenseId}:`, err.message);
-    return null;
-  }
-}
-
-/**
- * Descarga la imagen del comprobante (foto) desde Dataverse.
- * Se envía como parte `evidencia` en el multipart hacia Sea Fácil.
- */
-async function fetchExpenseImageBuffer(expenseId) {
-  try {
-    const token = await getAccessToken();
-    const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${expenseId})/cr168_imagendelcomprobante/$value?size=full`;
+    const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${expenseId})/${columnName}/$value?size=full`;
     const response = await axios({
       method: 'GET',
       url,
@@ -49,9 +24,13 @@ async function fetchExpenseImageBuffer(expenseId) {
       responseType: 'arraybuffer',
       timeout: 30000
     });
+    if (!response.data || response.data.length === 0) return null;
     return Buffer.from(response.data);
   } catch (err) {
-    console.warn(`[ErpSendRoute] No se pudo descargar imagen del comprobante para el gasto ${expenseId}:`, err.message);
+    if (err.response && [404, 204].includes(err.response.status)) {
+      return null;
+    }
+    console.warn(`[ErpSendRoute] No se pudo descargar columna ${columnName} para el gasto ${expenseId}:`, err.message);
     return null;
   }
 }
@@ -106,25 +85,49 @@ export async function POST(request) {
           continue;
         }
 
-        // Descargar voucher/PDF si existe en Dataverse
-        let voucherBuffer = null;
-        let fileName = expense.cr168_voucher_desembolso_name || `Comprobante_${id.substring(0, 8)}.pdf`;
-        if (expense.cr168_voucher_desembolso) {
-          voucherBuffer = await fetchExpenseVoucherBuffer(id);
+        // 1. "Comprobante escaneado" (Foto del Comprobante)
+        // Prioridad 1: cr168_imagendelcomprobante (foto de la captura / comprobante)
+        // Prioridad 2: cr168_voucher_desembolso (documento PDF del buzón si no hay captura fotográfica)
+        let comprobanteBuffer = null;
+        let comprobanteFileName = null;
+
+        if (expense.cr168_imagendelcomprobante || expense.cr168_imagendelcomprobante_url) {
+          comprobanteBuffer = await fetchExpenseBinary(id, 'cr168_imagendelcomprobante');
         }
 
-        // Descargar imagen del comprobante para enviarla como evidencia
-        // (obligatoria para gastos tipo ATP según validación del ERP)
-        const imagenBuffer = await fetchExpenseImageBuffer(id);
-        const imagenNombre = `evidencia_${id.substring(0, 8)}.jpg`;
+        if (!comprobanteBuffer && (expense.cr168_voucher_desembolso || expense.cr168_voucher_desembolso_name)) {
+          comprobanteBuffer = await fetchExpenseBinary(id, 'cr168_voucher_desembolso');
+          if (comprobanteBuffer && expense.cr168_voucher_desembolso_name) {
+            comprobanteFileName = expense.cr168_voucher_desembolso_name;
+          }
+        }
+
+        // 2. "Evidencia del gasto" (Foto de Evidencia)
+        // OJO: Solo algunos registros tienen foto de evidencia. Si no tiene, no se envía nada.
+        let evidenciaBuffer = null;
+        const tieneEvidencia = Boolean(
+          expense.cr168_foto_evidencia ||
+          expense.cr168_foto_evidencia_url ||
+          expense.cr168_foto_evidenciaid
+        );
+
+        if (tieneEvidencia) {
+          evidenciaBuffer = await fetchExpenseBinary(id, 'cr168_foto_evidencia');
+        }
+
+        // 3. "Propina" (Voucher de propina si existe en Dataverse)
+        let propinaBuffer = null;
+        if (expense.cr168_voucher_propina) {
+          propinaBuffer = await fetchExpenseBinary(id, 'cr168_voucher_propina');
+        }
 
         // Despachar hacia Niuxpro
         const erpResponse = await sendExpenseToErp({
           expense,
-          pdfBuffer: voucherBuffer,
-          pdfFileName: fileName,
-          evidenciaBuffer: imagenBuffer,
-          evidenciaFileName: imagenNombre
+          pdfBuffer: comprobanteBuffer,
+          pdfFileName: comprobanteFileName,
+          evidenciaBuffer,
+          propinaBuffer
         });
 
         results.push({

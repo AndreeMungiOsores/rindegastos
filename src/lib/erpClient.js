@@ -123,7 +123,7 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
     fechaEmision = expense.createdon.split('T')[0];
   }
 
-  // Importes y regla de cuadre estricto
+  // Importes y regla de cuadre estricto (prioriza desglose tributario real de Dataverse)
   const total = Number((expense.cr168_montototalincluyendoigv || 0).toFixed(2));
   const propina = Number((expense.cr168_monto_propina || 0).toFixed(2));
 
@@ -131,18 +131,45 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
   let tasaIgv = 18.00;
   let igv = 0;
   let inafecto = 0;
-  const recargoConsumo = 0.00;
+  let recargoConsumo = 0;
 
-  if (tipoDoc === '14' || (expense.cr168_nombredelcomercio || '').toLowerCase().includes('banco')) {
+  const tieneDatosTributarios =
+    expense.cr168_base_gravada != null ||
+    expense.cr168_tasa_igv != null ||
+    expense.cr168_igv_monto != null;
+
+  if (tieneDatosTributarios) {
+    tasaIgv = expense.cr168_tasa_igv != null ? Number(expense.cr168_tasa_igv) : (tipoDoc === '14' ? 0.00 : 18.00);
+    baseGravada = expense.cr168_base_gravada != null ? Number(Number(expense.cr168_base_gravada).toFixed(2)) : 0.00;
+    igv = expense.cr168_igv_monto != null ? Number(Number(expense.cr168_igv_monto).toFixed(2)) : 0.00;
+    recargoConsumo = expense.cr168_recargo_consumo != null ? Number(Number(expense.cr168_recargo_consumo).toFixed(2)) : 0.00;
+    inafecto = expense.cr168_inafecto != null ? Number(Number(expense.cr168_inafecto).toFixed(2)) : 0.00;
+
+    // Regla de cuadre estricto SUNAT / Niuxpro:
+    // base_gravada + igv + inafecto + recargo_consumo === total
+    const sumaComponentes = Number((baseGravada + igv + inafecto + recargoConsumo).toFixed(2));
+    const dif = Number((total - sumaComponentes).toFixed(2));
+    if (Math.abs(dif) > 0 && Math.abs(dif) <= 0.03) {
+      if (baseGravada > 0) {
+        baseGravada = Number((baseGravada + dif).toFixed(2));
+      } else if (inafecto > 0) {
+        inafecto = Number((inafecto + dif).toFixed(2));
+      }
+    }
+  } else if (tipoDoc === '14' || (expense.cr168_nombredelcomercio || '').toLowerCase().includes('banco')) {
     // Caso operaciones bancarias: inafectas de IGV
     inafecto = total;
     baseGravada = 0.00;
     igv = 0.00;
     tasaIgv = 0.00;
+    recargoConsumo = 0.00;
   } else {
     // Comprobante con IGV estándar (18%)
     baseGravada = Number((total / 1.18).toFixed(2));
     igv = Number((total - baseGravada).toFixed(2));
+    tasaIgv = 18.00;
+    inafecto = 0.00;
+    recargoConsumo = 0.00;
   }
 
   const tipoGastoCode = getExpenseTypeCode(expense['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || expense.cr168_tipodegasto);
@@ -150,6 +177,42 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
   // Resolver DNI del colaborador desde la tabla de nómina
   const colaboradorNombre = expense.cr168_vendedor || '';
   const empleadoResuelto = resolveEmployeeDni(colaboradorNombre);
+
+  // Construcción de líneas de detalle según afectación
+  const lineas = [];
+  if (baseGravada > 0) {
+    lineas.push({
+      item: 1,
+      descripcion: expense.cr168_detalle ? expense.cr168_detalle.substring(0, 100) : 'Consumo / Gasto sustentado',
+      cantidad: 1,
+      valor_unitario: baseGravada,
+      valor_total: baseGravada,
+      afectacion: 'G',
+      igv: igv
+    });
+  }
+  if (inafecto > 0) {
+    lineas.push({
+      item: lineas.length + 1,
+      descripcion: 'Concepto inafecto de impuesto',
+      cantidad: 1,
+      valor_unitario: inafecto,
+      valor_total: inafecto,
+      afectacion: 'I',
+      igv: 0.00
+    });
+  }
+  if (lineas.length === 0) {
+    lineas.push({
+      item: 1,
+      descripcion: expense.cr168_detalle ? expense.cr168_detalle.substring(0, 100) : 'Consumo / Gasto sustentado',
+      cantidad: 1,
+      valor_unitario: total,
+      valor_total: total,
+      afectacion: 'I',
+      igv: 0.00
+    });
+  }
 
   return {
     codigo_empresa: codigoEmpresa,
@@ -199,17 +262,7 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
       clinica: expense.cr168_clinica || '',
       forma_pago: 'EF'
     },
-    lineas: [
-      {
-        item: 1,
-        descripcion: expense.cr168_detalle ? expense.cr168_detalle.substring(0, 100) : 'Consumo / Gasto sustentado',
-        cantidad: 1,
-        valor_unitario: baseGravada > 0 ? baseGravada : inafecto,
-        valor_total: baseGravada > 0 ? baseGravada : inafecto,
-        afectacion: baseGravada > 0 ? 'G' : 'I',
-        igv: igv
-      }
-    ]
+    lineas
   };
 }
 
@@ -219,13 +272,13 @@ export function formatExpenseToErpPayload(expense, { hasXml = false } = {}) {
 export async function sendExpenseToErp({
   expense,
   pdfBuffer = null,
-  pdfFileName = 'comprobante.pdf',
+  pdfFileName = null,
   xmlBuffer = null,
   xmlFileName = 'comprobante.xml',
   evidenciaBuffer = null,
-  evidenciaFileName = 'evidencia.jpg',
+  evidenciaFileName = null,
   propinaBuffer = null,
-  propinaFileName = 'propina.jpg'
+  propinaFileName = null
 }) {
   const url = `${ERP_BASE_URL}/action/33_json/18_compras_v1/receive`;
   const hasXml = !!(xmlBuffer && xmlBuffer.length > 0);
@@ -236,7 +289,25 @@ export async function sendExpenseToErp({
   formData.append('payload', JSON.stringify(payloadJson));
 
   if (pdfBuffer && pdfBuffer.length > 0) {
-    formData.append('pdf', new Blob([pdfBuffer], { type: 'application/pdf' }), pdfFileName);
+    const isPdf = pdfBuffer.length >= 4 && pdfBuffer.slice(0, 4).toString() === '%PDF';
+    const isPng = pdfBuffer.length >= 8 && pdfBuffer[0] === 0x89 && pdfBuffer[1] === 0x50;
+    const isJpg = pdfBuffer.length >= 3 && pdfBuffer[0] === 0xFF && pdfBuffer[1] === 0xD8;
+
+    let mimeType = 'application/pdf';
+    let defaultExt = 'pdf';
+    if (isPng) {
+      mimeType = 'image/png';
+      defaultExt = 'png';
+    } else if (isJpg) {
+      mimeType = 'image/jpeg';
+      defaultExt = 'jpg';
+    } else if (!isPdf) {
+      mimeType = 'image/jpeg';
+      defaultExt = 'jpg';
+    }
+
+    const finalPdfFileName = pdfFileName || `${payloadJson.comprobante.serie}-${payloadJson.comprobante.numero}.${defaultExt}`;
+    formData.append('pdf', new Blob([pdfBuffer], { type: mimeType }), finalPdfFileName);
   } else {
     // Si no hay archivo real, enviar un placeholder PDF mínimo según exigencia del punto 7.1
     const dummyPdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0>>endobj\nxref\n0 3\n0000000000 65535 f\n0000000009 00000 n\n0000000052 00000 n\ntrailer<</Size 3/Root 1 0 R>>\nstartxref\n99\n%%EOF');
@@ -248,11 +319,17 @@ export async function sendExpenseToErp({
   }
 
   if (evidenciaBuffer && evidenciaBuffer.length > 0) {
-    formData.append('evidencia', new Blob([evidenciaBuffer], { type: 'image/jpeg' }), evidenciaFileName);
+    const isPng = evidenciaBuffer.length >= 8 && evidenciaBuffer[0] === 0x89 && evidenciaBuffer[1] === 0x50;
+    const mimeType = isPng ? 'image/png' : 'image/jpeg';
+    const finalEvidenciaName = evidenciaFileName || `evidencia_${expense.cr168_reportedegastosid ? expense.cr168_reportedegastosid.substring(0, 8) : 'doc'}.${isPng ? 'png' : 'jpg'}`;
+    formData.append('evidencia', new Blob([evidenciaBuffer], { type: mimeType }), finalEvidenciaName);
   }
 
   if (propinaBuffer && propinaBuffer.length > 0) {
-    formData.append('propina', new Blob([propinaBuffer], { type: 'image/jpeg' }), propinaFileName);
+    const isPng = propinaBuffer.length >= 8 && propinaBuffer[0] === 0x89 && propinaBuffer[1] === 0x50;
+    const mimeType = isPng ? 'image/png' : 'image/jpeg';
+    const finalPropinaName = propinaFileName || `propina_${expense.cr168_reportedegastosid ? expense.cr168_reportedegastosid.substring(0, 8) : 'doc'}.${isPng ? 'png' : 'jpg'}`;
+    formData.append('propina', new Blob([propinaBuffer], { type: mimeType }), finalPropinaName);
   }
 
   try {
