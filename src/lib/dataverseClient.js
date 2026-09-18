@@ -54,6 +54,47 @@ async function request(method, endpoint, data = null) {
 }
 
 /**
+ * POST que exige que Dataverse devuelva el cuerpo completo del registro creado.
+ * Usa 'Prefer: return=representation' para evitar el 204 No Content por defecto.
+ */
+async function requestPost(endpoint, data) {
+  let token = await getAccessToken();
+  const url = `${DATAVERSE_BASE_URL}/${endpoint}`;
+
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json; charset=utf-8',
+    'OData-MaxVersion': '4.0',
+    'OData-Version': '4.0',
+    'Prefer': 'return=representation'
+  };
+
+  try {
+    const response = await axios.post(url, data, { headers });
+    if (response.data && Object.keys(response.data).length > 0) {
+      return response.data;
+    }
+    // Fallback: extraer ID desde el header OData-EntityId si el body está vacío
+    const entityIdHeader = response.headers['odata-entityid'] || response.headers['OData-EntityId'] || '';
+    const match = entityIdHeader.match(/\(([^)]+)\)/);
+    return match ? { _entityIdFromHeader: match[1] } : {};
+  } catch (error) {
+    if (error.response && error.response.status === 401) {
+      console.warn('[DataverseClient] Error 401 en requestPost. Reintentando...');
+      invalidateCache();
+      token = await getAccessToken();
+      const retryResponse = await axios.post(url, data, {
+        headers: { ...headers, 'Authorization': `Bearer ${token}` }
+      });
+      return retryResponse.data || {};
+    }
+    console.error(`[DataverseClient] Error en POST ${endpoint}:`, error.response?.data || error.message);
+    throw error;
+  }
+}
+
+/**
  * Obtiene todos los registros de reporte de gastos, expandiendo el creador (createdby) para obtener su correo electrónico.
  * @returns {Promise<Array>} Lista de gastos
  */
@@ -287,8 +328,15 @@ export async function createLoan(loanData) {
     cr168_estadoprestamo: 'Vigente'
   };
 
-  const createdPrestamo = await request('POST', 'cr168_prestamos', prestamoPayload);
-  const prestamoId = createdPrestamo.cr168_prestamoid;
+  // Usar requestPost para forzar return=representation y obtener cr168_prestamoid en la respuesta
+  const createdPrestamo = await requestPost('cr168_prestamos', prestamoPayload);
+
+  // Extraer el ID del préstamo creado (puede venir del body o del header OData-EntityId como fallback)
+  const prestamoId = createdPrestamo.cr168_prestamoid || createdPrestamo._entityIdFromHeader;
+
+  if (!prestamoId) {
+    throw new Error(`[DataverseClient] No se pudo obtener el ID del préstamo creado. Respuesta recibida: ${JSON.stringify(createdPrestamo)}`);
+  }
 
   // Generar cuotas
   const monthNames = [
@@ -326,12 +374,13 @@ export async function createLoan(loanData) {
       'cr168_prestamoid@odata.bind': `/cr168_prestamos(${prestamoId})`
     };
 
-    const createdCuota = await request('POST', 'cr168_tabla2s', cuotaPayload);
+    const createdCuota = await requestPost('cr168_tabla2s', cuotaPayload);
     cuotasCreadas.push(createdCuota);
   }
 
   return {
     ...createdPrestamo,
+    cr168_prestamoid: prestamoId,
     cuotas: cuotasCreadas
   };
 }
