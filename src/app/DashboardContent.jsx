@@ -816,6 +816,9 @@ export default function AdminDashboard({ onLogout }) {
       if (activeExpense.cr168_rucempresa !== undefined) {
         formData.append('cr168_rucempresa', activeExpense.cr168_rucempresa || '');
       }
+      if (activeExpense.cr168_id_desembolso !== undefined) {
+        formData.append('cr168_id_desembolso', activeExpense.cr168_id_desembolso || '');
+      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -859,6 +862,9 @@ export default function AdminDashboard({ onLogout }) {
       const formData = new FormData();
       formData.append('cr168_aprobado', activeExpense.cr168_aprobado);
       formData.append('cr168_estado', parseInt(activeExpense.cr168_estado, 10));
+      if (activeExpense.cr168_id_desembolso !== undefined) {
+        formData.append('cr168_id_desembolso', activeExpense.cr168_id_desembolso || '');
+      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -944,7 +950,8 @@ export default function AdminDashboard({ onLogout }) {
         // ── Otros ──
         item.cr168_detalle || '',
         item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'Sí' : 'No'),
-        item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'
+        item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente',
+        item.cr168_id_desembolso || ''
       ];
     });
 
@@ -974,7 +981,8 @@ export default function AdminDashboard({ onLogout }) {
       // ── Otros ──
       { name: 'Detalle',               filterButton: true },
       { name: 'Aprobado',              filterButton: true },
-      { name: 'Estado',                filterButton: true }
+      { name: 'Estado',                filterButton: true },
+      { name: 'ID Desembolso',         filterButton: true }
     ];
 
     // Agregar tabla de datos con estilo formal en Excel
@@ -2411,12 +2419,17 @@ export default function AdminDashboard({ onLogout }) {
                                 </select>
                               </div>
                             </th>
+                            <th>
+                              <div className="header-with-filter">
+                                <span className="header-label">ID Desembolso</span>
+                              </div>
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {sortedExpenses.length === 0 ? (
                             <tr>
-                              <td colSpan={11} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              <td colSpan={12} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
                                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -2482,6 +2495,15 @@ export default function AdminDashboard({ onLogout }) {
                                     <span className={`badge ${item.cr168_estado === 553050001 ? 'badge-reimbursed' : 'badge-pending'}`}>
                                       {item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'}
                                     </span>
+                                  </td>
+                                  <td onClick={() => setActiveExpense({ ...item })}>
+                                    {item.cr168_id_desembolso ? (
+                                      <code style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '0.2rem 0.45rem', borderRadius: '4px', color: '#1e293b', fontWeight: '600', fontSize: '0.78rem' }}>
+                                        {item.cr168_id_desembolso}
+                                      </code>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }}>—</span>
+                                    )}
                                   </td>
                                 </tr>
                               );
@@ -2851,6 +2873,22 @@ export default function AdminDashboard({ onLogout }) {
                         <option value="553050000">Pendiente</option>
                         <option value="553050001">Desembolsado</option>
                       </select>
+                    </div>
+
+                    <div className="info-row form-group" style={{ marginBottom: '1rem' }}>
+                      <span className="info-label" id="label-id-desembolso">ID Desembolso</span>
+                      <input
+                        type="text"
+                        className="form-input"
+                        aria-labelledby="label-id-desembolso"
+                        placeholder="N° de Operación / Solicitud"
+                        value={activeExpense.cr168_id_desembolso || ''}
+                        onChange={(e) => setActiveExpense(prev => ({
+                          ...prev,
+                          cr168_id_desembolso: e.target.value
+                        }))}
+                        style={{ fontSize: '0.85rem' }}
+                      />
                     </div>
 
                     {parseInt(activeExpense.cr168_estado, 10) === 553050001 && (

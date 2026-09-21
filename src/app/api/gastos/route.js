@@ -35,6 +35,7 @@ export async function PATCH(request) {
     const cr168_monto_propinaRaw = formData.get('cr168_monto_propina');
     const cr168_empresaRaw = formData.get('cr168_empresa');
     const cr168_rucempresaRaw = formData.get('cr168_rucempresa');
+    const cr168_id_desembolsoRaw = formData.get('cr168_id_desembolso');
     const voucherFile = formData.get('voucher'); // Archivo de tipo File o null
 
     // Procesar campos comunes
@@ -76,6 +77,7 @@ export async function PATCH(request) {
           const updateData = {};
           if (cr168_estado !== undefined) updateData.cr168_estado = cr168_estado;
           if (cr168_aprobado !== undefined) updateData.cr168_aprobado = cr168_aprobado;
+          if (cr168_id_desembolsoRaw !== null) updateData.cr168_id_desembolso = cr168_id_desembolsoRaw || null;
 
           await updateExpense(expenseId, updateData);
           
@@ -197,6 +199,7 @@ export async function PATCH(request) {
       }
       if (cr168_empresaRaw !== null) updateData.cr168_empresa = cr168_empresaRaw;
       if (cr168_rucempresaRaw !== null) updateData.cr168_rucempresa = cr168_rucempresaRaw;
+      if (cr168_id_desembolsoRaw !== null) updateData.cr168_id_desembolso = cr168_id_desembolsoRaw || null;
 
       if (Object.keys(updateData).length === 0) {
         return NextResponse.json({ error: 'Debes proporcionar datos para actualizar' }, { status: 400 });
