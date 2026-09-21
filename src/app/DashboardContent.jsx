@@ -1626,13 +1626,10 @@ export default function AdminDashboard({ onLogout }) {
 
           <button
             type="button"
-            className={`menu-item ${activeModule === 'rindegastos' && rindegastosSubTab !== 'buzon' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveModule('rindegastos');
-              if (rindegastosSubTab === 'buzon') setRindegastosSubTab('tabla');
-            }}
+            className={`menu-item ${activeModule === 'rindegastos' ? 'active' : ''}`}
+            onClick={() => setActiveModule('rindegastos')}
             title="Panel RindeGastos"
-            aria-current={activeModule === 'rindegastos' && rindegastosSubTab !== 'buzon' ? 'page' : undefined}
+            aria-current={activeModule === 'rindegastos' ? 'page' : undefined}
           >
             <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="3" width="7" height="7" rx="1"/>
@@ -1661,19 +1658,16 @@ export default function AdminDashboard({ onLogout }) {
 
           <button
             type="button"
-            className={`menu-item ${(activeModule === 'rindegastos' && rindegastosSubTab === 'buzon') || activeModule === 'proveedores' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveModule('rindegastos');
-              setRindegastosSubTab('buzon');
-            }}
-            title="Buzón de Proveedores"
-            aria-current={(activeModule === 'rindegastos' && rindegastosSubTab === 'buzon') || activeModule === 'proveedores' ? 'page' : undefined}
+            className={`menu-item ${activeModule === 'proveedores' ? 'active' : ''}`}
+            onClick={() => setActiveModule('proveedores')}
+            title="Portal Proveedores"
+            aria-current={activeModule === 'proveedores' ? 'page' : undefined}
           >
             <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-              <polyline points="22,6 12,13 2,6"/>
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
             </svg>
-            {!sidebarCollapsed && <span className="menu-label">Buzón Proveedores</span>}
+            {!sidebarCollapsed && <span className="menu-label">Portal Proveedores</span>}
           </button>
         </nav>
 
@@ -3975,8 +3969,8 @@ export default function AdminDashboard({ onLogout }) {
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                 <polyline points="9 22 9 12 15 12 15 22"/>
               </svg>
-              <h2>Portal de Proveedores</h2>
-              <p className="status-text">En desarrollo</p>
+              <h2>Portal Proveedores</h2>
+              <p className="status-text">En proceso</p>
             </div>
           </div>
         )}
