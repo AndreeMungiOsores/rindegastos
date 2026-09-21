@@ -359,3 +359,138 @@ export function tasaIgvValida(tasa) {
   if (tasa === null || tasa === undefined) return true; // desconocida, no inválida
   return [0, 10, 10.5, 18].includes(tasa);
 }
+
+const SYSTEM_PROMPT_VOUCHER = `Eres un auditor bancario experto en comprobantes y vouchers de transferencias en Perú.
+Tu tarea es analizar el voucher de transferencia bancaria y extraer los metadatos de la operación.
+Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin formato markdown, sin comentarios.
+Reglas estrictas:
+1. banco: "BCP" | "BBVA" | "INTERBANK" | "OTRO"
+2. id_desembolso:
+   - Si el banco es BBVA o BCP: extrae el "Número de Operación".
+   - Si el banco es Interbank: extrae el "Número de Solicitud" (o "Número de Operación" si no tiene solicitud).
+   - Debe ser únicamente la cadena de dígitos o código alfanumérico identificador sin palabras alrededor.
+3. Si un dato no existe o no se puede determinar, usa null (NUNCA uses "null", "undefined" ni strings vacíos).
+4. monto: número float positivo del importe transferido (ej. 54.90).
+5. moneda: "PEN" | "USD"
+6. fecha: formato "YYYY-MM-DD" si está visible, o null.
+7. beneficiario: nombre de la persona o empresa que recibe el pago, o null.
+
+Estructura JSON exacta:
+{
+  "banco": "BCP|BBVA|INTERBANK|OTRO",
+  "id_desembolso": "12345678",
+  "campo_origen": "numero_operacion|numero_solicitud",
+  "monto": 0.00,
+  "moneda": "PEN|USD",
+  "fecha": "YYYY-MM-DD",
+  "beneficiario": "Nombre Beneficiario"
+}`;
+
+/**
+ * Extrae texto de un archivo PDF subiéndolo temporalmente a la API Files de Kimi.
+ * @param {Buffer} pdfBuffer 
+ * @param {string} filename 
+ * @returns {Promise<string>}
+ */
+async function extractTextFromPdf(pdfBuffer, filename) {
+  const { Blob } = await import('node:buffer');
+  const formData = new FormData();
+  formData.append('file', new Blob([pdfBuffer], { type: 'application/pdf' }), filename);
+  formData.append('purpose', 'file-extract');
+
+  const fileRes = await axios.post(`${KIMI_BASE_URL}/files`, formData, {
+    headers: { Authorization: `Bearer ${process.env.KIMI_API_KEY}` },
+    timeout: 60000
+  });
+  const fileId = fileRes.data.id;
+
+  try {
+    const contentRes = await axios.get(`${KIMI_BASE_URL}/files/${fileId}/content`, {
+      headers: { Authorization: `Bearer ${process.env.KIMI_API_KEY}` },
+      timeout: 30000
+    });
+    return contentRes.data.content || '';
+  } finally {
+    try {
+      await axios.delete(`${KIMI_BASE_URL}/files/${fileId}`, {
+        headers: { Authorization: `Bearer ${process.env.KIMI_API_KEY}` },
+        timeout: 10000
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * Analiza un comprobante/voucher bancario (PDF o imagen) y extrae el ID de desembolso y metadatos bancarios.
+ * @param {Buffer} buffer 
+ * @param {string} filename 
+ * @returns {Promise<{banco: string, id_desembolso: string|null, campo_origen?: string, monto?: number|null, moneda?: string|null, fecha?: string|null, beneficiario?: string|null}>}
+ */
+export async function extractVoucherMetadata(buffer, filename) {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  const isPdf = ext === 'pdf';
+  const isImage = ['png', 'jpg', 'jpeg', 'webp'].includes(ext);
+
+  if (!isPdf && !isImage) {
+    console.warn(`[KimiClient] Extensión no soportada para análisis visual/documental (${ext}): ${filename}`);
+    return { banco: 'OTRO', id_desembolso: null };
+  }
+
+  let payload;
+  if (isPdf) {
+    const rawText = await extractTextFromPdf(buffer, filename);
+    payload = {
+      model: KIMI_MODEL,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT_VOUCHER },
+        {
+          role: 'user',
+          content: `Analiza el siguiente contenido extraído del voucher de desembolso (${filename}):\n\n${rawText}`
+        }
+      ],
+      max_tokens: 1024
+    };
+  } else {
+    const mimeType = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg');
+    const base64 = buffer.toString('base64');
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    payload = {
+      model: KIMI_MODEL,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT_VOUCHER },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: dataUrl } },
+            { type: 'text', text: `Analiza este voucher de desembolso bancario (${filename}) y extrae los datos de operación según las reglas del sistema.` }
+          ]
+        }
+      ],
+      max_tokens: 1024
+    };
+  }
+
+  if (KIMI_MODEL.includes('k3')) payload.reasoning_effort = 'low';
+
+  const res = await axios.post(`${KIMI_BASE_URL}/chat/completions`, payload, {
+    headers: {
+      Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    timeout: 60000
+  });
+
+  const content = res.data.choices?.[0]?.message?.content || '{}';
+  const cleanJson = content.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+  const parsed = JSON.parse(cleanJson);
+
+  // Validación estricta anti-alucinación
+  if (parsed.id_desembolso === 'null' || parsed.id_desembolso === 'undefined' || String(parsed.id_desembolso).trim() === '') {
+    parsed.id_desembolso = null;
+  } else if (parsed.id_desembolso) {
+    parsed.id_desembolso = String(parsed.id_desembolso).trim();
+  }
+
+  return parsed;
+}

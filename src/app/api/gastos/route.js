@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getExpenses, updateExpense, getExpense, uploadFileToExpense } from '../../../lib/dataverseClient.js';
 import { sendEmail } from '../../../lib/graphClient.js';
+import { extractVoucherMetadata } from '../../../lib/kimiClient.js';
 
 export async function GET() {
   try {
@@ -71,13 +72,31 @@ export async function PATCH(request) {
 
       console.log(`[API PATCH] Iniciando actualización masiva para ${ids.length} registros...`);
 
+      // Si se adjunta un voucher en lote, intentar auto-extraer el ID de desembolso con IA
+      let autoIdDesembolso = null;
+      if (voucherBuffer) {
+        try {
+          const extracted = await extractVoucherMetadata(voucherBuffer, voucherName);
+          if (extracted?.id_desembolso) {
+            autoIdDesembolso = extracted.id_desembolso;
+            console.log(`[API PATCH Masivo] ID Desembolso auto-extraído para lote: ${autoIdDesembolso} (${extracted.banco})`);
+          }
+        } catch (aiErr) {
+          console.warn(`[API PATCH Masivo] No se pudo auto-extraer ID de desembolso: ${aiErr.message}`);
+        }
+      }
+
       // 1. Actualizar el estado o campo aprobado de cada gasto en Dataverse y subir voucher si existe
       await Promise.all(
         ids.map(async (expenseId) => {
           const updateData = {};
           if (cr168_estado !== undefined) updateData.cr168_estado = cr168_estado;
           if (cr168_aprobado !== undefined) updateData.cr168_aprobado = cr168_aprobado;
-          if (cr168_id_desembolsoRaw !== null) updateData.cr168_id_desembolso = cr168_id_desembolsoRaw || null;
+          if (autoIdDesembolso) {
+            updateData.cr168_id_desembolso = autoIdDesembolso;
+          } else if (cr168_id_desembolsoRaw !== null) {
+            updateData.cr168_id_desembolso = cr168_id_desembolsoRaw || null;
+          }
 
           await updateExpense(expenseId, updateData);
           
@@ -216,10 +235,19 @@ export async function PATCH(request) {
       // Ejecutar la actualización en Dataverse
       const result = await updateExpense(id, updateData);
 
-      // Subir el voucher de desembolso si se proporcionó
+      // Subir el voucher de desembolso si se proporcionó y auto-extraer ID
       if (voucherBuffer) {
         try {
           await uploadFileToExpense(id, voucherBuffer, voucherName);
+          try {
+            const extracted = await extractVoucherMetadata(voucherBuffer, voucherName);
+            if (extracted?.id_desembolso) {
+              await updateExpense(id, { cr168_id_desembolso: extracted.id_desembolso });
+              console.log(`[API PATCH Individual] ID Desembolso auto-extraído para gasto ${id}: ${extracted.id_desembolso} (${extracted.banco})`);
+            }
+          } catch (aiErr) {
+            console.warn(`[API PATCH Individual] No se pudo auto-extraer ID de desembolso: ${aiErr.message}`);
+          }
         } catch (uploadErr) {
           console.error(`Error al subir voucher para gasto individual ${id}:`, uploadErr.message);
         }

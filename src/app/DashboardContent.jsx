@@ -268,6 +268,21 @@ export default function AdminDashboard({ onLogout }) {
       } catch (enrichErr) {
         console.warn('[Dashboard] Error en enrich-expenses manual:', enrichErr.message);
       }
+
+      // También enriquecer nuevos vouchers bancarios pendientes si existen
+      try {
+        const voucherRes = await fetch('/api/cron/enrich-vouchers', { method: 'POST' });
+        const voucherData = await voucherRes.json();
+        if (voucherData.success && voucherData.processedCount > 0) {
+          setSyncBanner({
+            type: 'success',
+            text: `💳 ¡Éxito! Se procesaron ${voucherData.processedCount} voucher(s) con ID de desembolso.`
+          });
+          await fetchExpenses();
+        }
+      } catch (voucherErr) {
+        console.warn('[Dashboard] Error en enrich-vouchers manual:', voucherErr.message);
+      }
     } catch (err) {
       console.error('[Dashboard] Error en handleSyncInvoices:', err);
       setSyncBanner({
@@ -416,6 +431,22 @@ export default function AdminDashboard({ onLogout }) {
         }
       } catch (enrichErr) {
         console.warn('[AutoSync] Error en enriquecimiento IA:', enrichErr.message);
+      }
+
+      // 3. Auto-enriquecimiento de ID Desembolso para vouchers bancarios pendientes
+      try {
+        const voucherRes = await fetch('/api/cron/enrich-vouchers', { method: 'POST' });
+        const voucherData = await voucherRes.json();
+        if (voucherData.success && voucherData.processedCount > 0) {
+          setSyncBanner({
+            type: 'success',
+            text: `💳 Vouchers procesados: ${voucherData.processedCount} ID(s) de desembolso extraído(s) con éxito.`
+          });
+          fetchExpenses(true);
+          setTimeout(() => setSyncBanner(null), 8000);
+        }
+      } catch (voucherErr) {
+        console.warn('[AutoSync] Error en enriquecimiento de vouchers:', voucherErr.message);
       }
     } catch (err) {
       console.warn('[AutoSync] Error general en sync automático:', err.message);
