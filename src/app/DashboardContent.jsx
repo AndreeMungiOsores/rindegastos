@@ -493,7 +493,8 @@ export default function AdminDashboard({ onLogout }) {
         (item.cr168_vendedor && item.cr168_vendedor.toLowerCase().includes(searchLower)) ||
         (item.cr168_nombredelcomercio && item.cr168_nombredelcomercio.toLowerCase().includes(searchLower)) ||
         (item.cr168_numerodecomprobante && item.cr168_numerodecomprobante.toLowerCase().includes(searchLower)) ||
-        (item.cr168_detalle && item.cr168_detalle.toLowerCase().includes(searchLower))
+        (item.cr168_detalle && item.cr168_detalle.toLowerCase().includes(searchLower)) ||
+        (item.cr168_id_desembolso && String(item.cr168_id_desembolso).toLowerCase().includes(searchLower))
       ) : true;
 
       // Rango de fechas de gasto
@@ -816,9 +817,6 @@ export default function AdminDashboard({ onLogout }) {
       if (activeExpense.cr168_rucempresa !== undefined) {
         formData.append('cr168_rucempresa', activeExpense.cr168_rucempresa || '');
       }
-      if (activeExpense.cr168_id_desembolso !== undefined) {
-        formData.append('cr168_id_desembolso', activeExpense.cr168_id_desembolso || '');
-      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -862,9 +860,6 @@ export default function AdminDashboard({ onLogout }) {
       const formData = new FormData();
       formData.append('cr168_aprobado', activeExpense.cr168_aprobado);
       formData.append('cr168_estado', parseInt(activeExpense.cr168_estado, 10));
-      if (activeExpense.cr168_id_desembolso !== undefined) {
-        formData.append('cr168_id_desembolso', activeExpense.cr168_id_desembolso || '');
-      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -2147,7 +2142,7 @@ export default function AdminDashboard({ onLogout }) {
                       <span className="search-icon"></span>
                       <input
                         type="text"
-                        placeholder="Buscar por vendedor, comercio, comprobante..."
+                        placeholder="Buscar por vendedor, comercio, comprobante, ID desembolso..."
                         className="search-input"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -2876,18 +2871,34 @@ export default function AdminDashboard({ onLogout }) {
                     </div>
 
                     <div className="info-row form-group" style={{ marginBottom: '1rem' }}>
-                      <span className="info-label" id="label-id-desembolso">ID Desembolso</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                        <span className="info-label" id="label-id-desembolso">ID Desembolso</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #64748b)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', userSelect: 'none' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                          Solo lectura (IA)
+                        </span>
+                      </div>
                       <input
                         type="text"
                         className="form-input"
                         aria-labelledby="label-id-desembolso"
-                        placeholder="N° de Operación / Solicitud"
+                        aria-readonly="true"
+                        readOnly
+                        placeholder="Sin ID asignado (procesado vía IA)"
                         value={activeExpense.cr168_id_desembolso || ''}
-                        onChange={(e) => setActiveExpense(prev => ({
-                          ...prev,
-                          cr168_id_desembolso: e.target.value
-                        }))}
-                        style={{ fontSize: '0.85rem' }}
+                        title="Este campo es generado automáticamente mediante el análisis con IA del voucher y no se puede editar manualmente."
+                        style={{
+                          fontSize: '0.85rem',
+                          backgroundColor: '#f8fafc',
+                          color: activeExpense.cr168_id_desembolso ? '#0f172a' : '#94a3b8',
+                          cursor: 'not-allowed',
+                          borderColor: '#e2e8f0',
+                          fontFamily: activeExpense.cr168_id_desembolso ? 'monospace, sans-serif' : 'inherit',
+                          fontWeight: activeExpense.cr168_id_desembolso ? '600' : 'normal'
+                        }}
                       />
                     </div>
 
