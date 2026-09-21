@@ -50,8 +50,8 @@ Facturas que ingresan automáticamente desde el buzón compartido `proveedores.p
 En la tabla principal de RindeGastos se mezclaban los gastos de rendición de cuentas de vendedores y colaboradores con las facturas operativas de proveedores del buzón. Al filtrar por Adrián se distorsionaban las estadísticas y el seguimiento de tesorería.
 
 ### Requerimientos Funcionales
-- [ ] **Nueva Pestaña en el Panel:** Crear una sección dedicada llamada **«Buzón de Proveedores»** (o *Tabla Proveedores*), independiente del módulo RindeGastos.
-- [ ] **Aislamiento Estadístico:** Excluir por completo las facturas de proveedores de los gráficos y métricas de consumo de los vendedores y colaboradores de campo.
+- [x] **Nueva Pestaña en el Panel:** Crear una sección dedicada llamada **«Buzón de Proveedores»** (o *Tabla Proveedores*), independiente del módulo RindeGastos. Implementado con subpestañas dedicadas (`rendicion` vs `buzon`) y acceso directo desde el sidebar (`Proveedores`).
+- [x] **Aislamiento Estadístico:** Excluir por completo las facturas de proveedores de los gráficos y métricas de consumo de los vendedores y colaboradores de campo (soluciona la distorsión del perfil de Adrián).
 - [ ] **Diseño para Cuentas por Pagar:** Presentar columnas de fecha de vencimiento, importe neto, detracción y estado de pago comercial.
 - [ ] **Escalabilidad:** Servirá de base y backend para el futuro portal web de autoservicio de proveedores.
 

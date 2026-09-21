@@ -29,7 +29,6 @@ export default function AdminDashboard({ onLogout }) {
   const [vendedorFilter, setVendedorFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
   const [aprobadoFilter, setAprobadoFilter] = useState('');
-  const [soloBuzon, setSoloBuzon] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Ordenamiento de Fecha
@@ -472,27 +471,38 @@ export default function AdminDashboard({ onLogout }) {
     };
   }, []);
 
-  // Lista única de equipos/áreas para el selector de filtros
-  const equiposList = useMemo(() => {
-    const list = expenses.map(e => getVendorArea(e.cr168_vendedor)).filter(Boolean);
-    return [...new Set(list)].sort();
+  // Partición de datos: Rendiciones de Colaboradores vs Facturas del Buzón de Proveedores
+  const rendicionExpenses = useMemo(() => {
+    return expenses.filter(e => !(e.cr168_detalle || '').startsWith('[Factura Correo]'));
   }, [expenses]);
 
-  // Lista única de vendedores para el selector de filtros
-  const vendorsList = useMemo(() => {
-    const list = expenses.map(e => e.cr168_vendedor).filter(Boolean);
-    return [...new Set(list)].sort();
+  const buzonExpenses = useMemo(() => {
+    return expenses.filter(e => (e.cr168_detalle || '').startsWith('[Factura Correo]'));
   }, [expenses]);
+
+  // Lista única de equipos/áreas para el selector de filtros (basada en colaboradores de rendición)
+  const equiposList = useMemo(() => {
+    const list = rendicionExpenses.map(e => getVendorArea(e.cr168_vendedor)).filter(Boolean);
+    return [...new Set(list)].sort();
+  }, [rendicionExpenses]);
+
+  // Lista única de vendedores para el selector de filtros (exclusivo rendición de colaboradores)
+  const vendorsList = useMemo(() => {
+    const list = rendicionExpenses.map(e => e.cr168_vendedor).filter(Boolean);
+    return [...new Set(list)].sort();
+  }, [rendicionExpenses]);
 
   // Lista única de empresas para el selector de filtros
   const empresasList = useMemo(() => {
-    const list = expenses.map(e => e.cr168_empresa).filter(Boolean);
+    const targetList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+    const list = targetList.map(e => e.cr168_empresa).filter(Boolean);
     return [...new Set(list)].sort();
-  }, [expenses]);
+  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses]);
 
   // Lista única de estados
   const statesList = useMemo(() => {
-    const list = expenses.map(e => ({
+    const targetList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+    const list = targetList.map(e => ({
       val: e.cr168_estado,
       text: e['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'
     }));
@@ -505,11 +515,14 @@ export default function AdminDashboard({ onLogout }) {
       }
     }
     return unique.sort((a, b) => a.text.localeCompare(b.text));
-  }, [expenses]);
+  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses]);
 
-  // Filtrado y búsqueda de gastos
+  // Filtrado y búsqueda de gastos según la pestaña activa
   const filteredExpenses = useMemo(() => {
-    return expenses.filter(item => {
+    // Si la subpestaña es buzón, el dataset base es buzonExpenses; en caso contrario, rendicionExpenses
+    const baseList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+
+    return baseList.filter(item => {
       const vendorArea = getVendorArea(item.cr168_vendedor);
       const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
       const matchesEquipo = equipoFilter ? vendorArea === equipoFilter : true;
@@ -540,11 +553,9 @@ export default function AdminDashboard({ onLogout }) {
         }
       }
 
-      const matchesBuzon = soloBuzon ? (item.cr168_detalle || '').startsWith('[Factura Correo]') : true;
-
-      return matchesEmpresa && matchesEquipo && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange && matchesBuzon;
+      return matchesEmpresa && matchesEquipo && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange;
     });
-  }, [expenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, soloBuzon, searchTerm, filterStartDate, filterEndDate]);
+  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
 
   // Ordenamiento de gastos basado en la columna de fecha activa (Gasto o Creación)
   const sortedExpenses = useMemo(() => {
@@ -559,19 +570,23 @@ export default function AdminDashboard({ onLogout }) {
         dateA = a.cr168_fechadelgasto ? a.cr168_fechadelgasto.split('T')[0] : '';
         dateB = b.cr168_fechadelgasto ? b.cr168_fechadelgasto.split('T')[0] : '';
       }
-      return dateOrder === 'asc' ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
+      if (!dateA && !dateB) return 0;
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      return dateOrder === 'desc' ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB);
     });
     return sorted;
   }, [filteredExpenses, sortField, dateOrder]);
 
-  // Calcular totales para los KPIs generales
+  // Calcular totales para los KPIs generales de la pestaña activa
   const stats = useMemo(() => {
-    const totalCount = expenses.length;
-    const totalAmount = expenses.reduce((sum, e) => sum + (e.cr168_montototalincluyendoigv || 0), 0);
-    const approvedCount = expenses.filter(e => e.cr168_aprobado).length;
-    const pendingApprovalCount = expenses.filter(e => !e.cr168_aprobado).length;
-    const pendingDisbursementCount = expenses.filter(e => parseInt(e.cr168_estado, 10) !== 553050001).length;
-    const disbursedCount = expenses.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
+    const currentList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+    const totalCount = currentList.length;
+    const totalAmount = currentList.reduce((sum, e) => sum + (e.cr168_montototalincluyendoigv || 0), 0);
+    const approvedCount = currentList.filter(e => e.cr168_aprobado).length;
+    const pendingApprovalCount = currentList.filter(e => !e.cr168_aprobado).length;
+    const pendingDisbursementCount = currentList.filter(e => parseInt(e.cr168_estado, 10) !== 553050001).length;
+    const disbursedCount = currentList.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
 
     return {
       totalCount,
@@ -581,11 +596,44 @@ export default function AdminDashboard({ onLogout }) {
       pendingDisbursementCount,
       disbursedCount
     };
-  }, [expenses]);
+  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses]);
 
-  // Cálculos de Analítica Financiera (memorizados sobre los gastos filtrados)
+  // Cálculos de Analítica Financiera (AISLAMIENTO ESTADÍSTICO: estrictamente sobre gastos de colaboradores de campo)
   const analyticsData = useMemo(() => {
-    const list = filteredExpenses;
+    // Excluir 100% las facturas de proveedores del buzón de las estadísticas de colaboradores
+    const list = rendicionExpenses.filter(item => {
+      const vendorArea = getVendorArea(item.cr168_vendedor);
+      const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
+      const matchesEquipo = equipoFilter ? vendorArea === equipoFilter : true;
+      const matchesVendedor = vendedorFilter ? item.cr168_vendedor === vendedorFilter : true;
+      const matchesEstado = estadoFilter ? String(item.cr168_estado) === String(estadoFilter) : true;
+      const matchesAprobado = aprobadoFilter ? String(item.cr168_aprobado) === String(aprobadoFilter) : true;
+      
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = searchTerm ? (
+        (item.cr168_empresa && item.cr168_empresa.toLowerCase().includes(searchLower)) ||
+        (vendorArea && vendorArea.toLowerCase().includes(searchLower)) ||
+        (item.cr168_vendedor && item.cr168_vendedor.toLowerCase().includes(searchLower)) ||
+        (item.cr168_nombredelcomercio && item.cr168_nombredelcomercio.toLowerCase().includes(searchLower)) ||
+        (item.cr168_numerodecomprobante && item.cr168_numerodecomprobante.toLowerCase().includes(searchLower)) ||
+        (item.cr168_detalle && item.cr168_detalle.toLowerCase().includes(searchLower)) ||
+        (item.cr168_id_desembolso && String(item.cr168_id_desembolso).toLowerCase().includes(searchLower))
+      ) : true;
+
+      let matchesDateRange = true;
+      if (filterStartDate || filterEndDate) {
+        if (item.cr168_fechadelgasto) {
+          const expenseDateStr = item.cr168_fechadelgasto.split('T')[0];
+          if (filterStartDate && expenseDateStr < filterStartDate) matchesDateRange = false;
+          if (filterEndDate && expenseDateStr > filterEndDate) matchesDateRange = false;
+        } else {
+          matchesDateRange = false;
+        }
+      }
+
+      return matchesEmpresa && matchesEquipo && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange;
+    });
+
     const totalAmount = list.reduce((sum, item) => sum + (item.cr168_montototalincluyendoigv || 0), 0);
     const totalCount = list.length;
     const avgTicket = totalCount > 0 ? totalAmount / totalCount : 0;
@@ -913,7 +961,8 @@ export default function AdminDashboard({ onLogout }) {
   const generateExcelWorkbook = async () => {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Reporte de Gastos');
+    const sheetName = rindegastosSubTab === 'buzon' ? 'Buzón Proveedores' : 'Reporte de Gastos';
+    const worksheet = workbook.addWorksheet(sheetName);
 
     // Mapear los datos a filas del excel
     const rows = filteredExpenses.map(item => {
@@ -1013,7 +1062,7 @@ export default function AdminDashboard({ onLogout }) {
 
     // Agregar tabla de datos con estilo formal en Excel
     worksheet.addTable({
-      name: 'ReporteGastosTabla',
+      name: rindegastosSubTab === 'buzon' ? 'BuzonProveedoresTabla' : 'ReporteGastosTabla',
       ref: 'A1',
       headerRow: true,
       totalsRow: false,
@@ -1065,7 +1114,7 @@ export default function AdminDashboard({ onLogout }) {
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = 'Reporte_Gastos_Rindegastos.xlsx';
+      anchor.download = rindegastosSubTab === 'buzon' ? 'Buzon_Proveedores.xlsx' : 'Reporte_Gastos_Rindegastos.xlsx';
       anchor.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -1096,7 +1145,7 @@ export default function AdminDashboard({ onLogout }) {
       const zip = new JSZip();
 
       // Agregar el archivo Excel al ZIP
-      zip.file('Reporte_Gastos_Rindegastos.xlsx', excelBuffer);
+      zip.file(rindegastosSubTab === 'buzon' ? 'Buzon_Proveedores.xlsx' : 'Reporte_Gastos_Rindegastos.xlsx', excelBuffer);
 
       // 3. Identificar los registros que cuentan con imágenes de comprobantes
       const itemsWithImages = filteredExpenses.filter(item => item.cr168_imagendelcomprobante_url);
@@ -1174,7 +1223,7 @@ export default function AdminDashboard({ onLogout }) {
       const url = window.URL.createObjectURL(zipContent);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = 'Reporte_Gastos_Rindegastos.zip';
+      anchor.download = rindegastosSubTab === 'buzon' ? 'Buzon_Proveedores.zip' : 'Reporte_Gastos_Rindegastos.zip';
       anchor.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -1577,10 +1626,13 @@ export default function AdminDashboard({ onLogout }) {
 
           <button
             type="button"
-            className={`menu-item ${activeModule === 'rindegastos' ? 'active' : ''}`}
-            onClick={() => setActiveModule('rindegastos')}
+            className={`menu-item ${activeModule === 'rindegastos' && rindegastosSubTab !== 'buzon' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveModule('rindegastos');
+              if (rindegastosSubTab === 'buzon') setRindegastosSubTab('tabla');
+            }}
             title="Panel RindeGastos"
-            aria-current={activeModule === 'rindegastos' ? 'page' : undefined}
+            aria-current={activeModule === 'rindegastos' && rindegastosSubTab !== 'buzon' ? 'page' : undefined}
           >
             <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="3" width="7" height="7" rx="1"/>
@@ -1609,16 +1661,19 @@ export default function AdminDashboard({ onLogout }) {
 
           <button
             type="button"
-            className={`menu-item ${activeModule === 'proveedores' ? 'active' : ''}`}
-            onClick={() => setActiveModule('proveedores')}
-            title="Portal de Proveedores"
-            aria-current={activeModule === 'proveedores' ? 'page' : undefined}
+            className={`menu-item ${(activeModule === 'rindegastos' && rindegastosSubTab === 'buzon') || activeModule === 'proveedores' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveModule('rindegastos');
+              setRindegastosSubTab('buzon');
+            }}
+            title="Buzón de Proveedores"
+            aria-current={(activeModule === 'rindegastos' && rindegastosSubTab === 'buzon') || activeModule === 'proveedores' ? 'page' : undefined}
           >
             <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-              <polyline points="9 22 9 12 15 12 15 22"/>
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
             </svg>
-            {!sidebarCollapsed && <span className="menu-label">Proveedores</span>}
+            {!sidebarCollapsed && <span className="menu-label">Buzón Proveedores</span>}
           </button>
         </nav>
 
@@ -1663,8 +1718,13 @@ export default function AdminDashboard({ onLogout }) {
                 <div className="subtabs-left-group">
                   <button
                     type="button"
+                    role="tab"
+                    aria-selected={rindegastosSubTab === 'tabla'}
                     className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
-                    onClick={() => setRindegastosSubTab('tabla')}
+                    onClick={() => {
+                      setRindegastosSubTab('tabla');
+                      setSelectedIds([]);
+                    }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -1673,11 +1733,58 @@ export default function AdminDashboard({ onLogout }) {
                       <line x1="9" y1="3" x2="9" y2="21"/>
                     </svg>
                     <span>Tabla de Comprobantes</span>
+                    {rendicionExpenses.length > 0 && (
+                      <span style={{
+                        background: rindegastosSubTab === 'tabla' ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+                        color: rindegastosSubTab === 'tabla' ? '#ffffff' : '#475569',
+                        fontSize: '0.72rem',
+                        fontWeight: '700',
+                        padding: '0.1rem 0.45rem',
+                        borderRadius: '10px',
+                        marginLeft: '0.35rem'
+                      }}>
+                        {rendicionExpenses.length}
+                      </span>
+                    )}
                   </button>
                   <button
                     type="button"
+                    role="tab"
+                    aria-selected={rindegastosSubTab === 'buzon'}
+                    className={`subtab-btn ${rindegastosSubTab === 'buzon' ? 'active' : ''}`}
+                    onClick={() => {
+                      setRindegastosSubTab('buzon');
+                      setSelectedIds([]);
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                      <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                    <span>Buzón Proveedores</span>
+                    {buzonExpenses.length > 0 && (
+                      <span style={{
+                        background: rindegastosSubTab === 'buzon' ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+                        color: rindegastosSubTab === 'buzon' ? '#ffffff' : '#475569',
+                        fontSize: '0.72rem',
+                        fontWeight: '700',
+                        padding: '0.1rem 0.45rem',
+                        borderRadius: '10px',
+                        marginLeft: '0.35rem'
+                      }}>
+                        {buzonExpenses.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={rindegastosSubTab === 'estadisticas'}
                     className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
-                    onClick={() => setRindegastosSubTab('estadisticas')}
+                    onClick={() => {
+                      setRindegastosSubTab('estadisticas');
+                      setSelectedIds([]);
+                    }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <line x1="18" y1="20" x2="18" y2="10"/>
@@ -2092,10 +2199,10 @@ export default function AdminDashboard({ onLogout }) {
                           <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">Monto Total Registrado</span>
+                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Total Facturas Buzón' : 'Monto Total Registrado'}</span>
                     </div>
                     <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    <span className="kpi-sub">Total de {stats.totalCount} facturas</span>
+                    <span className="kpi-sub">Total de {stats.totalCount} {rindegastosSubTab === 'buzon' ? 'facturas de proveedores' : 'comprobantes'}</span>
                   </div>
                   <div className="kpi-card approved">
                     <div className="kpi-header">
@@ -2104,7 +2211,7 @@ export default function AdminDashboard({ onLogout }) {
                           <polyline points="20 6 9 17 4 12"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">Gastos Aprobados</span>
+                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Facturas Aprobadas' : 'Gastos Aprobados'}</span>
                     </div>
                     <span className="kpi-value">{stats.approvedCount}</span>
                     <span className="kpi-sub">{stats.pendingApprovalCount} pendientes de aprobación</span>
@@ -2116,7 +2223,7 @@ export default function AdminDashboard({ onLogout }) {
                           <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">Gastos Desembolsados</span>
+                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Facturas Desembolsadas' : 'Gastos Desembolsados'}</span>
                     </div>
                     <span className="kpi-value">{stats.disbursedCount}</span>
                     <span className="kpi-sub">Con voucher de pago cargado</span>
@@ -2128,7 +2235,7 @@ export default function AdminDashboard({ onLogout }) {
                           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">Pendientes de Desembolso</span>
+                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Facturas Pendientes' : 'Pendientes de Desembolso'}</span>
                     </div>
                     <span className="kpi-value">{stats.pendingDisbursementCount}</span>
                     <span className="kpi-sub">Esperando comprobante de pago</span>
@@ -2173,7 +2280,7 @@ export default function AdminDashboard({ onLogout }) {
                       <span className="search-icon"></span>
                       <input
                         type="text"
-                        placeholder="Buscar por vendedor, comercio, comprobante, ID desembolso..."
+                        placeholder={rindegastosSubTab === 'buzon' ? 'Buscar por proveedor, RUC, comprobante, ID desembolso...' : 'Buscar por vendedor, comercio, comprobante, ID desembolso...'}
                         className="search-input"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -2394,16 +2501,7 @@ export default function AdminDashboard({ onLogout }) {
                             </th>
                             <th>
                               <div className="header-with-filter">
-                                <span className="header-label">Comercio</span>
-                                <label className="header-buzon-label">
-                                  <input
-                                    type="checkbox"
-                                    checked={soloBuzon}
-                                    onChange={(e) => setSoloBuzon(e.target.checked)}
-                                    className="header-buzon-check"
-                                  />
-                                  Solo buzón
-                                </label>
+                                <span className="header-label">{rindegastosSubTab === 'buzon' ? 'Proveedor' : 'Comercio'}</span>
                               </div>
                             </th>
                             <th>
@@ -2460,7 +2558,11 @@ export default function AdminDashboard({ onLogout }) {
                                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                                   </svg>
-                                  <p style={{ fontWeight: '500' }}>No se encontraron gastos con los filtros seleccionados.</p>
+                                  <p style={{ fontWeight: '500' }}>
+                                    {rindegastosSubTab === 'buzon' 
+                                      ? 'No se encontraron facturas de proveedores con los filtros seleccionados.' 
+                                      : 'No se encontraron gastos con los filtros seleccionados.'}
+                                  </p>
                                 </div>
                               </td>
                             </tr>
@@ -2499,8 +2601,8 @@ export default function AdminDashboard({ onLogout }) {
                                     {item.cr168_vendedor || 'Sin Vendedor'}
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })} style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
-                                    <span>{item.cr168_nombredelcomercio || 'Sin Comercio'}</span>
-                                    {(item.cr168_detalle || '').startsWith('[Factura Correo]') && (
+                                    <span>{item.cr168_nombredelcomercio || (rindegastosSubTab === 'buzon' ? 'Proveedor' : 'Sin Comercio')}</span>
+                                    {rindegastosSubTab !== 'buzon' && (item.cr168_detalle || '').startsWith('[Factura Correo]') && (
                                       <span className="badge-buzon">📬 De buzón proveedores</span>
                                     )}
                                   </td>
