@@ -1733,19 +1733,6 @@ export default function AdminDashboard({ onLogout }) {
                       <line x1="9" y1="3" x2="9" y2="21"/>
                     </svg>
                     <span>Tabla de Comprobantes</span>
-                    {rendicionExpenses.length > 0 && (
-                      <span style={{
-                        background: rindegastosSubTab === 'tabla' ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
-                        color: rindegastosSubTab === 'tabla' ? '#ffffff' : '#475569',
-                        fontSize: '0.72rem',
-                        fontWeight: '700',
-                        padding: '0.1rem 0.45rem',
-                        borderRadius: '10px',
-                        marginLeft: '0.35rem'
-                      }}>
-                        {rendicionExpenses.length}
-                      </span>
-                    )}
                   </button>
                   <button
                     type="button"
@@ -1762,19 +1749,6 @@ export default function AdminDashboard({ onLogout }) {
                       <polyline points="22,6 12,13 2,6"/>
                     </svg>
                     <span>Buzón Proveedores</span>
-                    {buzonExpenses.length > 0 && (
-                      <span style={{
-                        background: rindegastosSubTab === 'buzon' ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
-                        color: rindegastosSubTab === 'buzon' ? '#ffffff' : '#475569',
-                        fontSize: '0.72rem',
-                        fontWeight: '700',
-                        padding: '0.1rem 0.45rem',
-                        borderRadius: '10px',
-                        marginLeft: '0.35rem'
-                      }}>
-                        {buzonExpenses.length}
-                      </span>
-                    )}
                   </button>
                   <button
                     type="button"
