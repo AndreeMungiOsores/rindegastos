@@ -705,16 +705,6 @@ export default function CabifyMobilityModule() {
               </button>
             )}
           </div>
-
-          {/* Tarjeta de Información Contable */}
-          <div className="cabify-side-card cabify-policy-card">
-            <h4>Imputación y Conciliación</h4>
-            <ul className="cabify-policy-list">
-              <li><strong>Canal Taxis:</strong> Reembolso íntegro a la tarjeta de crédito de Adrián Murakami.</li>
-              <li><strong>Canal Logístico:</strong> Olva, Cabify Logistics y Envíos se gestionan por transferencia en el Buzón Proveedores.</li>
-              <li><strong>Comprobante:</strong> Recibo electrónico emitido mensualmente por Cabify Perú.</li>
-            </ul>
-          </div>
         </aside>
       </div>
 

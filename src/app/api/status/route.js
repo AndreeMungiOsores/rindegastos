@@ -1,6 +1,7 @@
-export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getAccessToken } from '../../../lib/tokenManager.js';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {

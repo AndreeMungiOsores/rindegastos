@@ -3078,30 +3078,6 @@ body {
   font-size: 0.75rem;
 }
 
-.cabify-policy-card {
-  background: #FAF8F5;
-  border-color: #E8E0D5;
-}
-
-.cabify-policy-card h4 {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--navy-900);
-  margin: 0 0 0.5rem 0;
-}
-
-.cabify-policy-list {
-  margin: 0;
-  padding-left: 1.15rem;
-  font-size: 0.74rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
-.cabify-policy-list li {
-  margin-bottom: 0.35rem;
-}
-
 /* ── Panel Lateral Derecho (Side Drawer) de Detalle de Viaje ── */
 .cabify-drawer-content {
   max-width: 560px;

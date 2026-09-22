@@ -1,8 +1,9 @@
-export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getExpenses, updateExpense, getExpense, uploadFileToExpense } from '../../../lib/dataverseClient.js';
 import { sendEmail } from '../../../lib/graphClient.js';
 import { extractVoucherMetadata } from '../../../lib/kimiClient.js';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
