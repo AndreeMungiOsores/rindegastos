@@ -3106,10 +3106,21 @@ body {
   margin-bottom: 0.35rem;
 }
 
-/* ── Modal de Detalle de Viaje ── */
-.cabify-modal {
-  max-width: 540px;
-  width: 100%;
+/* ── Panel Lateral Derecho (Side Drawer) de Detalle de Viaje ── */
+.cabify-drawer-content {
+  max-width: 560px;
+}
+
+.cabify-drawer-body {
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cabify-table tbody tr.selected {
+  background-color: #EFF6FF !important;
 }
 
 .cabify-modal-badge {
@@ -3130,6 +3141,15 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 0.85rem 1.25rem;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .cabify-drawer-content {
+    max-width: 100%;
+  }
+  .cabify-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cabify-detail-field {

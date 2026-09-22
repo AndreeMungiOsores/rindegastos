@@ -523,7 +523,12 @@ export default function CabifyMobilityModule() {
                 </thead>
                 <tbody>
                   {paginatedJourneys.map((j) => (
-                    <tr key={j.id} className="cabify-table-row">
+                    <tr
+                      key={j.id}
+                      className={`cabify-table-row ${selectedJourney?.id === j.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedJourney(j)}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <td className="cabify-td-date">
                         <span className="cabify-date-text">{j.dateFormatted}</span>
                       </td>
@@ -573,7 +578,10 @@ export default function CabifyMobilityModule() {
                           type="button"
                           className="cabify-info-btn"
                           title="Ver detalle del trayecto"
-                          onClick={() => setSelectedJourney(j)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedJourney(j);
+                          }}
                           aria-label={`Ver detalles del viaje ${j.ticketCode}`}
                         >
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -702,26 +710,37 @@ export default function CabifyMobilityModule() {
         </aside>
       </div>
 
-      {/* ── Modal de Detalle de Viaje ── */}
+      {/* ── Panel Lateral Derecho (Side Drawer) de Detalle de Viaje ── */}
       {selectedJourney && (
-        <div className="modal-backdrop" onClick={() => setSelectedJourney(null)} role="dialog" aria-modal="true">
-          <div className="modal-content cabify-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title-wrap">
-                <span className="cabify-modal-badge">Ticket {selectedJourney.ticketCode}</span>
-                <h3>Detalle de Trayecto Corporativo</h3>
+        <div
+          className="drawer-backdrop"
+          onClick={() => setSelectedJourney(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cabify-drawer-title"
+        >
+          <div
+            className="drawer-content cabify-drawer-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="drawer-header">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <span className="cabify-modal-badge" style={{ alignSelf: 'flex-start' }}>Ticket {selectedJourney.ticketCode}</span>
+                <h2 id="cabify-drawer-title" style={{ fontSize: '1.25rem', margin: 0, color: 'var(--navy-900)' }}>
+                  Detalle de Trayecto Corporativo
+                </h2>
               </div>
               <button
                 type="button"
-                className="modal-close-btn"
+                className="close-btn"
                 onClick={() => setSelectedJourney(null)}
-                aria-label="Cerrar modal"
+                aria-label="Cerrar panel de detalle"
               >
-                ✕
+                ×
               </button>
-            </div>
+            </header>
 
-            <div className="modal-body">
+            <div className="drawer-body cabify-drawer-body">
               <div className="cabify-detail-grid">
                 <div className="cabify-detail-field">
                   <span className="detail-label">Colaborador (Pasajero)</span>
@@ -778,7 +797,7 @@ export default function CabifyMobilityModule() {
               </div>
             </div>
 
-            <div className="modal-footer">
+            <footer className="drawer-footer">
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -786,7 +805,7 @@ export default function CabifyMobilityModule() {
               >
                 Cerrar
               </button>
-            </div>
+            </footer>
           </div>
         </div>
       )}
