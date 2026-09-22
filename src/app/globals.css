@@ -2393,11 +2393,57 @@ body {
   animation: fadeIn 0.25s ease-out;
 }
 
+.cabify-fullwidth-inner {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding: 0 1.5rem !important;
+  box-sizing: border-box;
+}
+
+.cabify-dashboard-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: fadeIn 0.25s ease-out;
+}
+
 .cabify-dashboard-flow {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   padding-bottom: 2.5rem;
+}
+
+.cabify-export-filter-btn {
+  height: 38px;
+  font-size: 0.83rem;
+  padding: 0 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+  background: #ffffff;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--navy-900);
+  font-weight: 500;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.cabify-export-filter-btn:hover:not(:disabled) {
+  background: var(--bg-surface-2);
+  border-color: var(--border-strong);
+}
+
+.cabify-export-filter-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Selector de Período Compacto en Barra de Subpestañas */
@@ -2774,43 +2820,43 @@ body {
 
 .cabify-passenger-name {
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.83rem;
   color: var(--text-primary);
   line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 170px;
+  max-width: 200px;
 }
 
 .cabify-passenger-email {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 170px;
+  max-width: 200px;
 }
 
 .cabify-route-flow {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  font-size: 0.8rem;
-  min-width: 220px;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  width: 100%;
 }
 
 .cabify-route-point {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.45rem;
   min-width: 0;
   flex: 1;
 }
 
 .cabify-route-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -2824,19 +2870,27 @@ body {
 }
 
 .cabify-route-addr {
-  font-size: 0.79rem;
+  font-size: 0.81rem;
   color: var(--text-primary);
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
+  word-break: break-word;
 }
 
 .cabify-route-arrow {
   color: var(--text-tertiary);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   flex-shrink: 0;
   user-select: none;
+  padding: 0 0.35rem;
+}
+
+.cabify-td-ticket {
+  text-align: center;
 }
 
 .cabify-ticket-chip {

@@ -271,7 +271,7 @@ export default function CabifyMobilityModule() {
     <div className="cabify-module-root" role="region" aria-label="Módulo de Movilidad Cabify">
       {/* ── Barra de Navegación por Subpestañas (Estándar RindeGastos / Préstamos) ── */}
       <nav className="subtabs-navigation" aria-label="Navegación de Movilidad">
-        <div className="subtabs-inner">
+        <div className="subtabs-inner cabify-fullwidth-inner">
           <div className="subtabs-left-group">
             <button
               type="button"
@@ -373,28 +373,12 @@ export default function CabifyMobilityModule() {
               </svg>
               <span>{refreshing ? 'Sincronizando...' : 'Sincronizar en Vivo'}</span>
             </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleExportExcel}
-              disabled={loading || isExportingExcel || journeys.length === 0}
-              title="Descargar libro Excel con detalles y resumen por colaborador"
-              style={{ fontSize: '0.82rem', padding: '0.4rem 0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.45rem', height: '32px' }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              <span>{isExportingExcel ? 'Exportando...' : 'Exportar Excel'}</span>
-            </button>
           </div>
         </div>
       </nav>
 
-      {/* ── Contenedor Principal del Dashboard ── */}
-      <div className="dashboard-container cabify-dashboard-flow">
+      {/* ── Contenedor Principal del Dashboard a Ancho Completo ── */}
+      <div className="cabify-dashboard-container">
 
       {/* ── Avisos y Banners ── */}
       {syncNotice && (
@@ -541,6 +525,22 @@ export default function CabifyMobilityModule() {
                 </select>
               </div>
 
+              {/* Botón Exportar Excel ubicado en la barra de filtros */}
+              <button
+                type="button"
+                className="btn btn-secondary cabify-export-filter-btn"
+                onClick={handleExportExcel}
+                disabled={loading || isExportingExcel || journeys.length === 0}
+                title="Descargar libro Excel con detalles y resumen por colaborador"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>{isExportingExcel ? 'Exportando...' : 'Exportar Excel'}</span>
+              </button>
+
               {filterPassenger !== 'ALL' && (
                 <button
                   type="button"
@@ -585,11 +585,11 @@ export default function CabifyMobilityModule() {
               <table className="cabify-table" aria-label="Listado de viajes corporativos de Cabify">
                 <thead>
                   <tr>
-                    <th scope="col" style={{ width: '135px' }}>Fecha y Hora</th>
-                    <th scope="col" style={{ width: '175px' }}>Colaborador</th>
-                    <th scope="col">Ruta (Origen ➔ Destino)</th>
-                    <th scope="col" style={{ width: '120px' }}>Ticket Cabify</th>
-                    <th scope="col" style={{ width: '105px', textAlign: 'right' }}>Importe (S/)</th>
+                    <th scope="col" style={{ width: '150px' }}>Fecha y Hora</th>
+                    <th scope="col" style={{ width: '220px' }}>Colaborador</th>
+                    <th scope="col" style={{ minWidth: '320px' }}>Ruta (Origen ➔ Destino)</th>
+                    <th scope="col" style={{ width: '135px', textAlign: 'center' }}>Ticket Cabify</th>
+                    <th scope="col" style={{ width: '120px', textAlign: 'right' }}>Importe (S/)</th>
                     <th scope="col" style={{ width: '45px', textAlign: 'center' }} aria-label="Acciones"></th>
                   </tr>
                 </thead>
