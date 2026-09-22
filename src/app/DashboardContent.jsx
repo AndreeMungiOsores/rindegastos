@@ -2867,11 +2867,6 @@ export default function AdminDashboard({ onLogout }) {
                                       <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155', fontWeight: '600', fontSize: '0.8rem' }}>
                                         {item.cr168_numerodecomprobante || 'S/N'}
                                       </code>
-                                      {item.cr168_tipodecomprobante && (
-                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                                          {item.cr168_tipodecomprobante}
-                                        </div>
-                                      )}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
                                       {fin.moneda === 'USD' ? '$' : 'S/'} {(item.cr168_montototalincluyendoigv || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
