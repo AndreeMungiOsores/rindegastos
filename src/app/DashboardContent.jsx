@@ -658,21 +658,37 @@ export default function AdminDashboard({ onLogout }) {
     const pendingDisbursementCount = currentList.filter(e => parseInt(e.cr168_estado, 10) !== 553050001).length;
     const disbursedCount = currentList.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
 
+    let totalAmountPEN = 0;
+    let totalAmountUSD = 0;
     let totalDetracciones = 0;
-    let totalNeto = 0;
+    let totalNetoPEN = 0;
+    let totalNetoUSD = 0;
+
     if (rindegastosSubTab === 'buzon') {
       currentList.forEach(item => {
         const fin = getProviderInvoiceFinancials(item);
-        totalDetracciones += fin.montoDetraccion || 0;
-        totalNeto += fin.montoNeto || 0;
+        const monto = item.cr168_montototalincluyendoigv || 0;
+        if (fin.moneda === 'USD') {
+          totalAmountUSD += monto;
+          totalNetoUSD += fin.montoNeto || 0;
+        } else {
+          totalAmountPEN += monto;
+          totalNetoPEN += fin.montoNeto || 0;
+          totalDetracciones += fin.montoDetraccion || 0;
+        }
       });
+    } else {
+      totalAmountPEN = totalAmount;
     }
 
     return {
       totalCount,
       totalAmount,
+      totalAmountPEN,
+      totalAmountUSD,
       totalDetracciones,
-      totalNeto,
+      totalNetoPEN,
+      totalNetoUSD,
       approvedCount,
       pendingApprovalCount,
       pendingDisbursementCount,
@@ -839,10 +855,19 @@ export default function AdminDashboard({ onLogout }) {
 
   // Calcular la suma de monto SOLO para las filas que estén seleccionadas por el usuario
   const selectedSum = useMemo(() => {
-    if (selectedIds.length === 0) return 0;
-    return expenses
-      .filter(e => selectedIds.includes(e.cr168_reportedegastosid))
-      .reduce((sum, e) => sum + (e.cr168_montototalincluyendoigv || 0), 0);
+    if (selectedIds.length === 0) return { pen: 0, usd: 0, total: 0 };
+    const selectedItems = expenses.filter(e => selectedIds.includes(e.cr168_reportedegastosid));
+    let pen = 0;
+    let usd = 0;
+    let total = 0;
+    selectedItems.forEach(item => {
+      const isUsd = (item.cr168_detalle || '').includes('Mon:USD') || (item.cr168_detalle || '').includes('USD');
+      const val = item.cr168_montototalincluyendoigv || 0;
+      total += val;
+      if (isUsd) usd += val;
+      else pen += val;
+    });
+    return { pen, usd, total };
   }, [expenses, selectedIds]);
 
   // Selección de todas las filas filtradas/activas
@@ -2313,10 +2338,27 @@ export default function AdminDashboard({ onLogout }) {
                       </span>
                       <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Total Facturas Buzón' : 'Monto Total Registrado'}</span>
                     </div>
-                    <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    {rindegastosSubTab === 'buzon' ? (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <span className="kpi-value" style={{ margin: 0 }}>
+                          S/ {(stats.totalAmountPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        {stats.totalAmountUSD > 0 && (
+                          <span style={{ fontSize: '1.05rem', fontWeight: '700', color: '#6366f1' }}>
+                            + $ {(stats.totalAmountUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    )}
                     <span className="kpi-sub">
                       {rindegastosSubTab === 'buzon' 
-                        ? `Neto Prov: S/ ${(stats.totalNeto || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        ? (
+                          stats.totalAmountUSD > 0
+                            ? `Neto: S/ ${(stats.totalNetoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | $ ${(stats.totalNetoUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : `Neto Prov: S/ ${(stats.totalNetoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        )
                         : `Total de ${stats.totalCount} comprobantes`}
                     </span>
                   </div>
@@ -2383,7 +2425,18 @@ export default function AdminDashboard({ onLogout }) {
                         Monto total de filas seleccionadas
                       </span>
                       <strong style={{ fontSize: '1.5rem', color: 'var(--accent-color)', fontFamily: 'var(--font-title)', fontWeight: '700' }}>
-                        S/ {selectedSum.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {selectedSum.usd > 0 && selectedSum.pen > 0 ? (
+                          <>
+                            S/ {selectedSum.pen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span style={{ fontSize: '1.15rem', color: '#6366f1', marginLeft: '0.5rem' }}>
+                              + $ {selectedSum.usd.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </>
+                        ) : selectedSum.usd > 0 ? (
+                          `$ ${selectedSum.usd.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        ) : (
+                          `S/ ${selectedSum.pen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        )}
                       </strong>
                     </div>
                   </div>
