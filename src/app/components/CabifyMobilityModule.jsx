@@ -248,13 +248,22 @@ export default function CabifyMobilityModule() {
         </div>
 
         <div className="cabify-header-actions">
-          <div className="cabify-period-selectors">
-            <label htmlFor="cabify-month-select" className="sr-only">Mes</label>
+          <div className="cabify-period-group">
+            <span className="cabify-period-icon" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </span>
+            <label htmlFor="cabify-month-select" className="sr-only">Seleccionar Mes</label>
             <select
               id="cabify-month-select"
+              aria-label="Seleccionar mes"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="cabify-select"
+              className="cabify-select cabify-select-month"
               disabled={loading || refreshing}
             >
               {MONTH_NAMES.map((name, idx) => (
@@ -264,12 +273,15 @@ export default function CabifyMobilityModule() {
               ))}
             </select>
 
-            <label htmlFor="cabify-year-select" className="sr-only">Año</label>
+            <span className="cabify-period-divider" aria-hidden="true">/</span>
+
+            <label htmlFor="cabify-year-select" className="sr-only">Seleccionar Año</label>
             <select
               id="cabify-year-select"
+              aria-label="Seleccionar año"
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="cabify-select"
+              className="cabify-select cabify-select-year"
               disabled={loading || refreshing}
             >
               {[2024, 2025, 2026].map(y => (
@@ -495,12 +507,12 @@ export default function CabifyMobilityModule() {
               <table className="cabify-table" aria-label="Listado de viajes corporativos de Cabify">
                 <thead>
                   <tr>
-                    <th scope="col" style={{ width: '150px' }}>Fecha y Hora</th>
-                    <th scope="col" style={{ width: '220px' }}>Colaborador</th>
-                    <th scope="col">Trayecto (Ruta)</th>
-                    <th scope="col" style={{ width: '130px' }}>Ticket Cabify</th>
-                    <th scope="col" style={{ width: '110px', textAlign: 'right' }}>Importe (S/)</th>
-                    <th scope="col" style={{ width: '60px', textAlign: 'center' }}>Detalle</th>
+                    <th scope="col" style={{ width: '135px' }}>Fecha y Hora</th>
+                    <th scope="col" style={{ width: '175px' }}>Colaborador</th>
+                    <th scope="col">Ruta (Origen ➔ Destino)</th>
+                    <th scope="col" style={{ width: '120px' }}>Ticket Cabify</th>
+                    <th scope="col" style={{ width: '105px', textAlign: 'right' }}>Importe (S/)</th>
+                    <th scope="col" style={{ width: '45px', textAlign: 'center' }} aria-label="Acciones"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -515,10 +527,10 @@ export default function CabifyMobilityModule() {
                           <div className="cabify-avatar" aria-hidden="true">
                             {(j.riderName || 'C').charAt(0).toUpperCase()}
                           </div>
-                          <div>
-                            <div className="cabify-passenger-name">{j.riderName}</div>
+                          <div className="cabify-passenger-text">
+                            <div className="cabify-passenger-name" title={j.riderName}>{j.riderName}</div>
                             {j.riderEmail && (
-                              <div className="cabify-passenger-email">{j.riderEmail}</div>
+                              <div className="cabify-passenger-email" title={j.riderEmail}>{j.riderEmail}</div>
                             )}
                           </div>
                         </div>
@@ -526,13 +538,13 @@ export default function CabifyMobilityModule() {
 
                       <td className="cabify-td-route">
                         <div className="cabify-route-flow">
-                          <div className="cabify-route-point" title={j.origin}>
-                            <span className="cabify-route-dot origin"></span>
+                          <div className="cabify-route-point" title={`Origen: ${j.origin}`}>
+                            <span className="cabify-route-dot origin" aria-hidden="true"></span>
                             <span className="cabify-route-addr">{j.origin}</span>
                           </div>
-                          <div className="cabify-route-arrow" aria-hidden="true">➔</div>
-                          <div className="cabify-route-point" title={j.destination}>
-                            <span className="cabify-route-dot dest"></span>
+                          <span className="cabify-route-arrow" aria-hidden="true">➔</span>
+                          <div className="cabify-route-point" title={`Destino: ${j.destination}`}>
+                            <span className="cabify-route-dot dest" aria-hidden="true"></span>
                             <span className="cabify-route-addr">{j.destination}</span>
                           </div>
                         </div>
@@ -546,7 +558,7 @@ export default function CabifyMobilityModule() {
 
                       <td className="cabify-td-amount" style={{ textAlign: 'right' }}>
                         <span className="cabify-amount-val">
-                          S/ {j.totalPEN.toFixed(2)}
+                          S/ {j.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
 
@@ -613,7 +625,7 @@ export default function CabifyMobilityModule() {
               <span className="cabify-side-badge">{passengerOptions.length} usuarios</span>
             </div>
             <p className="cabify-side-desc">
-              Distribución del gasto corporativo en taxis correspondiente al mes seleccionado:
+              Distribución del gasto corporativo en taxis auditado:
             </p>
 
             <div className="cabify-ranking-list">
@@ -640,10 +652,10 @@ export default function CabifyMobilityModule() {
                       <div className="cabify-ranking-row">
                         <div className="cabify-ranking-user">
                           <span className="cabify-ranking-name">{p.name}</span>
-                          <span className="cabify-ranking-trips">{p.trips} viajes</span>
+                          <span className="cabify-ranking-trips">{p.trips} {p.trips === 1 ? 'viaje' : 'viajes'}</span>
                         </div>
                         <div className="cabify-ranking-amount">
-                          S/ {p.total.toFixed(2)}
+                          S/ {p.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </div>
                       <div className="cabify-progress-track">

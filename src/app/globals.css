@@ -2371,6 +2371,19 @@ body {
   line-height: 1.4;
 }
 
+/* ── Utilidades Accesibles ─────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* ── Módulo Movilidad Cabify (Taxis Corporativos) ───────────────── */
 .cabify-module-root {
   display: flex;
@@ -2378,20 +2391,21 @@ body {
   gap: 1.25rem;
   width: 100%;
   max-width: 100%;
-  padding-bottom: 2rem;
+  padding-bottom: 2.5rem;
   animation: fadeIn 0.25s ease-out;
 }
 
+/* ── Encabezado Principal ── */
 .cabify-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1.25rem;
   flex-wrap: wrap;
-  background: var(--bg-surface);
+  background: #ffffff;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  padding: 1.25rem 1.5rem;
+  padding: 1.15rem 1.5rem;
   box-shadow: var(--shadow-sm);
 }
 
@@ -2402,7 +2416,7 @@ body {
 
 .cabify-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
 }
 
@@ -2410,28 +2424,30 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   background: var(--navy-900);
   color: #ffffff;
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(14, 42, 67, 0.2);
+  box-shadow: 0 2px 6px rgba(14, 42, 67, 0.18);
 }
 
 .cabify-title {
-  font-size: 1.35rem;
+  font-size: 1.3rem;
   font-weight: 700;
   color: var(--navy-900);
-  margin: 0 0 0.25rem 0;
-  line-height: 1.25;
+  margin: 0 0 0.15rem 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 .cabify-subtitle {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text-secondary);
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.35;
+  max-width: 620px;
 }
 
 .cabify-header-actions {
@@ -2441,27 +2457,72 @@ body {
   flex-wrap: wrap;
 }
 
-.cabify-period-selectors {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.cabify-select {
-  background: var(--bg-surface);
-  color: var(--text-primary);
+/* Selector de Período Compacto */
+.cabify-period-group {
+  display: inline-flex;
+  align-items: center;
+  background: #ffffff;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  outline: none;
+  padding: 0 0.65rem;
+  height: 38px;
+  gap: 0.35rem;
+  box-shadow: var(--shadow-sm);
   transition: border-color var(--transition-fast);
 }
 
-.cabify-select:focus {
+.cabify-period-group:focus-within {
   border-color: var(--navy-700);
-  box-shadow: 0 0 0 2px rgba(14, 42, 67, 0.12);
+  box-shadow: 0 0 0 2px rgba(14, 42, 67, 0.1);
+}
+
+.cabify-period-icon {
+  color: var(--navy-700);
+  display: flex;
+  align-items: center;
+  margin-right: 0.15rem;
+}
+
+.cabify-period-divider {
+  color: var(--border-strong);
+  font-size: 0.85rem;
+  font-weight: 300;
+  user-select: none;
+}
+
+.cabify-select {
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0 0.2rem;
+  outline: none;
+  height: 100%;
+}
+
+.cabify-select-month {
+  min-width: 105px;
+}
+
+.cabify-select-year {
+  min-width: 60px;
+}
+
+.cabify-sync-btn,
+.cabify-export-btn {
+  height: 38px;
+  padding: 0 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .btn-icon {
@@ -2477,6 +2538,7 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* ── Avisos y Banners ── */
 .cabify-alert {
   display: flex;
   align-items: center;
@@ -2484,6 +2546,7 @@ body {
   padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .cabify-alert-success {
@@ -2530,15 +2593,16 @@ body {
 }
 
 .cabify-kpi-card {
-  background: var(--bg-surface);
+  background: #ffffff;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 1.15rem 1.25rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 0.4rem;
+  gap: 0.45rem;
   box-shadow: var(--shadow-sm);
+  min-height: 112px;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -2548,61 +2612,66 @@ body {
 }
 
 .cabify-kpi-card.highlight-card {
-  border-left: 4px solid var(--navy-700);
-  background: linear-gradient(180deg, #fafcff 0%, #ffffff 100%);
+  border-left: 4px solid var(--navy-800);
+  background: linear-gradient(180deg, #f8faff 0%, #ffffff 100%);
 }
 
 .cabify-kpi-label {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  gap: 0.5rem;
 }
 
 .cabify-badge-card {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  color: #1d4ed8;
-  background: #eff6ff;
-  border: 1px solid #dbeafe;
-  padding: 0.15rem 0.45rem;
-  border-radius: 12px;
+  color: #0284c7;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
   text-transform: none;
   letter-spacing: normal;
+  white-space: nowrap;
 }
 
 .cabify-kpi-value {
-  font-size: 1.55rem;
+  font-size: 1.65rem;
   font-weight: 700;
   color: var(--navy-900);
-  line-height: 1.2;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .cabify-kpi-value.passenger-name-truncate {
   font-size: 1.2rem;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .cabify-kpi-subtext {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-tertiary);
+  line-height: 1.35;
 }
 
 /* ── Content Layout ── */
 .cabify-content-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 1.25rem;
   align-items: start;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1120px) {
   .cabify-content-layout {
     grid-template-columns: 1fr;
   }
@@ -2611,7 +2680,7 @@ body {
 .cabify-main-column {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.85rem;
   min-width: 0;
 }
 
@@ -2621,12 +2690,15 @@ body {
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
 }
 
 .cabify-search-box {
   position: relative;
   flex: 1;
-  min-width: 240px;
+  min-width: 220px;
+  height: 38px;
 }
 
 .cabify-search-icon {
@@ -2640,13 +2712,15 @@ body {
 
 .cabify-search-input {
   width: 100%;
-  padding: 0.55rem 2rem 0.55rem 2.25rem;
-  background: var(--bg-surface);
+  height: 38px;
+  padding: 0 2rem 0 2.25rem;
+  background: #ffffff;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
   color: var(--text-primary);
   outline: none;
+  box-shadow: var(--shadow-sm);
   transition: border-color var(--transition-fast);
 }
 
@@ -2669,40 +2743,61 @@ body {
 }
 
 .cabify-filter-passenger-box {
-  min-width: 200px;
+  min-width: 240px;
+  max-width: 100%;
+  height: 38px;
 }
 
 .cabify-filter-passenger-box .cabify-select {
   width: 100%;
+  height: 38px;
+  background: #ffffff;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0 0.75rem;
+  font-size: 0.83rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast);
+}
+
+.cabify-filter-passenger-box .cabify-select:focus {
+  border-color: var(--navy-700);
+  box-shadow: 0 0 0 2px rgba(14, 42, 67, 0.1);
 }
 
 /* ── Tabla de Viajes ── */
 .cabify-table-container {
-  background: var(--bg-surface);
+  background: #ffffff;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   overflow-x: auto;
   min-height: 280px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
 }
 
 .cabify-table {
   width: 100%;
+  min-width: 700px;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   text-align: left;
 }
 
 .cabify-table thead th {
-  background: var(--bg-surface-2);
+  background: #FAF8F5;
   color: var(--text-secondary);
-  font-weight: 600;
-  font-size: 0.78rem;
+  font-weight: 700;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   padding: 0.75rem 0.85rem;
   border-bottom: 1px solid var(--border-default);
   white-space: nowrap;
+  height: 40px;
 }
 
 .cabify-table tbody tr {
@@ -2711,7 +2806,7 @@ body {
 }
 
 .cabify-table tbody tr:hover {
-  background-color: var(--bg-hover);
+  background-color: #F8F9FA;
 }
 
 .cabify-table tbody td {
@@ -2728,17 +2823,17 @@ body {
 .cabify-passenger-info {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.55rem;
 }
 
 .cabify-avatar {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: var(--navy-100);
+  background: #EEF4F9;
   color: var(--navy-900);
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2746,22 +2841,39 @@ body {
   border: 1px solid rgba(14, 42, 67, 0.12);
 }
 
+.cabify-passenger-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .cabify-passenger-name {
   font-weight: 600;
+  font-size: 0.82rem;
   color: var(--text-primary);
   line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
 }
 
 .cabify-passenger-email {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
 }
 
 .cabify-route-flow {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  max-width: 420px;
+  gap: 0.45rem;
+  max-width: 380px;
+  font-size: 0.8rem;
 }
 
 .cabify-route-point {
@@ -2773,69 +2885,74 @@ body {
 }
 
 .cabify-route-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .cabify-route-dot.origin {
-  background: #10b981;
+  background: #10B981;
 }
 
 .cabify-route-dot.dest {
-  background: #ef4444;
+  background: #EF4444;
 }
 
 .cabify-route-addr {
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 135px;
 }
 
 .cabify-route-arrow {
   color: var(--text-tertiary);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   flex-shrink: 0;
+  user-select: none;
 }
 
 .cabify-ticket-chip {
   display: inline-block;
-  font-family: monospace;
-  font-size: 0.78rem;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
   font-weight: 600;
-  background: var(--bg-surface-2);
-  color: var(--navy-800);
-  border: 1px solid var(--border-default);
-  padding: 0.15rem 0.45rem;
+  background: #F1F5F9;
+  color: var(--navy-900);
+  border: 1px solid #CBD5E1;
+  padding: 0.18rem 0.45rem;
   border-radius: 4px;
 }
 
 .cabify-amount-val {
-  font-family: monospace;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: var(--navy-900);
+  white-space: nowrap;
 }
 
 .cabify-info-btn {
-  background: none;
-  border: none;
-  color: var(--navy-600);
-  cursor: pointer;
-  padding: 0.35rem;
-  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
 .cabify-info-btn:hover {
-  background: var(--navy-100);
+  background: #EEF4F9;
   color: var(--navy-900);
+  border-color: rgba(14, 42, 67, 0.1);
 }
 
 /* ── Paginación ── */
@@ -2849,7 +2966,7 @@ body {
 }
 
 .cabify-pagination-info {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-secondary);
 }
 
@@ -2860,10 +2977,10 @@ body {
 }
 
 .cabify-page-indicator {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 500;
   color: var(--text-primary);
-  padding: 0 0.4rem;
+  padding: 0 0.35rem;
 }
 
 /* ── Loading y Empty States ── */
@@ -2909,7 +3026,7 @@ body {
 }
 
 .cabify-side-card {
-  background: var(--bg-surface);
+  background: #ffffff;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 1.15rem;
@@ -2920,7 +3037,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.35rem;
 }
 
 .cabify-side-card-header h3 {
@@ -2931,36 +3048,38 @@ body {
 }
 
 .cabify-side-badge {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 600;
   background: var(--bg-surface-2);
   border: 1px solid var(--border-default);
-  padding: 0.1rem 0.4rem;
-  border-radius: 10px;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
   color: var(--text-secondary);
 }
 
 .cabify-side-desc {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-tertiary);
-  margin: 0 0 0.85rem 0;
+  margin: 0 0 0.75rem 0;
   line-height: 1.35;
 }
 
 .cabify-ranking-list {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  max-height: 420px;
+  gap: 0.45rem;
+  max-height: 440px;
   overflow-y: auto;
   padding-right: 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
 }
 
 .cabify-ranking-item {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  padding: 0.5rem 0.6rem;
+  padding: 0.45rem 0.55rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
   border: 1px solid transparent;
@@ -2968,13 +3087,13 @@ body {
 }
 
 .cabify-ranking-item:hover {
-  background: var(--bg-hover);
+  background: #F8F9FA;
   border-color: var(--border-subtle);
 }
 
 .cabify-ranking-item.active {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: #EFF6FF;
+  border-color: #BFDBFE;
 }
 
 .cabify-ranking-row {
@@ -2991,33 +3110,34 @@ body {
 }
 
 .cabify-ranking-name {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 140px;
 }
 
 .cabify-ranking-trips {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-tertiary);
 }
 
 .cabify-ranking-amount {
-  font-size: 0.85rem;
+  font-size: 0.83rem;
   font-weight: 700;
   color: var(--navy-900);
   white-space: nowrap;
-  font-family: monospace;
 }
 
 .cabify-progress-track {
   width: 100%;
-  height: 5px;
+  height: 4px;
   background: var(--border-subtle);
   border-radius: 999px;
   overflow: hidden;
+  margin-top: 0.2rem;
 }
 
 .cabify-progress-bar {
@@ -3034,8 +3154,8 @@ body {
 }
 
 .cabify-policy-card {
-  background: #faf8f5;
-  border-color: #ecdcc9;
+  background: #FAF8F5;
+  border-color: #E8E0D5;
 }
 
 .cabify-policy-card h4 {
@@ -3048,7 +3168,7 @@ body {
 .cabify-policy-list {
   margin: 0;
   padding-left: 1.15rem;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -3065,8 +3185,8 @@ body {
 
 .cabify-modal-badge {
   display: inline-block;
-  font-family: monospace;
-  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
   font-weight: 700;
   color: #1d4ed8;
   background: #eff6ff;
@@ -3094,10 +3214,10 @@ body {
 }
 
 .cabify-detail-field .detail-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   color: var(--text-tertiary);
 }
 
@@ -3113,7 +3233,7 @@ body {
 }
 
 .cabify-detail-field .detail-value-sub {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-secondary);
 }
 
@@ -3121,11 +3241,10 @@ body {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--navy-900);
-  font-family: monospace;
 }
 
 .cabify-detail-field .detail-value-desc {
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   color: var(--text-secondary);
   background: var(--bg-surface-2);
   border: 1px solid var(--border-subtle);
@@ -3139,16 +3258,16 @@ body {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   color: var(--text-primary);
 }
 
 .cabify-imputation-note {
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
+  background: #F8FAFC;
+  border: 1px dashed #CBD5E1;
   border-radius: var(--radius-sm);
   padding: 0.65rem 0.85rem;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: #334155;
   margin-top: 0.35rem;
 }
