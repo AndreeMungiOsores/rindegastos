@@ -2770,6 +2770,16 @@ body {
   height: 40px;
 }
 
+.cabify-table thead th:first-child,
+.cabify-table tbody td:first-child {
+  padding-left: 1.15rem;
+}
+
+.cabify-table thead th:last-child,
+.cabify-table tbody td:last-child {
+  padding-right: 1.25rem;
+}
+
 .cabify-table tbody tr {
   border-bottom: 1px solid var(--border-subtle);
   transition: background-color var(--transition-fast);
@@ -2911,26 +2921,6 @@ body {
   font-weight: 700;
   color: var(--navy-900);
   white-space: nowrap;
-}
-
-.cabify-info-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.cabify-info-btn:hover {
-  background: #EEF4F9;
-  color: var(--navy-900);
-  border-color: rgba(14, 42, 67, 0.1);
 }
 
 /* ── Paginación ── */

@@ -589,8 +589,7 @@ export default function CabifyMobilityModule() {
                     <th scope="col" style={{ width: '220px' }}>Colaborador</th>
                     <th scope="col" style={{ minWidth: '320px' }}>Ruta (Origen ➔ Destino)</th>
                     <th scope="col" style={{ width: '135px', textAlign: 'center' }}>Ticket Cabify</th>
-                    <th scope="col" style={{ width: '120px', textAlign: 'right' }}>Importe (S/)</th>
-                    <th scope="col" style={{ width: '45px', textAlign: 'center' }} aria-label="Acciones"></th>
+                    <th scope="col" style={{ width: '130px', textAlign: 'right' }}>Importe (S/)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -643,25 +642,6 @@ export default function CabifyMobilityModule() {
                         <span className="cabify-amount-val">
                           S/ {j.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
-                      </td>
-
-                      <td style={{ textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          className="cabify-info-btn"
-                          title="Ver detalle del trayecto"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedJourney(j);
-                          }}
-                          aria-label={`Ver detalles del viaje ${j.ticketCode}`}
-                        >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="12" y1="16" x2="12" y2="12"/>
-                            <line x1="12" y1="8" x2="12.01" y2="8"/>
-                          </svg>
-                        </button>
                       </td>
                     </tr>
                   ))}
