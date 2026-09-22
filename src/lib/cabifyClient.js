@@ -140,6 +140,23 @@ export async function getCabifyUsersMap() {
 }
 
 /**
+ * Helper con reintentos automáticos y backoff exponencial para llamadas a la API de Cabify.
+ */
+async function axiosGetWithRetry(url, config, maxRetries = 2) {
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      return await axios.get(url, config);
+    } catch (err) {
+      attempt++;
+      if (attempt > maxRetries) throw err;
+      const delay = attempt * 1200;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+/**
  * Consulta el detalle de un Journey específico para conocer el pasajero/rider.
  */
 export async function getJourneyDetails(journeyId) {
@@ -148,8 +165,8 @@ export async function getJourneyDetails(journeyId) {
     return journeyDetailsCache.get(journeyId);
   }
 
-  // Intentar leer de cache en disco
-  const diskDetail = readCache(`journey_${journeyId}`, 604800000); // 7 días (viajes pasados no cambian)
+  // Intentar leer de cache en disco (60 días, los viajes pasados son inmutables)
+  const diskDetail = readCache(`journey_${journeyId}`, 5184000000);
   if (diskDetail) {
     journeyDetailsCache.set(journeyId, diskDetail);
     return diskDetail;
@@ -157,10 +174,10 @@ export async function getJourneyDetails(journeyId) {
 
   try {
     const token = await getCabifyAccessToken();
-    const res = await axios.get(`${API_BASE}/journey/${journeyId}`, {
+    const res = await axiosGetWithRetry(`${API_BASE}/journey/${journeyId}`, {
       headers: { 'Authorization': `Bearer ${token}` },
       timeout: 8000
-    });
+    }, 1);
 
     const data = res.data;
     journeyDetailsCache.set(journeyId, data);
@@ -213,42 +230,98 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
   const cacheKey = `sales_${from}_${to}_${currency}`;
   if (!forceRefresh) {
     const cached = readCache(cacheKey, 1800000); // 30 minutos
-    if (cached) {
+    if (cached && Array.isArray(cached.journeys) && cached.journeys.length > 0) {
       return cached;
     }
   }
 
-  const token = await getCabifyAccessToken();
-  const usersMap = await getCabifyUsersMap();
+  // Backup en disco existente para fallback en caso de error
+  const existingDiskCache = readCache(cacheKey, Infinity);
+
+  let token;
+  let usersMap;
+  try {
+    token = await getCabifyAccessToken();
+    usersMap = await getCabifyUsersMap();
+  } catch (authError) {
+    console.error('[CabifyClient] Fallo de credenciales/usuarios:', authError.message);
+    if (existingDiskCache && existingDiskCache.journeys?.length > 0) {
+      return { ...existingDiskCache, isFallback: true };
+    }
+    throw authError;
+  }
 
   const allSales = [];
-  let currentPage = 1;
   let totalPages = 1;
   const perPage = 50;
+  let hasFetchError = false;
 
-  // 1. Paginación de ventas
-  while (currentPage <= totalPages && currentPage <= 12) {
-    try {
-      const res = await axios.get(`${API_BASE}/sales`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        params: {
-          from,
-          to,
-          currency,
-          page: currentPage,
-          per: perPage
-        },
-        timeout: 15000
-      });
+  // 1. Paginación de ventas: consultar página 1 para determinar totalPages
+  try {
+    const resPage1 = await axiosGetWithRetry(`${API_BASE}/sales`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      params: {
+        from,
+        to,
+        currency,
+        page: 1,
+        per: perPage
+      },
+      timeout: 25000
+    }, 2);
 
-      const data = res.data?.data || [];
-      allSales.push(...data);
-      totalPages = res.data?.pages || 1;
-      currentPage++;
-    } catch (error) {
-      console.error(`[CabifyClient] Error al consultar página ${currentPage} de sales:`, error.response?.data || error.message);
-      break;
+    const data = resPage1.data?.data || [];
+    allSales.push(...data);
+    totalPages = resPage1.data?.pages || 1;
+  } catch (error) {
+    console.error('[CabifyClient] Error al consultar página 1 de sales:', error.response?.data || error.message);
+    hasFetchError = true;
+  }
+
+  // 1b. Si hay más páginas y no hubo error, consultarlas concurrentemente en paralelo
+  if (!hasFetchError && totalPages > 1) {
+    const pageNumbers = [];
+    for (let p = 2; p <= Math.min(totalPages, 12); p++) {
+      pageNumbers.push(p);
     }
+
+    const remainingResults = await Promise.allSettled(
+      pageNumbers.map(page =>
+        axiosGetWithRetry(`${API_BASE}/sales`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          params: {
+            from,
+            to,
+            currency,
+            page,
+            per: perPage
+          },
+          timeout: 25000
+        }, 2)
+      )
+    );
+
+    for (const r of remainingResults) {
+      if (r.status === 'fulfilled' && r.value?.data?.data) {
+        allSales.push(...r.value.data.data);
+      } else {
+        hasFetchError = true;
+        console.warn('[CabifyClient] Fallo al consultar una de las páginas secundarias de sales');
+      }
+    }
+  }
+
+  // Si falló la comunicación y no se pudieron obtener ventas
+  if (hasFetchError && allSales.length === 0) {
+    if (existingDiskCache && Array.isArray(existingDiskCache.journeys) && existingDiskCache.journeys.length > 0) {
+      console.warn('[CabifyClient] Servidores de Cabify con lentitud. Sirviendo última versión en disco como fallback.');
+      return {
+        ...existingDiskCache,
+        isFallback: true,
+        warning: 'Servicio de Cabify con lentitud temporal. Mostrando la última versión guardada.'
+      };
+    }
+    throw new Error('La API de Cabify no respondió a tiempo. Por favor intenta sincronizar nuevamente en unos momentos.');
   }
 
   // 2. Extraer IDs de viajes únicos para resolver el rider/pasajero
@@ -258,10 +331,23 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
 
   const uniqueJourneyIds = Array.from(new Set(journeyIds));
 
-  // Resolver en paralelo con concurrencia de 25
-  await processInBatches(uniqueJourneyIds, 25, async (jId) => {
-    return getJourneyDetails(jId);
+  // Filtrar solo los viajes que aún no están en memoria ni en disco para no hacer llamadas innecesarias
+  const pendingJourneyIds = uniqueJourneyIds.filter(jId => {
+    if (journeyDetailsCache.has(jId)) return false;
+    const disk = readCache(`journey_${jId}`, 5184000000);
+    if (disk) {
+      journeyDetailsCache.set(jId, disk);
+      return false;
+    }
+    return true;
   });
+
+  // Resolver en paralelo solo los pendientes con concurrencia controlada de 20
+  if (pendingJourneyIds.length > 0) {
+    await processInBatches(pendingJourneyIds, 20, async (jId) => {
+      return getJourneyDetails(jId);
+    });
+  }
 
   // 3. Mapear viajes enriquecidos
   const enrichedJourneys = allSales.map((sale) => {
@@ -351,6 +437,9 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
     }
   };
 
-  writeCache(cacheKey, result);
+  // Solo escribir en caché si obtuvimos viajes o si la consulta concluyó de forma limpia
+  if (enrichedJourneys.length > 0 || !hasFetchError) {
+    writeCache(cacheKey, result);
+  }
   return result;
 }

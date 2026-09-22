@@ -50,13 +50,21 @@ export default function CabifyMobilityModule() {
       setSummary(data.summary || null);
       setCurrentPage(1);
 
-      if (forceRefresh) {
+      if (data.isFallback && data.warning) {
+        setSyncNotice(data.warning);
+        setTimeout(() => setSyncNotice(null), 6000);
+      } else if (forceRefresh) {
         setSyncNotice(`Sincronización en vivo completada: ${(data.journeys || []).length} viajes actualizados.`);
         setTimeout(() => setSyncNotice(null), 4000);
       }
     } catch (err) {
       console.error('[CabifyModule] Error al cargar:', err);
-      setError(err.message || 'No se pudo conectar con la API de Cabify');
+      if (journeys.length > 0) {
+        setSyncNotice('No se pudo conectar con la API de Cabify en este momento. Se mantienen los datos cargados previamente.');
+        setTimeout(() => setSyncNotice(null), 6000);
+      } else {
+        setError(err.message || 'No se pudo conectar con la API de Cabify');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

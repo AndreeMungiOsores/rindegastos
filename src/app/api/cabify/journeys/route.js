@@ -39,16 +39,18 @@ export async function GET(request) {
       success: true,
       period: { from, to },
       summary: result.summary,
-      journeys: result.journeys
+      journeys: result.journeys,
+      isFallback: !!result.isFallback,
+      warning: result.warning || null
     });
   } catch (error) {
     console.error('[CabifyAPI] Error al procesar consulta de viajes:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Error interno al consultar viajes de Cabify'
+        error: error.message || 'Error temporal al consultar viajes de Cabify'
       },
-      { status: 500 }
+      { status: 503 }
     );
   }
 }
