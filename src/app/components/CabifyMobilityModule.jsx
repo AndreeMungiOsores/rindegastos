@@ -365,13 +365,13 @@ export default function CabifyMobilityModule() {
         <div className="cabify-kpi-card highlight-card">
           <div className="cabify-kpi-label">
             <span>Total a Reembolsar (Mes)</span>
-            <span className="cabify-badge-card">Tarjeta Adrián M.</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy-600)" strokeWidth="2" aria-hidden="true">
+              <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+              <line x1="1" y1="10" x2="23" y2="10"/>
+            </svg>
           </div>
           <div className="cabify-kpi-value highlight-text">
             S/ {loading ? '...' : (summary?.totalAmount?.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00')}
-          </div>
-          <div className="cabify-kpi-subtext">
-            Imputación a conciliar contra estado de cuenta
           </div>
         </div>
 
