@@ -362,7 +362,7 @@ export default function CabifyMobilityModule() {
       {/* ── Tarjetas de Métricas (KPIs) ── */}
       <section className="cabify-kpi-grid" aria-label="Métricas de movilidad de Cabify">
         {/* KPI 1: Total Reembolso */}
-        <div className="cabify-kpi-card highlight-card">
+        <div className="cabify-kpi-card">
           <div className="cabify-kpi-label">
             <span>Total a Reembolsar (Mes)</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy-600)" strokeWidth="2" aria-hidden="true">

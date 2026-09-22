@@ -2540,11 +2540,6 @@ body {
   transform: translateY(-1px);
 }
 
-.cabify-kpi-card.highlight-card {
-  border-left: 4px solid var(--navy-800);
-  background: linear-gradient(180deg, #f8faff 0%, #ffffff 100%);
-}
-
 .cabify-kpi-label {
   display: flex;
   justify-content: space-between;
