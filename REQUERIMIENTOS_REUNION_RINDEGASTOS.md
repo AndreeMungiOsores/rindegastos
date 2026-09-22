@@ -34,13 +34,13 @@ Comprobantes emitidos en moneda extranjera (dólares) por servicios internaciona
 Facturas que ingresan automáticamente desde el buzón compartido `proveedores.pe@blisscorp.lat` (Cabify Logistics, Olva, Montano, CAPEMAS, etc.). Actualmente se listaban en cero o sin metadatos clave, imposibilitando que Tesorería anticipe pagos.
 
 ### Requerimientos Funcionales
-- [ ] **Extracción de Importe Total:** Extraer el monto del comprobante/PDF adjunto para alertar oportunamente a Tesorería.
-- [ ] **Fecha de Vencimiento Visible:** Extraer y mostrar la fecha de vencimiento del crédito comercial (ej. 15, 30 días) para calendarizar pagos. Si no tiene crédito, asumir fecha de emisión.
-- [ ] **Cálculo y Manejo de Detracciones (SUNAT):**
-  - [ ] Detectar servicios sujetos a detracción (ej. transporte y logística al 4%).
-  - [ ] **Monto Neto a Proveedor:** `Total Factura - Detracción` (valor real de transferencia bancaria).
-  - [ ] **Monto de Detracción:** `Total Factura * % Detracción` (valor a pagar en cuenta del Banco de la Nación).
-- [ ] **Desglose Tributario Completo:** Mantener base imponible e IGV estructurados para el registro contable.
+- [x] **Extracción de Importe Total:** Extraer el monto del comprobante/PDF adjunto para alertar oportunamente a Tesorería. Implementado con Kimi AI y sincronización automática vía endpoint `/api/cron/sync-invoices`.
+- [x] **Fecha de Vencimiento Visible:** Extraer y mostrar la fecha de vencimiento del crédito comercial (ej. 15, 30 días) para calendarizar pagos. Almacenado en `cr168_fecha` con semáforo visual de alertas en la interfaz.
+- [x] **Cálculo y Manejo de Detracciones (SUNAT):**
+  - [x] Detectar servicios sujetos a detracción (ej. transporte y logística al 4% SPOT).
+  - [x] **Monto Neto a Proveedor:** `Total Factura - Detracción` (valor real de transferencia bancaria).
+  - [x] **Monto de Detracción:** `Total Factura * % Detracción` (valor a pagar en cuenta del Banco de la Nación).
+- [x] **Desglose Tributario Completo:** Mantener base imponible, IGV, tasa y exenciones estructurados para el registro contable y exportación a Excel.
 
 ---
 
@@ -52,7 +52,7 @@ En la tabla principal de RindeGastos se mezclaban los gastos de rendición de cu
 ### Requerimientos Funcionales
 - [x] **Nueva Pestaña en el Panel:** Crear una sección dedicada llamada **«Buzón de Proveedores»** (o *Tabla Proveedores*), independiente del módulo RindeGastos. Implementado con subpestañas dedicadas (`rendicion` vs `buzon`) y acceso directo desde el sidebar (`Proveedores`).
 - [x] **Aislamiento Estadístico:** Excluir por completo las facturas de proveedores de los gráficos y métricas de consumo de los vendedores y colaboradores de campo (soluciona la distorsión del perfil de Adrián).
-- [ ] **Diseño para Cuentas por Pagar:** Presentar columnas de fecha de vencimiento, importe neto, detracción y estado de pago comercial.
+- [x] **Diseño para Cuentas por Pagar:** Presentar columnas de fecha de vencimiento con semáforo visual, importe neto, detracción SPOT, estado comercial y exportación contable dedicada a Excel.
 - [ ] **Escalabilidad:** Servirá de base y backend para el futuro portal web de autoservicio de proveedores.
 
 ---

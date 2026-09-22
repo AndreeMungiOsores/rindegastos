@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getVendorArea } from '../lib/vendorAreaMatcher.js';
+import { parseProviderMetadataTag } from '../lib/providerMetadata.js';
 
 /**
  * Formatea una fecha YYYY-MM-DD o ISO a formato DD/MM/YYYY sin desfasajes de zona horaria local.
@@ -15,6 +16,71 @@ function formatDisplayDate(dateStr) {
     return `${day}/${month}/${year}`;
   }
   return dateStr;
+}
+
+/**
+ * Evalúa el semáforo y estado de la fecha de vencimiento comercial de una factura
+ */
+function getVencimientoStatus(vencimientoDateStr) {
+  if (!vencimientoDateStr) return null;
+  const clean = vencimientoDateStr.includes('T') ? vencimientoDateStr.split('T')[0] : vencimientoDateStr;
+  const parts = clean.split('-');
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts.map(Number);
+  const venc = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((venc - today) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) {
+    return { status: 'vencido', label: `Venció hace ${Math.abs(diffDays)}d`, color: '#dc2626', bg: '#fef2f2', border: '#fca5a5' };
+  }
+  if (diffDays === 0) {
+    return { status: 'hoy', label: 'Vence hoy', color: '#ea580c', bg: '#fff7ed', border: '#fdba74' };
+  }
+  if (diffDays <= 5) {
+    return { status: 'por_vencer', label: `Vence en ${diffDays}d`, color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
+  }
+  return { status: 'al_dia', label: `Vence en ${diffDays}d`, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
+}
+
+/**
+ * Obtiene los importes netos, detracción SPOT y vencimiento de una factura de proveedor
+ */
+function getProviderInvoiceFinancials(item) {
+  const metadata = parseProviderMetadataTag(item.cr168_detalle) || {};
+  const total = item.cr168_montototalincluyendoigv != null ? Number(item.cr168_montototalincluyendoigv) : 0;
+  const fechaVencimiento = item.cr168_fecha 
+    ? (item.cr168_fecha.includes('T') ? item.cr168_fecha.split('T')[0] : item.cr168_fecha)
+    : (metadata.fecha_vencimiento || (item.cr168_fechadelgasto ? item.cr168_fechadelgasto.split('T')[0] : null));
+
+  const aplicaDetraccion = metadata.aplica_detraccion ?? (metadata.porcentaje_detraccion > 0);
+  const pctDetraccion = metadata.porcentaje_detraccion || (aplicaDetraccion ? 4 : 0);
+  let montoDetraccion = metadata.monto_detraccion;
+  if (montoDetraccion == null && aplicaDetraccion && total > 0) {
+    montoDetraccion = Math.round(total * (pctDetraccion / 100) * 100) / 100;
+  } else if (!aplicaDetraccion) {
+    montoDetraccion = 0;
+  }
+
+  let neto = metadata.monto_neto_proveedor;
+  if (neto == null && total > 0) {
+    neto = Math.round((total - (montoDetraccion || 0)) * 100) / 100;
+  } else if (neto == null) {
+    neto = total;
+  }
+
+  const moneda = metadata.moneda || ((item.cr168_detalle || '').includes('USD') ? 'USD' : 'PEN');
+
+  return {
+    fechaVencimiento,
+    condicionPago: metadata.condicion_pago || (fechaVencimiento && item.cr168_fechadelgasto && fechaVencimiento !== item.cr168_fechadelgasto.split('T')[0] ? 'CREDITO' : 'CONTADO'),
+    aplicaDetraccion,
+    pctDetraccion,
+    montoDetraccion: montoDetraccion || 0,
+    montoNeto: neto,
+    cuentaBancoNacion: metadata.cuenta_banco_nacion || null,
+    moneda
+  };
 }
 
 export default function AdminDashboard({ onLogout }) {
@@ -536,6 +602,7 @@ export default function AdminDashboard({ onLogout }) {
         (vendorArea && vendorArea.toLowerCase().includes(searchLower)) ||
         (item.cr168_vendedor && item.cr168_vendedor.toLowerCase().includes(searchLower)) ||
         (item.cr168_nombredelcomercio && item.cr168_nombredelcomercio.toLowerCase().includes(searchLower)) ||
+        (item.cr168_rucdelcomercio && item.cr168_rucdelcomercio.toLowerCase().includes(searchLower)) ||
         (item.cr168_numerodecomprobante && item.cr168_numerodecomprobante.toLowerCase().includes(searchLower)) ||
         (item.cr168_detalle && item.cr168_detalle.toLowerCase().includes(searchLower)) ||
         (item.cr168_id_desembolso && String(item.cr168_id_desembolso).toLowerCase().includes(searchLower))
@@ -557,7 +624,7 @@ export default function AdminDashboard({ onLogout }) {
     });
   }, [rindegastosSubTab, buzonExpenses, rendicionExpenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
 
-  // Ordenamiento de gastos basado en la columna de fecha activa (Gasto o Creación)
+  // Ordenamiento de gastos basado en la columna de fecha activa (Gasto, Vencimiento o Creación)
   const sortedExpenses = useMemo(() => {
     const sorted = [...filteredExpenses];
     sorted.sort((a, b) => {
@@ -566,6 +633,9 @@ export default function AdminDashboard({ onLogout }) {
       if (sortField === 'createdon') {
         dateA = a.createdon ? a.createdon.split('T')[0] : '';
         dateB = b.createdon ? b.createdon.split('T')[0] : '';
+      } else if (sortField === 'cr168_fecha') {
+        dateA = a.cr168_fecha ? a.cr168_fecha.split('T')[0] : (a.cr168_fechadelgasto ? a.cr168_fechadelgasto.split('T')[0] : '');
+        dateB = b.cr168_fecha ? b.cr168_fecha.split('T')[0] : (b.cr168_fechadelgasto ? b.cr168_fechadelgasto.split('T')[0] : '');
       } else {
         dateA = a.cr168_fechadelgasto ? a.cr168_fechadelgasto.split('T')[0] : '';
         dateB = b.cr168_fechadelgasto ? b.cr168_fechadelgasto.split('T')[0] : '';
@@ -588,9 +658,21 @@ export default function AdminDashboard({ onLogout }) {
     const pendingDisbursementCount = currentList.filter(e => parseInt(e.cr168_estado, 10) !== 553050001).length;
     const disbursedCount = currentList.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
 
+    let totalDetracciones = 0;
+    let totalNeto = 0;
+    if (rindegastosSubTab === 'buzon') {
+      currentList.forEach(item => {
+        const fin = getProviderInvoiceFinancials(item);
+        totalDetracciones += fin.montoDetraccion || 0;
+        totalNeto += fin.montoNeto || 0;
+      });
+    }
+
     return {
       totalCount,
       totalAmount,
+      totalDetracciones,
+      totalNeto,
       approvedCount,
       pendingApprovalCount,
       pendingDisbursementCount,
@@ -964,101 +1046,165 @@ export default function AdminDashboard({ onLogout }) {
     const sheetName = rindegastosSubTab === 'buzon' ? 'Buzón Proveedores' : 'Reporte de Gastos';
     const worksheet = workbook.addWorksheet(sheetName);
 
-    // Mapear los datos a filas del excel
-    const rows = filteredExpenses.map(item => {
-      const formattedDate = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
-      const createdDate = item.createdon ? formatDisplayDate(item.createdon) : '';
+    let rows;
+    let columns;
+    let importeColIndexes;
 
-      // ── Desglose de importes (prioriza datos reales extraídos por IA de Dataverse) ──
-      const total    = Number(item.cr168_montototalincluyendoigv || 0);
-      const propina  = Number(item.cr168_monto_propina || 0);
-      const tipoComp = (item.cr168_tipodecomprobante || '').toLowerCase();
+    if (rindegastosSubTab === 'buzon') {
+      rows = filteredExpenses.map(item => {
+        const fin = getProviderInvoiceFinancials(item);
+        const emision = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
+        const vencimiento = fin.fechaVencimiento ? formatDisplayDate(fin.fechaVencimiento) : '';
+        const total = Number(item.cr168_montototalincluyendoigv || 0);
+        const base = item.cr168_base_gravada != null ? Number(Number(item.cr168_base_gravada).toFixed(2)) : 0;
+        const igv = item.cr168_igv_monto != null ? Number(Number(item.cr168_igv_monto).toFixed(2)) : 0;
+        const tasaIgv = item.cr168_tasa_igv != null ? Number(item.cr168_tasa_igv) : (fin.moneda === 'USD' ? 0 : 18);
+        const inafecto = item.cr168_inafecto != null ? Number(Number(item.cr168_inafecto).toFixed(2)) : (fin.moneda === 'USD' ? total : 0);
 
-      const tieneDatosIA = item.cr168_base_gravada != null || item.cr168_tasa_igv != null;
+        return [
+          item.cr168_nombredelcomercio || '',
+          item.cr168_rucdelcomercio || '',
+          item.cr168_empresa || '',
+          emision,
+          vencimiento,
+          fin.condicionPago || 'CONTADO',
+          item.cr168_tipodecomprobante || 'Factura',
+          item.cr168_numerodecomprobante || '',
+          fin.moneda || 'PEN',
+          total,
+          tasaIgv,
+          base,
+          igv,
+          inafecto,
+          fin.aplicaDetraccion ? fin.pctDetraccion : 0,
+          fin.montoDetraccion || 0,
+          fin.montoNeto || total,
+          fin.cuentaBancoNacion || '',
+          item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'Sí' : 'No'),
+          item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente',
+          item.cr168_id_desembolso || ''
+        ];
+      });
 
-      let tasaIgv, baseGravada, igv, rc, inafecto;
-
-      if (tieneDatosIA) {
-        tasaIgv     = item.cr168_tasa_igv != null ? Number(item.cr168_tasa_igv) : (tipoComp.includes('banco') ? 0 : 18);
-        baseGravada = item.cr168_base_gravada != null ? Number(Number(item.cr168_base_gravada).toFixed(2)) : 0;
-        igv         = item.cr168_igv_monto != null ? Number(Number(item.cr168_igv_monto).toFixed(2)) : 0;
-        rc          = item.cr168_recargo_consumo != null ? Number(Number(item.cr168_recargo_consumo).toFixed(2)) : 0;
-        inafecto    = item.cr168_inafecto != null ? Number(Number(item.cr168_inafecto).toFixed(2)) : 0;
-      } else {
-        const esBanco = tipoComp.includes('banco') || tipoComp.includes('financier');
-        const esInafecto = esBanco;
-        tasaIgv = esInafecto ? 0 : 18;
-        if (esInafecto) {
-          baseGravada = 0;
-          igv         = 0;
-          inafecto    = Number(total.toFixed(2));
-        } else {
-          baseGravada = Number((total / (1 + tasaIgv / 100)).toFixed(2));
-          igv         = Number((total - baseGravada).toFixed(2));
-          inafecto    = 0;
-        }
-        rc = 0;
-      }
-
-      return [
-        item.cr168_vendedor || '',
-        item.cr168_empresa || '',
-        item.cr168_rucempresa || '',
-        createdDate,
-        formattedDate,
-        item.cr168_rucdelcomercio || '',
-        item.cr168_nombredelcomercio || '',
-        item.cr168_tipodecomprobante || '',
-        item.cr168_numerodecomprobante || '',
-        item.cr168_clinica || '',
-        item.cr168_doctor || '',
-        item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || item.cr168_tipodegasto || '',
-        item.cr168_marca || '',
-        // ── Importes desglosados ──
-        total,
-        propina,
-        tasaIgv,
-        baseGravada,
-        igv,
-        rc,
-        inafecto,
-        // ── Otros ──
-        item.cr168_detalle || '',
-        item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'Sí' : 'No'),
-        item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente',
-        item.cr168_id_desembolso || ''
+      columns = [
+        { name: 'Proveedor',                 filterButton: true },
+        { name: 'RUC Proveedor',             filterButton: true },
+        { name: 'Empresa',                   filterButton: true },
+        { name: 'Fecha Emisión',             filterButton: true },
+        { name: 'Fecha Vencimiento',         filterButton: true },
+        { name: 'Condición de Pago',         filterButton: true },
+        { name: 'Tipo de Comprobante',       filterButton: true },
+        { name: 'Número de Comprobante',     filterButton: true },
+        { name: 'Moneda',                    filterButton: true },
+        { name: 'Total Factura',             filterButton: true },
+        { name: 'Tasa IGV (%)',              filterButton: true },
+        { name: 'Base Imponible',            filterButton: true },
+        { name: 'IGV',                       filterButton: true },
+        { name: 'Inafecto',                  filterButton: true },
+        { name: 'Detracción (%)',            filterButton: true },
+        { name: 'Monto Detracción',          filterButton: true },
+        { name: 'Neto a Proveedor',          filterButton: true },
+        { name: 'Cta Banco de la Nación',    filterButton: true },
+        { name: 'Aprobado',                  filterButton: true },
+        { name: 'Estado',                    filterButton: true },
+        { name: 'ID Desembolso',             filterButton: true }
       ];
-    });
 
-    // Definir columnas con sus respectivos encabezados
-    const columns = [
-      { name: 'Vendedor',               filterButton: true },
-      { name: 'Empresa',                filterButton: true },
-      { name: 'RUC Empresa',            filterButton: true },
-      { name: 'Fecha de Creación',      filterButton: true },
-      { name: 'Fecha de Gasto',         filterButton: true },
-      { name: 'RUC del Comercio',       filterButton: true },
-      { name: 'Nombre del Comercio',    filterButton: true },
-      { name: 'Tipo de Comprobante',    filterButton: true },
-      { name: 'Número de Comprobante',  filterButton: true },
-      { name: 'Clínica',               filterButton: true },
-      { name: 'Doctor',                 filterButton: true },
-      { name: 'Tipo de Gasto',          filterButton: true },
-      { name: 'Marca',                  filterButton: true },
-      // ── Importes (columnas contables) ──
-      { name: 'Total (Inc. IGV)',        filterButton: true },
-      { name: 'Propina',                filterButton: true },
-      { name: 'Tasa IGV (%)',           filterButton: true },
-      { name: 'Base Imponible',         filterButton: true },
-      { name: 'IGV',                    filterButton: true },
-      { name: 'Recargo al Consumo (RC)',filterButton: true },
-      { name: 'Inafecto',              filterButton: true },
-      // ── Otros ──
-      { name: 'Detalle',               filterButton: true },
-      { name: 'Aprobado',              filterButton: true },
-      { name: 'Estado',                filterButton: true },
-      { name: 'ID Desembolso',         filterButton: true }
-    ];
+      // Formato numérico para importes: Total (10), Base (12), IGV (13), Inafecto (14), Detracción (16), Neto (17)
+      importeColIndexes = [10, 12, 13, 14, 16, 17];
+    } else {
+      // Mapear los datos a filas de rendición de colaboradores
+      rows = filteredExpenses.map(item => {
+        const formattedDate = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
+        const createdDate = item.createdon ? formatDisplayDate(item.createdon) : '';
+
+        const total    = Number(item.cr168_montototalincluyendoigv || 0);
+        const propina  = Number(item.cr168_monto_propina || 0);
+        const tipoComp = (item.cr168_tipodecomprobante || '').toLowerCase();
+
+        const tieneDatosIA = item.cr168_base_gravada != null || item.cr168_tasa_igv != null;
+
+        let tasaIgv, baseGravada, igv, rc, inafecto;
+
+        if (tieneDatosIA) {
+          tasaIgv     = item.cr168_tasa_igv != null ? Number(item.cr168_tasa_igv) : (tipoComp.includes('banco') ? 0 : 18);
+          baseGravada = item.cr168_base_gravada != null ? Number(Number(item.cr168_base_gravada).toFixed(2)) : 0;
+          igv         = item.cr168_igv_monto != null ? Number(Number(item.cr168_igv_monto).toFixed(2)) : 0;
+          rc          = item.cr168_recargo_consumo != null ? Number(Number(item.cr168_recargo_consumo).toFixed(2)) : 0;
+          inafecto    = item.cr168_inafecto != null ? Number(Number(item.cr168_inafecto).toFixed(2)) : 0;
+        } else {
+          const esBanco = tipoComp.includes('banco') || tipoComp.includes('financier');
+          const esInafecto = esBanco;
+          tasaIgv = esInafecto ? 0 : 18;
+          if (esInafecto) {
+            baseGravada = 0;
+            igv         = 0;
+            inafecto    = Number(total.toFixed(2));
+          } else {
+            baseGravada = Number((total / (1 + tasaIgv / 100)).toFixed(2));
+            igv         = Number((total - baseGravada).toFixed(2));
+            inafecto    = 0;
+          }
+          rc = 0;
+        }
+
+        return [
+          item.cr168_vendedor || '',
+          item.cr168_empresa || '',
+          item.cr168_rucempresa || '',
+          createdDate,
+          formattedDate,
+          item.cr168_rucdelcomercio || '',
+          item.cr168_nombredelcomercio || '',
+          item.cr168_tipodecomprobante || '',
+          item.cr168_numerodecomprobante || '',
+          item.cr168_clinica || '',
+          item.cr168_doctor || '',
+          item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || item.cr168_tipodegasto || '',
+          item.cr168_marca || '',
+          total,
+          propina,
+          tasaIgv,
+          baseGravada,
+          igv,
+          rc,
+          inafecto,
+          item.cr168_detalle || '',
+          item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'Sí' : 'No'),
+          item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente',
+          item.cr168_id_desembolso || ''
+        ];
+      });
+
+      columns = [
+        { name: 'Vendedor',               filterButton: true },
+        { name: 'Empresa',                filterButton: true },
+        { name: 'RUC Empresa',            filterButton: true },
+        { name: 'Fecha de Creación',      filterButton: true },
+        { name: 'Fecha de Gasto',         filterButton: true },
+        { name: 'RUC del Comercio',       filterButton: true },
+        { name: 'Nombre del Comercio',    filterButton: true },
+        { name: 'Tipo de Comprobante',    filterButton: true },
+        { name: 'Número de Comprobante',  filterButton: true },
+        { name: 'Clínica',               filterButton: true },
+        { name: 'Doctor',                 filterButton: true },
+        { name: 'Tipo de Gasto',          filterButton: true },
+        { name: 'Marca',                  filterButton: true },
+        { name: 'Total (Inc. IGV)',        filterButton: true },
+        { name: 'Propina',                filterButton: true },
+        { name: 'Tasa IGV (%)',           filterButton: true },
+        { name: 'Base Imponible',         filterButton: true },
+        { name: 'IGV',                    filterButton: true },
+        { name: 'Recargo al Consumo (RC)',filterButton: true },
+        { name: 'Inafecto',              filterButton: true },
+        { name: 'Detalle',               filterButton: true },
+        { name: 'Aprobado',              filterButton: true },
+        { name: 'Estado',                filterButton: true },
+        { name: 'ID Desembolso',         filterButton: true }
+      ];
+
+      importeColIndexes = [14, 15, 17, 18, 19, 20];
+    }
 
     // Agregar tabla de datos con estilo formal en Excel
     worksheet.addTable({
@@ -1074,8 +1220,6 @@ export default function AdminDashboard({ onLogout }) {
       rows: rows,
     });
 
-    // Formato numérico para columnas de importes: Total (14), Propina (15), Base (17), IGV (18), RC (19), Inafecto (20)
-    const importeColIndexes = [14, 15, 17, 18, 19, 20];
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return; // saltar encabezado
       importeColIndexes.forEach(colIdx => {
@@ -2170,7 +2314,11 @@ export default function AdminDashboard({ onLogout }) {
                       <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Total Facturas Buzón' : 'Monto Total Registrado'}</span>
                     </div>
                     <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    <span className="kpi-sub">Total de {stats.totalCount} {rindegastosSubTab === 'buzon' ? 'facturas de proveedores' : 'comprobantes'}</span>
+                    <span className="kpi-sub">
+                      {rindegastosSubTab === 'buzon' 
+                        ? `Neto Prov: S/ ${(stats.totalNeto || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : `Total de ${stats.totalCount} comprobantes`}
+                    </span>
                   </div>
                   <div className="kpi-card approved">
                     <div className="kpi-header">
@@ -2384,138 +2532,257 @@ export default function AdminDashboard({ onLogout }) {
                                 }}
                               />
                             </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Fecha creación</span>
-                                <select
-                                  className="header-select-filter"
-                                  value={sortField === 'createdon' ? dateOrder : ''}
-                                  onChange={(e) => {
-                                    if (e.target.value) {
-                                      setSortField('createdon');
-                                      setDateOrder(e.target.value);
-                                    }
-                                  }}
-                                >
-                                  <option value="" disabled={sortField === 'createdon'}>Ordenar</option>
-                                  <option value="desc">Más recientes</option>
-                                  <option value="asc">Más antiguos</option>
-                                </select>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Fecha gasto</span>
-                                <select
-                                  className="header-select-filter"
-                                  value={sortField === 'cr168_fechadelgasto' ? dateOrder : ''}
-                                  onChange={(e) => {
-                                    if (e.target.value) {
-                                      setSortField('cr168_fechadelgasto');
-                                      setDateOrder(e.target.value);
-                                    }
-                                  }}
-                                >
-                                  <option value="" disabled={sortField === 'cr168_fechadelgasto'}>Ordenar</option>
-                                  <option value="desc">Más recientes</option>
-                                  <option value="asc">Más antiguos</option>
-                                </select>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Empresa</span>
-                                <select
-                                  className="header-select-filter"
-                                  value={empresaFilter}
-                                  onChange={(e) => setEmpresaFilter(e.target.value)}
-                                >
-                                  <option value="">(Todos)</option>
-                                  {empresasList.map(emp => (
-                                    <option key={emp} value={emp}>{emp}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Equipo</span>
-                                <select
-                                  className="header-select-filter"
-                                  value={equipoFilter}
-                                  onChange={(e) => setEquipoFilter(e.target.value)}
-                                >
-                                  <option value="">(Todos)</option>
-                                  {equiposList.map(eq => (
-                                    <option key={eq} value={eq}>{eq}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Vendedor</span>
-                                <select
-                                  className="header-select-filter"
-                                  value={vendedorFilter}
-                                  onChange={(e) => setVendedorFilter(e.target.value)}
-                                >
-                                  <option value="">(Todos)</option>
-                                  {vendorsList.map(v => (
-                                    <option key={v} value={v}>{v}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">{rindegastosSubTab === 'buzon' ? 'Proveedor' : 'Comercio'}</span>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Comprobante</span>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Monto</span>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Aprobado</span>
-                                <select
-                                  className="header-select-filter"
-                                  value={aprobadoFilter}
-                                  onChange={(e) => setAprobadoFilter(e.target.value)}
-                                >
-                                  <option value="">(Todos)</option>
-                                  <option value="true">Sí</option>
-                                  <option value="false">No</option>
-                                </select>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">Estado</span>
-                                <select
-                                  className="header-select-filter"
-                                  value={estadoFilter}
-                                  onChange={(e) => setEstadoFilter(e.target.value)}
-                                >
-                                  <option value="">(Todos)</option>
-                                  {statesList.map(s => (
-                                    <option key={s.val} value={s.val}>{s.text}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </th>
-                            <th>
-                              <div className="header-with-filter">
-                                <span className="header-label">ID Desembolso</span>
-                              </div>
-                            </th>
+                            {rindegastosSubTab === 'buzon' ? (
+                              <>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Emisión</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={sortField === 'cr168_fechadelgasto' ? dateOrder : ''}
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          setSortField('cr168_fechadelgasto');
+                                          setDateOrder(e.target.value);
+                                        }
+                                      }}
+                                    >
+                                      <option value="" disabled={sortField === 'cr168_fechadelgasto'}>Ordenar</option>
+                                      <option value="desc">Más recientes</option>
+                                      <option value="asc">Más antiguos</option>
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Vencimiento</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={sortField === 'cr168_fecha' ? dateOrder : ''}
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          setSortField('cr168_fecha');
+                                          setDateOrder(e.target.value);
+                                        }
+                                      }}
+                                    >
+                                      <option value="" disabled={sortField === 'cr168_fecha'}>Ordenar</option>
+                                      <option value="asc">Próximos a vencer</option>
+                                      <option value="desc">Más lejanos</option>
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Empresa</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={empresaFilter}
+                                      onChange={(e) => setEmpresaFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      {empresasList.map(emp => (
+                                        <option key={emp} value={emp}>{emp}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Proveedor / RUC</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Comprobante</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Total Factura</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Detracción SPOT</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Neto a Pagar</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Aprobado</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={aprobadoFilter}
+                                      onChange={(e) => setAprobadoFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      <option value="true">Sí</option>
+                                      <option value="false">No</option>
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Estado</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={estadoFilter}
+                                      onChange={(e) => setEstadoFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      {statesList.map(s => (
+                                        <option key={s.val} value={s.val}>{s.text}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">ID Desembolso</span>
+                                  </div>
+                                </th>
+                              </>
+                            ) : (
+                              <>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Fecha creación</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={sortField === 'createdon' ? dateOrder : ''}
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          setSortField('createdon');
+                                          setDateOrder(e.target.value);
+                                        }
+                                      }}
+                                    >
+                                      <option value="" disabled={sortField === 'createdon'}>Ordenar</option>
+                                      <option value="desc">Más recientes</option>
+                                      <option value="asc">Más antiguos</option>
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Fecha gasto</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={sortField === 'cr168_fechadelgasto' ? dateOrder : ''}
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          setSortField('cr168_fechadelgasto');
+                                          setDateOrder(e.target.value);
+                                        }
+                                      }}
+                                    >
+                                      <option value="" disabled={sortField === 'cr168_fechadelgasto'}>Ordenar</option>
+                                      <option value="desc">Más recientes</option>
+                                      <option value="asc">Más antiguos</option>
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Empresa</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={empresaFilter}
+                                      onChange={(e) => setEmpresaFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      {empresasList.map(emp => (
+                                        <option key={emp} value={emp}>{emp}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Equipo</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={equipoFilter}
+                                      onChange={(e) => setEquipoFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      {equiposList.map(eq => (
+                                        <option key={eq} value={eq}>{eq}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Vendedor</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={vendedorFilter}
+                                      onChange={(e) => setVendedorFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      {vendorsList.map(v => (
+                                        <option key={v} value={v}>{v}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Comercio</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Comprobante</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Monto</span>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Aprobado</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={aprobadoFilter}
+                                      onChange={(e) => setAprobadoFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      <option value="true">Sí</option>
+                                      <option value="false">No</option>
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Estado</span>
+                                    <select
+                                      className="header-select-filter"
+                                      value={estadoFilter}
+                                      onChange={(e) => setEstadoFilter(e.target.value)}
+                                    >
+                                      <option value="">(Todos)</option>
+                                      {statesList.map(s => (
+                                        <option key={s.val} value={s.val}>{s.text}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">ID Desembolso</span>
+                                  </div>
+                                </th>
+                              </>
+                            )}
                           </tr>
                         </thead>
                         <tbody>
@@ -2537,6 +2804,121 @@ export default function AdminDashboard({ onLogout }) {
                           ) : (
                             sortedExpenses.map((item) => {
                               const isSelected = selectedIds.includes(item.cr168_reportedegastosid);
+
+                              if (rindegastosSubTab === 'buzon') {
+                                const fin = getProviderInvoiceFinancials(item);
+                                const vencStatus = getVencimientoStatus(fin.fechaVencimiento);
+                                const emisionDate = formatDisplayDate(item.cr168_fechadelgasto);
+                                const vencDate = formatDisplayDate(fin.fechaVencimiento);
+
+                                return (
+                                  <tr
+                                    key={item.cr168_reportedegastosid}
+                                    className={isSelected ? 'selected' : ''}
+                                    style={{ cursor: 'pointer' }}
+                                  >
+                                    <td className="checkbox-cell" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="checkbox"
+                                        className="custom-checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleSelectItem(item.cr168_reportedegastosid)}
+                                      />
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      {emisionDate || '—'}
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                        <span style={{ fontWeight: '600' }}>{vencDate || '—'}</span>
+                                        {vencStatus && (
+                                          <span style={{
+                                            display: 'inline-block',
+                                            fontSize: '0.68rem',
+                                            padding: '0.1rem 0.4rem',
+                                            borderRadius: '9999px',
+                                            fontWeight: '600',
+                                            width: 'fit-content',
+                                            backgroundColor: vencStatus.bg,
+                                            color: vencStatus.color,
+                                            border: `1px solid ${vencStatus.border}`
+                                          }}>
+                                            {vencStatus.label}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })} style={{ color: 'var(--text-secondary)' }}>
+                                      {item.cr168_empresa || 'Sin Empresa'}
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                        <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
+                                          {item.cr168_nombredelcomercio || 'Proveedor'}
+                                        </span>
+                                        {item.cr168_rucdelcomercio && (
+                                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                            RUC: {item.cr168_rucdelcomercio}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155', fontWeight: '600', fontSize: '0.8rem' }}>
+                                        {item.cr168_numerodecomprobante || 'S/N'}
+                                      </code>
+                                      {item.cr168_tipodecomprobante && (
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                                          {item.cr168_tipodecomprobante}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
+                                      {fin.moneda === 'USD' ? '$' : 'S/'} {(item.cr168_montototalincluyendoigv || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {fin.moneda === 'USD' && (
+                                        <span style={{ fontSize: '0.7rem', color: '#6366f1', marginLeft: '0.25rem', fontWeight: 'bold' }}>USD</span>
+                                      )}
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      {fin.aplicaDetraccion ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                          <span style={{ fontWeight: '600', color: '#d97706' }}>
+                                            S/ {(fin.montoDetraccion || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          </span>
+                                          <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: '600', width: 'fit-content' }}>
+                                            SPOT {fin.pctDetraccion}%
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }}>0%</span>
+                                      )}
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '700', color: '#16a34a' }}>
+                                      {fin.moneda === 'USD' ? '$' : 'S/'} {(fin.montoNeto || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
+                                        {item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False')}
+                                      </span>
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      <span className={`badge ${item.cr168_estado === 553050001 ? 'badge-reimbursed' : 'badge-pending'}`}>
+                                        {item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'}
+                                      </span>
+                                    </td>
+                                    <td onClick={() => setActiveExpense({ ...item })}>
+                                      {item.cr168_id_desembolso ? (
+                                        <code style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '0.2rem 0.45rem', borderRadius: '4px', color: '#1e293b', fontWeight: '600', fontSize: '0.78rem' }}>
+                                          {item.cr168_id_desembolso}
+                                        </code>
+                                      ) : (
+                                        <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }}>—</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              }
+
                               const formattedDate = formatDisplayDate(item.cr168_fechadelgasto);
                               
                               return (
@@ -2569,8 +2951,8 @@ export default function AdminDashboard({ onLogout }) {
                                     {item.cr168_vendedor || 'Sin Vendedor'}
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })} style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
-                                    <span>{item.cr168_nombredelcomercio || (rindegastosSubTab === 'buzon' ? 'Proveedor' : 'Sin Comercio')}</span>
-                                    {rindegastosSubTab !== 'buzon' && (item.cr168_detalle || '').startsWith('[Factura Correo]') && (
+                                    <span>{item.cr168_nombredelcomercio || 'Sin Comercio'}</span>
+                                    {item.cr168_detalle && item.cr168_detalle.startsWith('[Factura Correo]') && (
                                       <span className="badge-buzon">📬 De buzón proveedores</span>
                                     )}
                                   </td>
@@ -2894,6 +3276,88 @@ export default function AdminDashboard({ onLogout }) {
                       )}
                     </div>
                   )}
+
+                  {/* ── Cuentas por Pagar & Detracción (SPOT) — Facturas de Buzón de Proveedores ── */}
+                  {((activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) ||
+                    (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[SPOT:')) ||
+                    activeExpense.cr168_fecha) && (() => {
+                    const fin = getProviderInvoiceFinancials(activeExpense);
+                    const vencStatus = getVencimientoStatus(fin.fechaVencimiento);
+                    return (
+                      <div className="detail-section" style={{ borderLeft: '3px solid var(--accent-color, #2563eb)', background: '#f8fafc', borderRadius: '0 8px 8px 0', padding: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                          <h3 style={{ margin: 0, paddingBottom: 0, borderBottom: 'none', color: '#1e293b' }}>
+                            Cuentas por Pagar & Detracción (SPOT)
+                          </h3>
+                          <span style={{ fontSize: '0.75rem', background: '#e0e7ff', color: '#3730a3', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: '600' }}>
+                            {fin.condicionPago || 'CONTADO'}
+                          </span>
+                        </div>
+
+                        <div className="info-row">
+                          <span className="info-label">Fecha de Vencimiento</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span className="info-value" style={{ fontWeight: '600' }}>
+                              {formatDisplayDate(fin.fechaVencimiento) || 'No especificada'}
+                            </span>
+                            {vencStatus && (
+                              <span style={{
+                                fontSize: '0.72rem',
+                                padding: '0.15rem 0.45rem',
+                                borderRadius: '9999px',
+                                fontWeight: '600',
+                                backgroundColor: vencStatus.bg,
+                                color: vencStatus.color,
+                                border: `1px solid ${vencStatus.border}`
+                              }}>
+                                {vencStatus.label}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="info-row">
+                          <span className="info-label">Condición de Pago</span>
+                          <span className="info-value" style={{ fontWeight: '500' }}>
+                            {fin.condicionPago === 'CREDITO' ? 'Crédito comercial' : 'Pago al contado'}
+                          </span>
+                        </div>
+
+                        <div className="info-row">
+                          <span className="info-label">Sujeto a SPOT (SUNAT)</span>
+                          <span className="info-value" style={{ fontWeight: '600', color: fin.aplicaDetraccion ? '#d97706' : 'var(--text-secondary)' }}>
+                            {fin.aplicaDetraccion ? `Sí (${fin.pctDetraccion}% de detracción)` : 'No sujeto a detracción'}
+                          </span>
+                        </div>
+
+                        {fin.aplicaDetraccion && (
+                          <>
+                            <div className="info-row">
+                              <span className="info-label">Monto Detracción SPOT</span>
+                              <span className="info-value amount" style={{ color: '#d97706', fontWeight: '700' }}>
+                                S/ {Number(fin.montoDetraccion || 0).toFixed(2)}
+                              </span>
+                            </div>
+                            {fin.cuentaBancoNacion && (
+                              <div className="info-row">
+                                <span className="info-label">Cta. Cte. Banco de la Nación</span>
+                                <code style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: '600', fontSize: '0.8rem' }}>
+                                  {fin.cuentaBancoNacion}
+                                </code>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        <div className="info-row" style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '0.5rem', marginTop: '0.5rem' }}>
+                          <span className="info-label" style={{ fontWeight: '700', color: '#0f172a' }}>Neto a Transferir al Proveedor</span>
+                          <span className="info-value amount" style={{ color: '#16a34a', fontWeight: '800', fontSize: '1.05rem' }}>
+                            {fin.moneda === 'USD' ? '$' : 'S/'} {Number(fin.montoNeto || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Detalles adicionales (solo si alguno tiene dato) */}
                   {(activeExpense.cr168_clinica ||

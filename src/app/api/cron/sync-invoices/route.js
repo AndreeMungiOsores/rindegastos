@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 import { NextResponse } from 'next/server';
 import { fetchUnreadInvoiceEmails, markEmailAsRead } from '../../../../lib/graphMailReader.js';
-import { createExpense, getExpenses, uploadFileToExpense } from '../../../../lib/dataverseClient.js';
+import { createExpense, getExpenses, uploadFileToExpense, updateExpense } from '../../../../lib/dataverseClient.js';
+import { extractInvoiceFromBuffer, formatProviderMetadataTag } from '../../../../lib/invoiceExtractor.js';
 
 export async function GET() {
   return await handleInvoiceSync();
@@ -111,6 +112,45 @@ async function handleInvoiceSync() {
         if (item.pdfBuffer && item.pdfBuffer.length > 0) {
           await uploadFileToExpense(expenseId, item.pdfBuffer, item.pdfFileName);
           console.log(`[InvoiceCronSync] Archivo PDF "${item.pdfFileName}" adjuntado al gasto ${expenseId}.`);
+
+          // Enriquecimiento automático inmediato con Kimi AI
+          try {
+            console.log(`[InvoiceCronSync] Ejecutando análisis tributario y detracciones con Kimi AI para "${item.pdfFileName}"...`);
+            const invoiceData = await extractInvoiceFromBuffer(item.pdfBuffer, item.pdfFileName);
+
+            const spotTag = formatProviderMetadataTag(invoiceData);
+            const baseDetalle = `[Factura Correo] ${item.subject}`.trim();
+            const maxBaseLen = Math.max(20, 390 - spotTag.length);
+            const safeBaseDetalle = baseDetalle.length > maxBaseLen ? baseDetalle.substring(0, maxBaseLen) : baseDetalle;
+
+            const enrichPayload = {
+              cr168_montototalincluyendoigv: invoiceData.total_factura,
+              cr168_base_gravada: invoiceData.base_gravada,
+              cr168_tasa_igv: invoiceData.tasa_igv,
+              cr168_igv_monto: invoiceData.igv_monto,
+              cr168_inafecto: invoiceData.inafecto,
+              cr168_rucdelcomercio: invoiceData.ruc_emisor || undefined,
+              cr168_nombredelcomercio: invoiceData.nombre_emisor || cleanMerchant,
+              cr168_numerodecomprobante: invoiceData.numero_comprobante || undefined,
+              cr168_tipodecomprobante: invoiceData.tipo_comprobante || undefined,
+              cr168_empresa: invoiceData.cliente_empresa || 'BLISSCORP S.A.C',
+              cr168_ia_procesado: true,
+              cr168_ia_confianza: invoiceData.confianza,
+              cr168_detalle: `${safeBaseDetalle}${spotTag}`
+            };
+
+            if (invoiceData.fecha_emision) {
+              enrichPayload.cr168_fechadelgasto = `${invoiceData.fecha_emision}T05:00:00Z`;
+            }
+            if (invoiceData.fecha_vencimiento) {
+              enrichPayload.cr168_fecha = `${invoiceData.fecha_vencimiento}T05:00:00Z`;
+            }
+
+            await updateExpense(expenseId, enrichPayload);
+            console.log(`[InvoiceCronSync] Factura ${expenseId} enriquecida exitosamente con Kimi AI.`);
+          } catch (aiErr) {
+            console.warn(`[InvoiceCronSync] No se pudo auto-enriquecer con Kimi AI (se mantiene registro base):`, aiErr.message);
+          }
         }
 
         // Marcar correo como leído en Microsoft Graph
