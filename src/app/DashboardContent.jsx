@@ -2604,7 +2604,7 @@ export default function AdminDashboard({ onLogout }) {
                                 </th>
                                 <th>
                                   <div className="header-with-filter">
-                                    <span className="header-label">Detracción SPOT</span>
+                                    <span className="header-label">Condición de Pago</span>
                                   </div>
                                 </th>
                                 <th>
@@ -2880,18 +2880,24 @@ export default function AdminDashboard({ onLogout }) {
                                       )}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
-                                      {fin.aplicaDetraccion ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                                          <span style={{ fontWeight: '600', color: '#d97706' }}>
-                                            S/ {(fin.montoDetraccion || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {(() => {
+                                        const rawCond = fin.condicionPago || 'CONTADO';
+                                        const isCredito = rawCond.toUpperCase().includes('CREDIT');
+                                        return (
+                                          <span style={{
+                                            display: 'inline-block',
+                                            fontSize: '0.75rem',
+                                            fontWeight: '600',
+                                            padding: '0.2rem 0.55rem',
+                                            borderRadius: '6px',
+                                            backgroundColor: isCredito ? '#eff6ff' : '#f1f5f9',
+                                            color: isCredito ? '#1d4ed8' : '#475569',
+                                            border: `1px solid ${isCredito ? '#bfdbfe' : '#cbd5e1'}`
+                                          }}>
+                                            {isCredito ? 'Crédito' : 'Contado'}
                                           </span>
-                                          <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: '600', width: 'fit-content' }}>
-                                            SPOT {fin.pctDetraccion}%
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }}>0%</span>
-                                      )}
+                                        );
+                                      })()}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '700', color: '#16a34a' }}>
                                       {fin.moneda === 'USD' ? '$' : 'S/'} {(fin.montoNeto || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
