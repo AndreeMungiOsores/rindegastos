@@ -99,18 +99,19 @@ El desglose tributario ya está integrado en la exportación Excel (Tasa IGV, Ba
 ## 7. Integración con API de Cabify Empresas (Movilidad y Taxis)
 
 ### Contexto
-El consumo de movilidad corporativa en taxis representa aprox. S/ 5,000 mensuales cargados a la tarjeta de crédito de Adrián. Llega una factura única mensual consolidada, sin detalle de qué colaborador viajó, qué ruta realizó ni qué motivo o centro de costos originó el gasto.
+El consumo de movilidad corporativa en taxis representa aprox. S/ 5,000 mensuales cargados a la tarjeta de crédito de Adrián Murakami. Llega una factura única mensual consolidada, sin detalle de qué colaborador viajó, qué ruta realizó ni qué motivo o centro de costos originó el gasto.
 
 ### Requerimientos Funcionales y de Integración
-- [ ] **Diferenciación de Canales de Facturación:**
-  - **Cabify Logistics:** Pago directo mediante transferencia bancaria de la empresa (cuentas separadas).
+- [x] **Diferenciación de Canales de Facturación:**
+  - **Cabify Logistics:** Pago directo mediante transferencia bancaria de la empresa (cuentas separadas en Buzón Proveedores).
   - **Cabify Taxis / Pasajeros:** Reembolso a la tarjeta de crédito personal de Adrián Murakami.
-- [ ] **Conexión al API de Cabify Empresas:**
-  - [ ] Recibir API Key regenerada, token y documentación técnica oficial de parte de Gonzalo Laqui.
-  - [ ] Consumir endpoint de viajes para auditar:
-    - Nombre del colaborador.
-    - Fecha y hora del viaje.
-    - Código de comprobante / ticket.
-    - Ruta y motivo del viaje.
-    - Centro de costos / Marca / Médico asignado.
-- [ ] **Sincronización:** Priorizar la ingesta recurrente de los nuevos periodos mensuales que ingresen al portal.
+- [x] **Conexión al API de Cabify Empresas:**
+  - [x] Recibir API Key regenerada, token y documentación técnica oficial de parte de Gonzalo Laqui. Implementada autenticación OAuth 2.0 `client_credentials` con endpoint oficial `https://cabify.com/auth/api/authorization`.
+  - [x] Consumir endpoint de viajes para auditar:
+    - [x] Nombre del colaborador (resuelto mediante cruce de `user_id`/`rider.id` con mapa corporativo de usuarios).
+    - [x] Fecha y hora del viaje (formateado en zona horaria local de Lima UTC-5).
+    - [x] Código de comprobante / ticket Cabify (`BX01-...`).
+    - [x] Ruta y motivo del viaje (dirección de origen con punto verde ➔ dirección de destino con punto rojo).
+    - [x] Centro de costos / Marca / Motivo asignado (`charge_code`).
+- [x] **Módulo Dedicado en el Panel Lateral:** Creación de la vista **«Movilidad Cabify»** con tarjetas KPI (Total a Reembolsar en S/, Viajes Realizados, Costo Promedio, Top Pasajero), tabla auditable interactiva, modal de detalle de trayecto, ranking lateral de consumo por colaborador y exportación contable a Excel (`.xlsx`).
+- [x] **Sincronización:** Endpoint Next.js `/api/cabify/journeys` con caché inteligente en memoria y disco, concurrencia optimizada y botón de *Sincronizar en Vivo* para ingesta recurrente.
