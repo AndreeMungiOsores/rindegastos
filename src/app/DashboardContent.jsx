@@ -2870,9 +2870,6 @@ export default function AdminDashboard({ onLogout }) {
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
                                       {fin.moneda === 'USD' ? '$' : 'S/'} {(item.cr168_montototalincluyendoigv || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                      {fin.moneda === 'USD' && (
-                                        <span style={{ fontSize: '0.7rem', color: '#6366f1', marginLeft: '0.25rem', fontWeight: 'bold' }}>USD</span>
-                                      )}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
                                       {(() => {
