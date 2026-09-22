@@ -2388,84 +2388,27 @@ body {
 .cabify-module-root {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
   width: 100%;
   max-width: 100%;
-  padding-bottom: 2.5rem;
   animation: fadeIn 0.25s ease-out;
 }
 
-/* ── Encabezado Principal ── */
-.cabify-header {
+.cabify-dashboard-flow {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   gap: 1.25rem;
-  flex-wrap: wrap;
-  background: #ffffff;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: 1.15rem 1.5rem;
-  box-shadow: var(--shadow-sm);
+  padding-bottom: 2.5rem;
 }
 
-.cabify-header-left {
-  flex: 1;
-  min-width: 280px;
-}
-
-.cabify-title-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.cabify-icon-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  background: var(--navy-900);
-  color: #ffffff;
-  border-radius: 10px;
-  flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(14, 42, 67, 0.18);
-}
-
-.cabify-title {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--navy-900);
-  margin: 0 0 0.15rem 0;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-}
-
-.cabify-subtitle {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.35;
-  max-width: 620px;
-}
-
-.cabify-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-}
-
-/* Selector de Período Compacto */
+/* Selector de Período Compacto en Barra de Subpestañas */
 .cabify-period-group {
   display: inline-flex;
   align-items: center;
   background: #ffffff;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   padding: 0 0.65rem;
-  height: 38px;
+  height: 32px;
   gap: 0.35rem;
   box-shadow: var(--shadow-sm);
   transition: border-color var(--transition-fast);
@@ -2493,36 +2436,22 @@ body {
 .cabify-select {
   border: none;
   background: transparent;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-primary);
   cursor: pointer;
-  padding: 0 0.2rem;
+  padding: 0 0.15rem;
   outline: none;
   height: 100%;
+  font-family: inherit;
 }
 
 .cabify-select-month {
-  min-width: 105px;
+  min-width: 100px;
 }
 
 .cabify-select-year {
-  min-width: 60px;
-}
-
-.cabify-sync-btn,
-.cabify-export-btn {
-  height: 38px;
-  padding: 0 1rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
-  transition: all var(--transition-fast);
-  white-space: nowrap;
+  min-width: 55px;
 }
 
 .btn-icon {
