@@ -20,7 +20,9 @@ export default function CabifyMobilityModule() {
   const [journeys, setJourneys] = useState([]);
   const [summary, setSummary] = useState(null);
 
+  const [activeSubTab, setActiveSubTab] = useState('viajes'); // 'viajes' | 'estadisticas'
   const [searchTerm, setSearchTerm] = useState('');
+  const [statsSearch, setStatsSearch] = useState('');
   const [filterPassenger, setFilterPassenger] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
@@ -106,11 +108,44 @@ export default function CabifyMobilityModule() {
     return filteredJourneys.slice(start, start + itemsPerPage);
   }, [filteredJourneys, currentPage, itemsPerPage]);
 
-  // Lista de pasajeros para el filtro
+  // Lista de pasajeros para el filtro y analíticas
   const passengerOptions = useMemo(() => {
     if (!summary?.byPassenger) return [];
     return summary.byPassenger;
   }, [summary]);
+
+  // Pasajeros filtrados en la pestaña de Estadísticas
+  const filteredPassengerOptions = useMemo(() => {
+    if (!statsSearch.trim()) return passengerOptions;
+    const q = statsSearch.toLowerCase().trim();
+    return passengerOptions.filter(p =>
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.email || '').toLowerCase().includes(q)
+    );
+  }, [passengerOptions, statsSearch]);
+
+  // Estadísticas de demanda por día de la semana
+  const weekdayAnalytics = useMemo(() => {
+    const days = [
+      { name: 'Lunes', count: 0, total: 0 },
+      { name: 'Martes', count: 0, total: 0 },
+      { name: 'Miércoles', count: 0, total: 0 },
+      { name: 'Jueves', count: 0, total: 0 },
+      { name: 'Viernes', count: 0, total: 0 },
+      { name: 'Sábado', count: 0, total: 0 },
+      { name: 'Domingo', count: 0, total: 0 },
+    ];
+    journeys.forEach(j => {
+      const dateStr = j.startAt || j.invoiceDate;
+      if (!dateStr) return;
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return;
+      const dayIndex = (date.getDay() + 6) % 7; // Lunes=0 ... Domingo=6
+      days[dayIndex].count += 1;
+      days[dayIndex].total += (j.totalPEN || 0);
+    });
+    return days;
+  }, [journeys]);
 
   // Exportar Excel Contable
   const handleExportExcel = async () => {
@@ -241,8 +276,9 @@ export default function CabifyMobilityModule() {
             <button
               type="button"
               role="tab"
-              aria-selected="true"
-              className="subtab-btn active"
+              aria-selected={activeSubTab === 'viajes'}
+              className={`subtab-btn ${activeSubTab === 'viajes' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('viajes')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.5 2.8C2.1 11 2 11.5 2 12v4c0 .6.4 1 1 1h2"/>
@@ -251,6 +287,21 @@ export default function CabifyMobilityModule() {
                 <circle cx="17" cy="17" r="2"/>
               </svg>
               <span>Viajes y Movilidad</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSubTab === 'estadisticas'}
+              className={`subtab-btn ${activeSubTab === 'estadisticas' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('estadisticas')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="18" y1="20" x2="18" y2="10"/>
+                <line x1="12" y1="20" x2="12" y2="4"/>
+                <line x1="6" y1="20" x2="6" y2="14"/>
+              </svg>
+              <span>Estadísticas</span>
             </button>
           </div>
 
@@ -367,10 +418,13 @@ export default function CabifyMobilityModule() {
         </div>
       )}
 
-      {/* ── Tarjetas de Métricas (KPIs) ── */}
-      <section className="cabify-kpi-grid" aria-label="Métricas de movilidad de Cabify">
-        {/* KPI 1: Total Reembolso */}
-        <div className="cabify-kpi-card">
+      {/* ── SUBPESTAÑA 1: VIAJES Y MOVILIDAD ── */}
+      {activeSubTab === 'viajes' && (
+        <>
+          {/* ── Tarjetas de Métricas (KPIs) ── */}
+          <section className="cabify-kpi-grid" aria-label="Métricas de movilidad de Cabify">
+            {/* KPI 1: Total Reembolso */}
+            <div className="cabify-kpi-card">
           <div className="cabify-kpi-label">
             <span>Total a Reembolsar (Mes)</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy-600)" strokeWidth="2" aria-hidden="true">
@@ -436,59 +490,69 @@ export default function CabifyMobilityModule() {
         </div>
       </section>
 
-      {/* ── Contenedor Principal: Tabla y Ranking ── */}
-      <div className="cabify-content-layout">
-        {/* Columna Izquierda: Tabla y Filtros */}
-        <main className="cabify-main-column">
-          {/* Barra de Filtros */}
-          <div className="cabify-filter-bar">
-            <div className="cabify-search-box">
-              <svg className="cabify-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input
-                type="text"
-                className="cabify-search-input"
-                placeholder="Buscar por colaborador, N° de ticket, origen, destino..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-              {searchTerm && (
+          {/* ── Tabla de Viajes a Ancho Completo ── */}
+          <main className="cabify-main-column" style={{ width: '100%' }}>
+            {/* Barra de Filtros */}
+            <div className="cabify-filter-bar">
+              <div className="cabify-search-box">
+                <svg className="cabify-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  type="text"
+                  className="cabify-search-input"
+                  placeholder="Buscar por colaborador, N° de ticket, origen, destino..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    className="cabify-clear-search"
+                    onClick={() => setSearchTerm('')}
+                    aria-label="Limpiar búsqueda"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="cabify-filter-passenger-box">
+                <label htmlFor="cabify-passenger-filter" className="sr-only">Filtrar por colaborador</label>
+                <select
+                  id="cabify-passenger-filter"
+                  className="cabify-select"
+                  value={filterPassenger}
+                  onChange={(e) => {
+                    setFilterPassenger(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                >
+                  <option value="ALL">Todos los Colaboradores ({journeys.length} viajes)</option>
+                  {passengerOptions.map(p => (
+                    <option key={p.name} value={p.name}>
+                      {p.name} ({p.trips} viajes - S/ {p.total.toFixed(2)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {filterPassenger !== 'ALL' && (
                 <button
                   type="button"
-                  className="cabify-clear-search"
-                  onClick={() => setSearchTerm('')}
-                  aria-label="Limpiar búsqueda"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setFilterPassenger('ALL')}
+                  style={{ height: '38px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}
+                  title="Mostrar todos los viajes"
                 >
-                  ✕
+                  ✕ Limpiar filtro ({filterPassenger})
                 </button>
               )}
             </div>
-
-            <div className="cabify-filter-passenger-box">
-              <label htmlFor="cabify-passenger-filter" className="sr-only">Filtrar por colaborador</label>
-              <select
-                id="cabify-passenger-filter"
-                className="cabify-select"
-                value={filterPassenger}
-                onChange={(e) => {
-                  setFilterPassenger(e.target.value);
-                  setCurrentPage(1);
-                }}
-              >
-                <option value="ALL">Todos los Colaboradores ({journeys.length} viajes)</option>
-                {passengerOptions.map(p => (
-                  <option key={p.name} value={p.name}>
-                    {p.name} ({p.trips} viajes - S/ {p.total.toFixed(2)})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
           {/* Tabla de Viajes */}
           <div className="cabify-table-container">
@@ -637,76 +701,304 @@ export default function CabifyMobilityModule() {
               </div>
             </div>
           )}
-        </main>
+          </main>
+        </>
+      )}
 
-        {/* Columna Derecha: Resumen de Consumo por Colaborador */}
-        <aside className="cabify-side-column" aria-label="Resumen por colaborador">
-          <div className="cabify-side-card">
-            <div className="cabify-side-card-header">
-              <h3>Consumo por Colaborador</h3>
-              <span className="cabify-side-badge">{passengerOptions.length} usuarios</span>
-            </div>
-            <p className="cabify-side-desc">
-              Distribución del gasto corporativo en taxis auditado:
-            </p>
-
-            <div className="cabify-ranking-list">
-              {passengerOptions.length === 0 ? (
-                <div className="cabify-ranking-empty">Sin colaboradores con viajes este mes</div>
-              ) : (
-                passengerOptions.map(p => {
-                  const grandTotal = summary?.totalAmount || 1;
-                  const pct = Math.min(100, Math.round((p.total / grandTotal) * 100));
-                  const isSelected = filterPassenger.toLowerCase() === p.name.toLowerCase();
-
-                  return (
-                    <div
-                      key={p.name}
-                      className={`cabify-ranking-item ${isSelected ? 'active' : ''}`}
-                      onClick={() => {
-                        setFilterPassenger(isSelected ? 'ALL' : p.name);
-                        setCurrentPage(1);
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      title={`Filtrar viajes de ${p.name}`}
-                    >
-                      <div className="cabify-ranking-row">
-                        <div className="cabify-ranking-user">
-                          <span className="cabify-ranking-name">{p.name}</span>
-                          <span className="cabify-ranking-trips">{p.trips} {p.trips === 1 ? 'viaje' : 'viajes'}</span>
-                        </div>
-                        <div className="cabify-ranking-amount">
-                          S/ {p.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
-                      </div>
-                      <div className="cabify-progress-track">
-                        <div
-                          className="cabify-progress-bar"
-                          style={{ width: `${pct}%` }}
-                          aria-valuenow={pct}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        ></div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+      {/* ── SUBPESTAÑA 2: ESTADÍSTICAS ── */}
+      {activeSubTab === 'estadisticas' && (
+        <div className="analytics-dashboard-container">
+          {/* Resumen Ejecutivo KPI Cards */}
+          <section className="analytics-kpis-grid">
+            <div className="analytics-kpi-card">
+              <div className="kpi-header" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span className="kpi-icon" style={{ color: 'var(--navy-700)' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                </span>
+                <span className="analytics-kpi-label">Gasto Total Conciliado</span>
+              </div>
+              <span className="analytics-kpi-value">
+                S/ {summary?.totalAmount?.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+              </span>
+              <span className="analytics-kpi-sub">Total auditado en {summary?.totalTrips || 0} viajes corporativos</span>
             </div>
 
-            {filterPassenger !== 'ALL' && (
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm cabify-reset-filter-btn"
-                onClick={() => setFilterPassenger('ALL')}
-              >
-                ✕ Quitar filtro de colaborador
-              </button>
-            )}
+            <div className="analytics-kpi-card success">
+              <div className="kpi-header" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span className="kpi-icon" style={{ color: '#059669' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </span>
+                <span className="analytics-kpi-label">Colaboradores Activos</span>
+              </div>
+              <span className="analytics-kpi-value">
+                {passengerOptions.length} usuarios
+              </span>
+              <span className="analytics-kpi-sub">
+                Registraron traslados en {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+              </span>
+            </div>
+
+            <div className="analytics-kpi-card purple">
+              <div className="kpi-header" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span className="kpi-icon" style={{ color: '#7c3aed' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="18" y1="20" x2="18" y2="10"/>
+                    <line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/>
+                  </svg>
+                </span>
+                <span className="analytics-kpi-label">Promedio por Colaborador</span>
+              </div>
+              <span className="analytics-kpi-value">
+                S/ {(passengerOptions.length > 0 ? (summary?.totalAmount || 0) / passengerOptions.length : 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="analytics-kpi-sub">
+                {(passengerOptions.length > 0 ? ((summary?.totalTrips || 0) / passengerOptions.length).toFixed(1) : 0)} viajes promedio por persona
+              </span>
+            </div>
+
+            <div className="analytics-kpi-card warning">
+              <div className="kpi-header" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <span className="kpi-icon" style={{ color: '#d97706' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="8" r="6"/>
+                    <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+                  </svg>
+                </span>
+                <span className="analytics-kpi-label">Mayor Consumidor</span>
+              </div>
+              <span className="analytics-kpi-value" style={{ fontSize: '1.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={summary?.topPassenger?.name || ''}>
+                {summary?.topPassenger?.name || '—'}
+              </span>
+              <span className="analytics-kpi-sub">
+                {summary?.topPassenger ? `S/ ${summary.topPassenger.total.toFixed(2)} (${summary.topPassenger.trips} viajes)` : 'Sin datos'}
+              </span>
+            </div>
+          </section>
+
+          {/* Grid de 2 Columnas Analíticas */}
+          <div className="analytics-grid-two-columns">
+            {/* Columna 1: Distribución Visual de Consumo */}
+            <div className="analytics-section-card">
+              <div className="analytics-section-header">
+                <h3 className="analytics-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="18" y1="20" x2="18" y2="10"/>
+                    <line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/>
+                  </svg>
+                  Consumo por Colaborador
+                </h3>
+                <span className="analytics-section-badge">{passengerOptions.length} colaboradores</span>
+              </div>
+
+              <div className="bar-distribution-list" style={{ maxHeight: '480px', overflowY: 'auto', paddingRight: '0.35rem' }}>
+                {passengerOptions.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros de consumo en este período.</p>
+                ) : (
+                  passengerOptions.map((p, idx) => {
+                    const grandTotal = summary?.totalAmount || 1;
+                    const pct = Math.min(100, Math.round((p.total / grandTotal) * 100));
+                    return (
+                      <div key={p.name} className="bar-distribution-item">
+                        <div className="bar-distribution-info">
+                          <span className="bar-distribution-name">
+                            <span className={`ranking-badge ${idx === 0 ? 'rank-1' : idx === 1 ? 'rank-2' : idx === 2 ? 'rank-3' : ''}`}>
+                              {idx + 1}
+                            </span>
+                            <span>{p.name}</span>
+                          </span>
+                          <span className="bar-distribution-metrics">
+                            S/ {p.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({pct}%)
+                          </span>
+                        </div>
+                        <div className="progress-track">
+                          <div
+                            className="progress-fill"
+                            style={{
+                              width: `${Math.max(pct, 2)}%`,
+                              background: idx === 0 ? 'linear-gradient(90deg, #d97706, #f59e0b)' :
+                                          idx === 1 ? 'linear-gradient(90deg, #64748b, #94a3b8)' :
+                                          idx === 2 ? 'linear-gradient(90deg, #92400e, #b45309)' :
+                                          'linear-gradient(90deg, var(--navy-800), var(--navy-600))'
+                            }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: 'var(--text-tertiary)' }}>
+                          <span>{p.trips} {p.trips === 1 ? 'viaje' : 'viajes'}</span>
+                          <span>Promedio: S/ {(p.total / (p.trips || 1)).toFixed(2)} / viaje</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Columna 2: Tabla Comparativa de Auditoría */}
+            <div className="analytics-section-card">
+              <div className="analytics-section-header">
+                <h3 className="analytics-section-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="8" r="6"/>
+                    <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+                  </svg>
+                  Auditoría Detallada
+                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Filtrar colaborador..."
+                    value={statsSearch}
+                    onChange={(e) => setStatsSearch(e.target.value)}
+                    style={{
+                      height: '28px',
+                      fontSize: '0.75rem',
+                      padding: '0 0.6rem',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: '4px',
+                      outline: 'none'
+                    }}
+                  />
+                  <span className="analytics-section-badge">{filteredPassengerOptions.length}</span>
+                </div>
+              </div>
+
+              <div className="ranking-table-wrapper" style={{ maxHeight: '480px', overflowY: 'auto' }}>
+                <table className="ranking-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '36px' }}>#</th>
+                      <th>Colaborador</th>
+                      <th style={{ textAlign: 'center' }}>Viajes</th>
+                      <th style={{ textAlign: 'right' }}>Ticket Prom.</th>
+                      <th style={{ textAlign: 'right' }}>Total (S/)</th>
+                      <th style={{ textAlign: 'center' }}>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPassengerOptions.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-tertiary)' }}>
+                          No se encontraron colaboradores con el término de búsqueda.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredPassengerOptions.map((p, idx) => (
+                        <tr key={p.name}>
+                          <td>
+                            <span className={`ranking-badge ${idx === 0 && !statsSearch ? 'rank-1' : idx === 1 && !statsSearch ? 'rank-2' : idx === 2 && !statsSearch ? 'rank-3' : ''}`}>
+                              {idx + 1}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--navy-900)', fontSize: '0.82rem' }}>{p.name}</span>
+                              {p.email && <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{p.email}</span>}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span className="cabify-ticket-chip" style={{ fontSize: '0.72rem' }}>
+                              {p.trips}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            S/ {(p.total / (p.trips || 1)).toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--navy-900)' }}>
+                            S/ {p.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', whiteSpace: 'nowrap' }}
+                              title={`Ver viajes de ${p.name}`}
+                              onClick={() => {
+                                setFilterPassenger(p.name);
+                                setActiveSubTab('viajes');
+                                setCurrentPage(1);
+                              }}
+                            >
+                              Ver viajes →
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </aside>
-      </div>
+
+          {/* Sección de Demanda por Día de la Semana */}
+          <div className="analytics-section-card full-width">
+            <div className="analytics-section-header">
+              <h3 className="analytics-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                Frecuencia y Demanda de Viajes por Día de la Semana
+              </h3>
+              <span className="analytics-section-badge">Auditoría Semanal</span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginTop: '0.5rem' }}>
+              {weekdayAnalytics.map(d => {
+                const maxDayCount = Math.max(...weekdayAnalytics.map(w => w.count), 1);
+                const barHeightPct = Math.round((d.count / maxDayCount) * 100);
+                return (
+                  <div
+                    key={d.name}
+                    style={{
+                      background: '#FAF8F5',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: '8px',
+                      padding: '0.75rem 0.6rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{d.name}</span>
+                    <div style={{ height: '52px', width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                      <div
+                        style={{
+                          width: '28px',
+                          height: `${Math.max(barHeightPct, 8)}%`,
+                          background: d.name === 'Sábado' || d.name === 'Domingo' ? '#94a3b8' : 'var(--navy-700)',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.3s ease'
+                        }}
+                        title={`${d.name}: ${d.count} viajes (S/ ${d.total.toFixed(2)})`}
+                      />
+                    </div>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--navy-900)' }}>
+                      {d.count} <span style={{ fontSize: '0.68rem', fontWeight: 500, color: 'var(--text-tertiary)' }}>viajes</span>
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      S/ {d.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Panel Lateral Derecho (Side Drawer) de Detalle de Viaje ── */}
       {selectedJourney && (

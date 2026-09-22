@@ -2590,16 +2590,10 @@ body {
 
 /* ── Content Layout ── */
 .cabify-content-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  display: flex;
+  flex-direction: column;
   gap: 1.25rem;
-  align-items: start;
-}
-
-@media (max-width: 1120px) {
-  .cabify-content-layout {
-    grid-template-columns: 1fr;
-  }
+  width: 100%;
 }
 
 .cabify-main-column {
@@ -2607,6 +2601,11 @@ body {
   flex-direction: column;
   gap: 0.85rem;
   min-width: 0;
+  width: 100%;
+}
+
+.cabify-main-fullwidth {
+  width: 100%;
 }
 
 /* ── Filter Bar ── */
@@ -2781,7 +2780,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 140px;
+  max-width: 170px;
 }
 
 .cabify-passenger-email {
@@ -2790,15 +2789,15 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 140px;
+  max-width: 170px;
 }
 
 .cabify-route-flow {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  max-width: 380px;
   font-size: 0.8rem;
+  min-width: 220px;
 }
 
 .cabify-route-point {
@@ -2830,7 +2829,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 135px;
+  max-width: 200px;
 }
 
 .cabify-route-arrow {
