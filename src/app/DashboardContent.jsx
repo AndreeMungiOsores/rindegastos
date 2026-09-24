@@ -4205,10 +4205,27 @@ export default function AdminDashboard({ onLogout }) {
                                     <td colSpan="9" style={{ padding: '1rem 1.5rem' }}>
                                       <div style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem', boxShadow: 'var(--shadow-sm)' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                                          <strong style={{ fontSize: '0.88rem', color: 'var(--navy-900)' }}>
-                                            Cronograma de Descuentos en Planilla ({loan.cr168_codigo})
-                                          </strong>
-                                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                                            <strong style={{ fontSize: '0.88rem', color: 'var(--navy-900)' }}>
+                                              Cronograma de Descuentos en Planilla ({loan.cr168_codigo})
+                                            </strong>
+                                            {loan.cr168_motivo && loan.cr168_motivo.trim() !== '' && loan.cr168_motivo.trim() !== 'Sin Motivo' && (
+                                              <span style={{
+                                                fontSize: '0.72rem',
+                                                fontWeight: '600',
+                                                color: 'var(--navy-900)',
+                                                background: 'var(--bg-surface-2, #f0f4f8)',
+                                                border: '1px solid var(--border-color)',
+                                                borderRadius: '999px',
+                                                padding: '0.15rem 0.6rem',
+                                                letterSpacing: '0.01em',
+                                                whiteSpace: 'nowrap'
+                                              }}>
+                                                {loan.cr168_motivo}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                                             {loan.cuotasPagadas} de {loan.totalCuotas} cuotas cobradas
                                           </span>
                                         </div>
