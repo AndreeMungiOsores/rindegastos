@@ -41,37 +41,112 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
 
     for (const msg of messages) {
       const attachments = msg.attachments || [];
-      
-      // Filtrar adjuntos que correspondan a PDF
-      const pdfAttachments = attachments.filter(att => {
-        const name = (att.name || '').toLowerCase();
+      if (attachments.length === 0) continue;
+
+      // 1. Extraer archivos directos del mensaje
+      const pdfFiles = [];
+      const xmlFiles = [];
+
+      for (const att of attachments) {
+        const attName = att.name || '';
+        const lowerName = attName.toLowerCase();
         const contentType = (att.contentType || '').toLowerCase();
-        return name.endsWith('.pdf') || contentType.includes('pdf');
-      });
+        const contentBytes = att.contentBytes ? Buffer.from(att.contentBytes, 'base64') : null;
 
-      if (pdfAttachments.length > 0) {
-        const primaryPdf = pdfAttachments[0];
-        const pdfFileName = primaryPdf.name || `Factura_${Date.now()}.pdf`;
-        const pdfNameKey = pdfFileName.toLowerCase().trim();
+        if (!contentBytes) continue;
 
-        // Normalizar asunto para identificar el hilo si conversationId no estuviera disponible
-        const normalizedSubject = (msg.subject || '')
-          .replace(/^(re|fwd|rv|fw):\s*/i, '')
-          .trim()
-          .toLowerCase();
+        if (lowerName.endsWith('.pdf') || contentType.includes('pdf')) {
+          pdfFiles.push({
+            name: attName,
+            buffer: contentBytes,
+            base64: att.contentBytes
+          });
+        } else if (lowerName.endsWith('.xml') || contentType.includes('xml')) {
+          xmlFiles.push({
+            name: attName,
+            buffer: contentBytes,
+            contentStr: contentBytes.toString('utf-8')
+          });
+        } else if (lowerName.endsWith('.zip') || contentType.includes('zip') || contentType.includes('compressed')) {
+          // Descomprimir paquete ZIP (SUNAT/Proveedor)
+          try {
+            const JSZip = (await import('jszip')).default;
+            const zip = await JSZip.loadAsync(contentBytes);
+            for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+              if (zipEntry.dir) continue;
+              const entryLower = relativePath.toLowerCase();
+              if (entryLower.endsWith('.xml')) {
+                const entryBuffer = await zipEntry.async('nodebuffer');
+                xmlFiles.push({
+                  name: relativePath.split('/').pop() || relativePath,
+                  buffer: entryBuffer,
+                  contentStr: entryBuffer.toString('utf-8')
+                });
+              } else if (entryLower.endsWith('.pdf')) {
+                const entryBuffer = await zipEntry.async('nodebuffer');
+                pdfFiles.push({
+                  name: relativePath.split('/').pop() || relativePath,
+                  buffer: entryBuffer,
+                  base64: entryBuffer.toString('base64')
+                });
+              }
+            }
+          } catch (zipErr) {
+            console.warn(`[GraphMailReader] No se pudo descomprimir adjunto ZIP "${attName}":`, zipErr.message);
+          }
+        }
+      }
 
-        // Identificador único del hilo + nombre de PDF
-        const threadId = msg.conversationId || normalizedSubject;
-        const threadKey = `${threadId}::${pdfNameKey}`;
+      if (pdfFiles.length === 0) {
+        console.log(`[GraphMailReader] El correo "${msg.subject}" (ID: ${msg.id}) no contiene facturas en PDF, omitiendo...`);
+        continue;
+      }
 
-        // Al estar ordenados por receivedDateTime desc, la primera coincidencia es el más reciente.
+      // 2. Normalizar asunto para identificar el hilo de conversación
+      const normalizedSubject = (msg.subject || '')
+        .replace(/^(re|fwd|rv|fw):\s*/i, '')
+        .trim()
+        .toLowerCase();
+      const threadId = msg.conversationId || normalizedSubject;
+
+      // Función auxiliar para extraer nombre base limpio (sin extensión ni prefijos de tipo)
+      const getBaseKey = (filename) => {
+        return (filename || '')
+          .toLowerCase()
+          .replace(/\.(pdf|xml|zip)$/i, '')
+          .replace(/^[0-9]{11}-(01|03|07|08)-/i, '') // Remueve prefijo RUC-Tipo SUNAT si existe
+          .replace(/[^a-z0-9_-]/gi, '')
+          .trim();
+      };
+
+      // 3. Emparejamiento inteligente de cada PDF con su respectivo XML
+      const availableXmls = [...xmlFiles];
+
+      for (const pdf of pdfFiles) {
+        const pdfBaseKey = getBaseKey(pdf.name);
+        const threadKey = `${threadId}::${pdf.name.toLowerCase().trim()}`;
+
+        // Al estar ordenados por receivedDateTime desc, omitir si ya se procesó en este hilo
         if (seenThreadKeys.has(threadKey)) {
-          console.log(`[GraphMailReader] Omitiendo versión anterior en el mismo hilo: "${msg.subject}" (PDF: ${pdfFileName})`);
+          console.log(`[GraphMailReader] Omitiendo versión anterior en el mismo hilo: "${msg.subject}" (PDF: ${pdf.name})`);
           continue;
         }
-
         seenThreadKeys.add(threadKey);
-        const pdfBuffer = primaryPdf.contentBytes ? Buffer.from(primaryPdf.contentBytes, 'base64') : null;
+
+        // Buscar XML emparejado por coincidencia de nombre base
+        let matchedXml = null;
+        const xmlIndex = availableXmls.findIndex(x => {
+          const xmlBaseKey = getBaseKey(x.name);
+          return xmlBaseKey === pdfBaseKey || x.name.toLowerCase().includes(pdfBaseKey) || pdf.name.toLowerCase().includes(xmlBaseKey);
+        });
+
+        if (xmlIndex !== -1) {
+          matchedXml = availableXmls[xmlIndex];
+          availableXmls.splice(xmlIndex, 1); // Consumir para que otra factura no lo duplique
+        } else if (availableXmls.length === 1 && pdfFiles.length === 1) {
+          // Si solo hay 1 PDF y 1 XML en el correo, emparejarlos directamente
+          matchedXml = availableXmls.pop();
+        }
 
         filteredInvoices.push({
           messageId: msg.id,
@@ -81,12 +156,13 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
           senderEmail: msg.from?.emailAddress?.address || '',
           receivedDateTime: msg.receivedDateTime || new Date().toISOString(),
           bodyPreview: msg.bodyPreview || '',
-          pdfFileName: pdfFileName,
-          pdfBuffer: pdfBuffer,
-          pdfBase64: primaryPdf.contentBytes || null
+          pdfFileName: pdf.name,
+          pdfBuffer: pdf.buffer,
+          pdfBase64: pdf.base64,
+          xmlFileName: matchedXml ? matchedXml.name : null,
+          xmlContent: matchedXml ? matchedXml.contentStr : null,
+          xmlBuffer: matchedXml ? matchedXml.buffer : null
         });
-      } else {
-        console.log(`[GraphMailReader] El correo "${msg.subject}" (ID: ${msg.id}) no contiene adjuntos .pdf, omitiendo...`);
       }
     }
 

@@ -15,12 +15,22 @@ export function formatProviderMetadataTag(data) {
   if (data.fecha_vencimiento) parts.push(`Venc:${data.fecha_vencimiento}`);
   if (data.condicion_pago) parts.push(`Cond:${data.condicion_pago}`);
   if (data.aplica_detraccion && data.monto_detraccion > 0) {
-    parts.push(`SPOT:${data.porcentaje_detraccion}%(S/${data.monto_detraccion.toFixed(2)})`);
-    parts.push(`Neto:S/${data.monto_neto_proveedor.toFixed(2)}`);
+    const detMontoStr = Number(data.monto_detraccion).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    parts.push(`SPOT:${data.porcentaje_detraccion}%(S/${detMontoStr})`);
+    if (data.tipo_bien_servicio) {
+      const cleanBien = String(data.tipo_bien_servicio).replace(/[|\]]/g, '').trim().substring(0, 50);
+      parts.push(`Bien:${cleanBien}`);
+    }
+    const netoVal = data.monto_neto_proveedor != null ? Number(data.monto_neto_proveedor) : (Number(data.total_factura || 0) - Number(data.monto_detraccion));
+    const netoStr = netoVal.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    parts.push(`Neto:S/${netoStr}`);
     if (data.cuenta_banco_nacion) parts.push(`BN:${data.cuenta_banco_nacion}`);
   } else {
     parts.push(`SPOT:0`);
-    if (data.total_factura != null) parts.push(`Neto:${data.moneda === 'USD' ? '$' : 'S/'}${data.total_factura.toFixed(2)}`);
+    if (data.total_factura != null) {
+      const totalStr = Number(data.total_factura).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      parts.push(`Neto:${data.moneda === 'USD' ? '$' : 'S/'}${totalStr}`);
+    }
   }
   if (data.moneda) parts.push(`Mon:${data.moneda}`);
 
@@ -37,7 +47,7 @@ export function parseProviderMetadataTag(detalle) {
 
   const result = {};
 
-  // Formato compacto: [SPOT: Venc:YYYY-MM-DD | Cond:CREDITO | SPOT:4%(S/330.90) | Neto:S/7941.70 | BN:00021150681 | Mon:PEN]
+  // Formato compacto: [SPOT: Venc:YYYY-MM-DD | Cond:CREDITO | SPOT:4%(S/330.90) | Bien:022-Otros servicios | Neto:S/7,941.70 | Mon:PEN]
   const spotBlock = detalle.match(/\[SPOT:\s*([^\]]+)\]/i);
   if (spotBlock) {
     const content = spotBlock[1];
@@ -56,6 +66,11 @@ export function parseProviderMetadataTag(detalle) {
       result.aplica_detraccion = false;
       result.porcentaje_detraccion = 0;
       result.monto_detraccion = 0;
+    }
+
+    const bien = content.match(/Bien:\s*([^|\]]+)/i);
+    if (bien) {
+      result.tipo_bien_servicio = bien[1].trim();
     }
 
     const neto = content.match(/Neto:\s*(?:S\/|\$)\s*([0-9.,]+)/i);

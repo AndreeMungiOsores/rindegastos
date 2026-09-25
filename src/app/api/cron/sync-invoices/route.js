@@ -3,7 +3,7 @@ export const maxDuration = 60;
 import { NextResponse } from 'next/server';
 import { fetchUnreadInvoiceEmails, markEmailAsRead } from '../../../../lib/graphMailReader.js';
 import { createExpense, getExpenses, uploadFileToExpense, updateExpense } from '../../../../lib/dataverseClient.js';
-import { extractInvoiceFromBuffer, formatProviderMetadataTag } from '../../../../lib/invoiceExtractor.js';
+import { extractInvoiceFromBuffer, extractInvoiceFromXml, formatProviderMetadataTag } from '../../../../lib/invoiceExtractor.js';
 
 export async function GET() {
   return await handleInvoiceSync();
@@ -21,7 +21,7 @@ async function handleInvoiceSync() {
     // 1. Obtener gastos existentes en Dataverse para evitar duplicar facturas ya registradas
     const existingExpenses = await getExpenses();
     
-    // Normalizar nombres de archivos y asuntos (quitar prefijos Re:, Fwd:)
+    // Normalizar nombres de archivos para comparar
     const safeFileName = (name) => (name || '')
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
@@ -29,15 +29,6 @@ async function handleInvoiceSync() {
       .toLowerCase()
       .trim();
 
-    const normalizeSubject = (str) => {
-      if (!str) return '';
-      const clean = str.replace(/^\[factura correo\]\s*/i, '').split('\n')[0];
-      return clean.replace(/^(re|fwd|rv|fw):\s*/i, '').trim().toLowerCase();
-    };
-
-    const registeredSubjects = new Set(
-      existingExpenses.map(e => normalizeSubject(e.cr168_detalle)).filter(Boolean)
-    );
     const registeredPdfs = new Set(
       existingExpenses.map(e => safeFileName(e.cr168_voucher_desembolso_name)).filter(Boolean)
     );
@@ -59,26 +50,24 @@ async function handleInvoiceSync() {
     const skippedInvoices = [];
     const errors = [];
 
-    // 3. Procesar cada correo e ingresarlo en Dataverse asignado a Adrián Marcel Murakami Fung
+    // 3. Procesar cada factura individual e ingresarla en Dataverse asignada a Adrián Marcel Murakami Fung
     for (const item of invoiceEmails) {
       try {
-        const itemNormSubject = normalizeSubject(item.subject);
         const itemPdfName = safeFileName(item.pdfFileName);
 
-        // Verificar si el PDF o el asunto exacto del hilo ya fue registrado previamente en Dataverse
+        // Verificar si el comprobante PDF ya fue registrado previamente en Dataverse
         const isDuplicatePdf = itemPdfName && registeredPdfs.has(itemPdfName);
-        const isDuplicateSubject = itemNormSubject && registeredSubjects.has(itemNormSubject);
 
-        if (isDuplicatePdf || isDuplicateSubject) {
+        if (isDuplicatePdf) {
           console.log(`[InvoiceCronSync] Omitiendo factura duplicada en Dataverse: "${item.subject}" (PDF: ${item.pdfFileName})`);
           skippedInvoices.push({
             subject: item.subject,
-            reason: isDuplicatePdf ? `PDF ya existe (${item.pdfFileName})` : `Asunto ya existe (${itemNormSubject})`
+            reason: `PDF ya existe (${item.pdfFileName})`
           });
           continue;
         }
 
-        console.log(`[InvoiceCronSync] Procesando factura correo "${item.subject}" de ${item.senderName}...`);
+        console.log(`[InvoiceCronSync] Procesando factura "${item.pdfFileName}" del correo "${item.subject}" de ${item.senderName}...`);
 
         // Extraer un nombre de comercio limpio a partir del remitente o asunto
         let cleanMerchant = item.senderName || 'Proveedor General';
@@ -93,7 +82,7 @@ async function handleInvoiceSync() {
           cr168_empresa: 'BLISSCORP S.A.C',
           cr168_nombredelcomercio: cleanMerchant,
           cr168_fechadelgasto: item.receivedDateTime,
-          cr168_detalle: `[Factura Correo] ${item.subject}\nRemitente: ${item.senderEmail}\n${item.bodyPreview || ''}`.substring(0, 2000),
+          cr168_detalle: `[Factura Correo] ${item.subject}\nArchivo: ${item.pdfFileName}${item.xmlFileName ? ` (XML: ${item.xmlFileName})` : ''}\nRemitente: ${item.senderEmail}\n${item.bodyPreview || ''}`.substring(0, 2000),
           cr168_aprobado: false,
           cr168_estado: 553050000 // Pendiente
         };
@@ -113,13 +102,21 @@ async function handleInvoiceSync() {
           await uploadFileToExpense(expenseId, item.pdfBuffer, item.pdfFileName);
           console.log(`[InvoiceCronSync] Archivo PDF "${item.pdfFileName}" adjuntado al gasto ${expenseId}.`);
 
-          // Enriquecimiento automático inmediato con Kimi AI
+          // Enriquecimiento automático: primero XML si existe (100% exacto), luego Kimi AI
           try {
-            console.log(`[InvoiceCronSync] Ejecutando análisis tributario y detracciones con Kimi AI para "${item.pdfFileName}"...`);
-            const invoiceData = await extractInvoiceFromBuffer(item.pdfBuffer, item.pdfFileName);
+            let invoiceData = null;
+            if (item.xmlContent) {
+              console.log(`[InvoiceCronSync] Parseando XML UBL SUNAT para "${item.xmlFileName || item.pdfFileName}"...`);
+              invoiceData = extractInvoiceFromXml(item.xmlContent);
+            }
+
+            if (!invoiceData || !invoiceData.total_factura) {
+              console.log(`[InvoiceCronSync] Ejecutando análisis tributario y detracciones con Kimi AI para "${item.pdfFileName}"...`);
+              invoiceData = await extractInvoiceFromBuffer(item.pdfBuffer, item.pdfFileName);
+            }
 
             const spotTag = formatProviderMetadataTag(invoiceData);
-            const baseDetalle = `[Factura Correo] ${item.subject}`.trim();
+            const baseDetalle = `[Factura Correo] ${item.subject} (${item.pdfFileName})`.trim();
             const maxBaseLen = Math.max(20, 390 - spotTag.length);
             const safeBaseDetalle = baseDetalle.length > maxBaseLen ? baseDetalle.substring(0, maxBaseLen) : baseDetalle;
 
@@ -157,7 +154,6 @@ async function handleInvoiceSync() {
         await markEmailAsRead(item.messageId);
 
         // Agregar al set local para evitar duplicados en la misma iteración
-        registeredSubjects.add(itemNormSubject);
         registeredPdfs.add(itemPdfName);
 
         processedInvoices.push({

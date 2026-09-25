@@ -80,6 +80,7 @@ function getProviderInvoiceFinancials(item) {
     montoDetraccion: montoDetraccion || 0,
     montoNeto: neto,
     cuentaBancoNacion: metadata.cuenta_banco_nacion || null,
+    tipoBienServicio: metadata.tipo_bien_servicio || null,
     moneda
   };
 }
@@ -1317,20 +1318,29 @@ export default function AdminDashboard({ onLogout }) {
       // Agregar el archivo Excel al ZIP
       zip.file(rindegastosSubTab === 'buzon' ? 'Buzon_Proveedores.xlsx' : 'Reporte_Gastos_Rindegastos.xlsx', excelBuffer);
 
-      // 3. Identificar los registros que cuentan con imágenes de comprobantes
-      const itemsWithImages = filteredExpenses.filter(item => item.cr168_imagendelcomprobante_url);
+      // 3. Identificar los registros que cuentan con imágenes de comprobantes o archivos de voucher
+      const isBuzonTab = rindegastosSubTab === 'buzon';
+      const itemsWithImages = filteredExpenses.filter(item => {
+        if (isBuzonTab) {
+          return item.cr168_voucher_desembolso || item.cr168_voucher_desembolso_name || item.cr168_imagendelcomprobante_url;
+        }
+        return item.cr168_imagendelcomprobante_url;
+      });
       const totalImages = itemsWithImages.length;
 
       if (totalImages > 0) {
-        setExportStatus(`Descargando imágenes (0/${totalImages})...`);
+        setExportStatus(`Descargando comprobantes (0/${totalImages})...`);
 
-        // Descarga de imágenes de manera concurrente controlada (concurrencia máx = 3)
+        // Descarga de comprobantes de manera concurrente controlada (concurrencia máx = 3)
         const limit = 3;
         const usedNames = new Set();
 
         const downloadTask = async (item) => {
           try {
-            const res = await fetch(`/api/gastos/imagen?id=${item.cr168_reportedegastosid}`);
+            const fetchUrl = (isBuzonTab && (item.cr168_voucher_desembolso || item.cr168_voucher_desembolso_name))
+              ? `/api/gastos/voucher?id=${item.cr168_reportedegastosid}`
+              : `/api/gastos/imagen?id=${item.cr168_reportedegastosid}`;
+            const res = await fetch(fetchUrl);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const blob = await res.blob();
 
@@ -1344,17 +1354,38 @@ export default function AdminDashboard({ onLogout }) {
               extension = '.webp';
             }
 
-            // Nombre de archivo: RUC_NombreComercio_TipoGasto (solicitado por Melissa/Leydi)
-            const rucPart  = (item.cr168_rucdelcomercio || 'SINRUC').replace(/[\\/:*?"<>|]/g, '_').trim();
-            const comercio = (item.cr168_nombredelcomercio || 'SinComercio')
-              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-              .replace(/[\\/:*?"<>|\s]+/g, '_').trim().substring(0, 40);
-            const tipoGasto = (
-              item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] ||
-              item.cr168_tipodegasto || 'SinTipo'
-            ).replace(/[\\/:*?"<>|\s]+/g, '_').trim().substring(0, 20);
-
-            let baseName = `${rucPart}_${comercio}_${tipoGasto}`;
+            let baseName = '';
+            if (isBuzonTab) {
+              // Estándar oficial Melissa/Contabilidad: [RUC]_[NUMERO_FACTURA]_[DETALLE].pdf
+              const rucPart = (item.cr168_rucdelcomercio || 'SINRUC').replace(/[^0-9]/g, '').trim() || 'SINRUC';
+              const numPart = (item.cr168_numerodecomprobante || 'SINFAC')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[\\/:*?"<>|\s]+/g, '_').trim();
+              
+              let detallePart = (item.cr168_detalle || '')
+                .replace(/\[SPOT:[\s\S]*?\]/gi, '')
+                .replace(/^\[Factura Correo\]\s*/i, '')
+                .split('\n')[0]
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[\\/:*?"<>|\s]+/g, '_').trim().substring(0, 45);
+              
+              if (!detallePart) {
+                detallePart = (item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || item.cr168_tipodegasto || 'Factura')
+                  .replace(/[\\/:*?"<>|\s]+/g, '_').trim();
+              }
+              baseName = `${rucPart}_${numPart}_${detallePart}`;
+            } else {
+              // Nombre de archivo rendición: RUC_NombreComercio_TipoGasto
+              const rucPart  = (item.cr168_rucdelcomercio || 'SINRUC').replace(/[\\/:*?"<>|]/g, '_').trim();
+              const comercio = (item.cr168_nombredelcomercio || 'SinComercio')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[\\/:*?"<>|\s]+/g, '_').trim().substring(0, 40);
+              const tipoGasto = (
+                item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] ||
+                item.cr168_tipodegasto || 'SinTipo'
+              ).replace(/[\\/:*?"<>|\s]+/g, '_').trim().substring(0, 20);
+              baseName = `${rucPart}_${comercio}_${tipoGasto}`;
+            }
 
             // Manejo de nombres duplicados de comprobantes para evitar sobreescritura en el ZIP
             let fileName = `${baseName}${extension}`;
@@ -1365,10 +1396,10 @@ export default function AdminDashboard({ onLogout }) {
             }
             usedNames.add(fileName.toLowerCase());
 
-            // Agregar la imagen al ZIP
+            // Agregar el archivo al ZIP
             zip.file(fileName, blob);
           } catch (err) {
-            console.error(`Error al descargar la imagen para el registro ${item.cr168_reportedegastosid}:`, err);
+            console.error(`Error al descargar el comprobante para el registro ${item.cr168_reportedegastosid}:`, err);
           }
         };
 
@@ -3400,27 +3431,27 @@ export default function AdminDashboard({ onLogout }) {
 
                         {fin.aplicaDetraccion && (
                           <>
+                            {fin.tipoBienServicio && (
+                              <div className="info-row">
+                                <span className="info-label">Tipo de Bien o Servicio (SPOT)</span>
+                                <span className="info-value" style={{ fontWeight: '600', color: 'var(--navy-900)' }}>
+                                  {fin.tipoBienServicio}
+                                </span>
+                              </div>
+                            )}
                             <div className="info-row">
                               <span className="info-label">Monto Detracción SPOT</span>
                               <span className="info-value amount" style={{ color: '#d97706', fontWeight: '700' }}>
-                                S/ {Number(fin.montoDetraccion || 0).toFixed(2)}
+                                S/ {Number(fin.montoDetraccion || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
                             </div>
-                            {fin.cuentaBancoNacion && (
-                              <div className="info-row">
-                                <span className="info-label">Cta. Cte. Banco de la Nación</span>
-                                <code style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: '600', fontSize: '0.8rem' }}>
-                                  {fin.cuentaBancoNacion}
-                                </code>
-                              </div>
-                            )}
                           </>
                         )}
 
                         <div className="info-row" style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '0.5rem', marginTop: '0.5rem' }}>
                           <span className="info-label" style={{ fontWeight: '700', color: '#0f172a' }}>Neto a Transferir al Proveedor</span>
                           <span className="info-value amount" style={{ color: '#16a34a', fontWeight: '800', fontSize: '1.05rem' }}>
-                            {fin.moneda === 'USD' ? '$' : 'S/'} {Number(fin.montoNeto || 0).toFixed(2)}
+                            {fin.moneda === 'USD' ? '$' : 'S/'} {Number(fin.montoNeto || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>
