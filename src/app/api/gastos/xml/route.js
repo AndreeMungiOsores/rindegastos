@@ -25,8 +25,8 @@ async function resolveXmlData(id) {
     let fileName = `${id}.xml`;
     try {
       const expense = await getExpense(id);
-      if (expense && expense.cr168_voucher_propina_name) {
-        fileName = expense.cr168_voucher_propina_name;
+      if (expense && expense.cr168_archivo_xml_name) {
+        fileName = expense.cr168_archivo_xml_name;
       } else if (expense && expense.cr168_voucher_desembolso_name) {
         fileName = expense.cr168_voucher_desembolso_name.replace(/\.pdf$/i, '.xml');
       }
@@ -35,7 +35,7 @@ async function resolveXmlData(id) {
     return { xmlBuffer, fileName };
   }
 
-  // 2. Si no está en disco local, descargarlo desde Dataverse (columna cr168_voucher_propina)
+  // 2. Si no está en disco local, descargarlo desde Dataverse (columna cr168_archivo_xml)
   let expense = null;
   try {
     expense = await getExpense(id);
@@ -43,14 +43,14 @@ async function resolveXmlData(id) {
     console.warn(`[XmlProxy] No se pudo obtener gasto ${id} de Dataverse:`, expErr.message);
   }
 
-  let fileName = (expense && expense.cr168_voucher_propina_name) || `${id}.xml`;
+  let fileName = (expense && expense.cr168_archivo_xml_name) || `${id}.xml`;
 
-  if (expense && expense.cr168_voucher_propina) {
+  if (expense && (expense.cr168_archivo_xml || expense.cr168_archivo_xml_name)) {
     try {
       let token = await getAccessToken();
 
       async function fetchXmlAttempt(accessToken) {
-        const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${id})/cr168_voucher_propina/$value`;
+        const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${id})/cr168_archivo_xml/$value`;
         console.log('[XmlProxy] Descargando XML desde Dataverse:', url);
         
         const response = await axios({
@@ -129,8 +129,8 @@ async function resolveXmlData(id) {
         } catch (_) {}
 
         // Subir a Dataverse en segundo plano para persistencia permanente
-        uploadFileToExpense(id, xmlBuffer, xmlName, 'cr168_voucher_propina')
-          .then(() => console.log(`[XmlProxy] XML "${xmlName}" respaldado exitosamente en Dataverse para ${id}.`))
+        uploadFileToExpense(id, xmlBuffer, xmlName, 'cr168_archivo_xml')
+          .then(() => console.log(`[XmlProxy] XML "${xmlName}" respaldado exitosamente en Dataverse (cr168_archivo_xml) para ${id}.`))
           .catch(err => console.warn(`[XmlProxy] No se pudo respaldar XML en Dataverse:`, err.message));
 
         return { xmlBuffer, fileName: xmlName };

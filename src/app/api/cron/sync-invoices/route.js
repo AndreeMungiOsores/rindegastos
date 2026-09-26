@@ -66,7 +66,7 @@ async function handleInvoiceSync() {
 
           if (existingExpense) {
             const existingId = existingExpense.cr168_reportedegastosid;
-            const hasXmlAttached = Boolean(existingExpense.cr168_voucher_propina && existingExpense.cr168_voucher_propina_name);
+            const hasXmlAttached = Boolean(existingExpense.cr168_archivo_xml && existingExpense.cr168_archivo_xml_name);
             const needsXmlUpload = Boolean((item.xmlContent || item.xmlBuffer) && !hasXmlAttached);
             const needsEnrichment = !existingExpense.cr168_numerodecomprobante || 
                                     !existingExpense.cr168_rucdelcomercio || 
@@ -92,11 +92,11 @@ async function handleInvoiceSync() {
                   console.warn('[InvoiceCronSync] No se pudo guardar XML en caché local:', cacheErr.message);
                 }
 
-                // 2. Subir a Dataverse en columna cr168_voucher_propina si falta
+                // 2. Subir a Dataverse en columna cr168_archivo_xml si falta
                 if (needsXmlUpload) {
                   try {
-                    await uploadFileToExpense(existingId, xmlBuffer, xmlName, 'cr168_voucher_propina');
-                    console.log(`[InvoiceCronSync] Archivo XML "${xmlName}" adjuntado al gasto existente ${existingId} en cr168_voucher_propina.`);
+                    await uploadFileToExpense(existingId, xmlBuffer, xmlName, 'cr168_archivo_xml');
+                    console.log(`[InvoiceCronSync] Archivo XML "${xmlName}" adjuntado al gasto existente ${existingId} en cr168_archivo_xml.`);
                   } catch (xmlUploadErr) {
                     console.warn(`[InvoiceCronSync] No se pudo adjuntar XML en Dataverse para ${existingId}:`, xmlUploadErr.message);
                   }
@@ -230,10 +230,10 @@ async function handleInvoiceSync() {
             console.warn('[InvoiceCronSync] No se pudo guardar XML en caché local:', cacheErr.message);
           }
 
-          // 2. Subir a Dataverse en columna de archivo cr168_voucher_propina
+          // 2. Subir a Dataverse en columna de archivo cr168_archivo_xml
           try {
-            await uploadFileToExpense(expenseId, xmlBuffer, xmlName, 'cr168_voucher_propina');
-            console.log(`[InvoiceCronSync] Archivo XML "${xmlName}" adjuntado al gasto ${expenseId} en cr168_voucher_propina.`);
+            await uploadFileToExpense(expenseId, xmlBuffer, xmlName, 'cr168_archivo_xml');
+            console.log(`[InvoiceCronSync] Archivo XML "${xmlName}" adjuntado al gasto ${expenseId} en cr168_archivo_xml.`);
           } catch (xmlUploadErr) {
             console.warn(`[InvoiceCronSync] No se pudo adjuntar XML en Dataverse:`, xmlUploadErr.message);
           }

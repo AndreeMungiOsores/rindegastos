@@ -193,7 +193,7 @@ export async function updateExpense(id, updateData) {
 }
 
 /**
- * Sube un archivo binario a una columna de tipo Archivo (cr168_voucher_desembolso o cr168_voucher_propina) de un gasto.
+ * Sube un archivo binario a una columna de tipo Archivo (cr168_voucher_desembolso, cr168_archivo_xml, cr168_voucher_propina) de un gasto.
  * @param {string} id - El UUID del gasto
  * @param {Buffer} fileBuffer - Los bytes binarios del archivo
  * @param {string} fileName - Nombre del archivo con su extensión

@@ -232,9 +232,9 @@ export default function AdminDashboard({ onLogout }) {
     );
 
     const hasXmlAlready = Boolean(
-      (activeExpense.cr168_voucher_propina_name && activeExpense.cr168_voucher_propina_name.toLowerCase().endsWith('.xml')) ||
-      (activeExpense.cr168_detalle && activeExpense.cr168_detalle.match(/\(XML:\s*([^)]+)\)/i)) ||
-      (isBuzon && activeExpense.cr168_voucher_propina)
+      (activeExpense.cr168_archivo_xml_name && activeExpense.cr168_archivo_xml_name.toLowerCase().endsWith('.xml')) ||
+      activeExpense.cr168_archivo_xml ||
+      (activeExpense.cr168_detalle && activeExpense.cr168_detalle.match(/\(XML:\s*([^)]+)\)/i))
     );
 
     if (hasXmlAlready) {
@@ -3793,27 +3793,22 @@ export default function AdminDashboard({ onLogout }) {
 
                   {/* Tarjeta de Descarga de Archivo XML (SUNAT UBL 2.1) */}
                   {(() => {
-                    const isBuzonItem = Boolean(
-                      (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) ||
-                      (activeExpense.cr168_titulodegasto && activeExpense.cr168_titulodegasto.startsWith('[Factura]'))
-                    );
-                    const isXmlInPropina = Boolean(
-                      activeExpense.cr168_voucher_propina_name &&
-                      activeExpense.cr168_voucher_propina_name.toLowerCase().endsWith('.xml')
+                    const hasXmlInColumn = Boolean(
+                      activeExpense.cr168_archivo_xml_name ||
+                      activeExpense.cr168_archivo_xml
                     );
                     const xmlMatchInDetalle = activeExpense.cr168_detalle?.match(/\(XML:\s*([^)]+)\)/i);
                     const hasXmlAttachment = Boolean(
-                      isXmlInPropina ||
+                      hasXmlInColumn ||
                       xmlMatchInDetalle ||
-                      (isBuzonItem && activeExpense.cr168_voucher_propina) ||
                       drawerHasXml
                     );
 
                     if (!hasXmlAttachment) return null;
 
                     const xmlDisplayFileName = (
-                      isXmlInPropina
-                        ? activeExpense.cr168_voucher_propina_name
+                      activeExpense.cr168_archivo_xml_name
+                        ? activeExpense.cr168_archivo_xml_name
                         : xmlMatchInDetalle
                         ? xmlMatchInDetalle[1].trim()
                         : activeExpense.cr168_voucher_desembolso_name
@@ -3935,9 +3930,7 @@ export default function AdminDashboard({ onLogout }) {
                   })()}
 
                   {/* Voucher de Propina (Cargado desde Dataverse) */}
-                  {activeExpense.cr168_voucher_propina &&
-                   !(activeExpense.cr168_voucher_propina_name && activeExpense.cr168_voucher_propina_name.toLowerCase().endsWith('.xml')) &&
-                   !((activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) || (activeExpense.cr168_titulodegasto && activeExpense.cr168_titulodegasto.startsWith('[Factura]'))) && (
+                  {activeExpense.cr168_voucher_propina && (
                     <div style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center' }}>
                       <span className="info-label" style={{ alignSelf: 'flex-start', fontWeight: 'bold' }}>
                         Voucher de Propina (Cargada desde Dataverse)
