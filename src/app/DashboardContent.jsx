@@ -3284,9 +3284,6 @@ export default function AdminDashboard({ onLogout }) {
                         </svg>
                         Concentración de Facturación por Proveedor
                       </h3>
-                      <p style={{ margin: '0.25rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        Agrupado deterministamente por RUC oficial (11 dígitos) y por similitud de razón social normalizada.
-                      </p>
                     </div>
                     <span className="analytics-section-badge">{buzonAnalyticsData.byProvider.length} Proveedores</span>
                   </div>
@@ -3297,7 +3294,7 @@ export default function AdminDashboard({ onLogout }) {
                         No hay proveedores para mostrar con los filtros seleccionados.
                       </p>
                     ) : (
-                      <table className="ranking-table" style={{ width: '100%', minWidth: '980px' }}>
+                      <table className="ranking-table" style={{ width: '100%' }}>
                         <thead>
                           <tr>
                             <th style={{ width: '48px', textAlign: 'center', whiteSpace: 'nowrap' }}>#</th>
@@ -3308,57 +3305,36 @@ export default function AdminDashboard({ onLogout }) {
                             >
                               Proveedor / Razón Social {renderBuzonSortArrow('nombre')}
                             </th>
-                            <th
-                              style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '125px' }}
-                              onClick={() => handleBuzonSort('ruc')}
-                              title="Ordenar por RUC"
-                            >
-                              RUC / ID Fiscal {renderBuzonSortArrow('ruc')}
-                            </th>
-                            <th style={{ whiteSpace: 'nowrap', minWidth: '120px' }}>
+                            <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>
                               Empresas
                             </th>
                             <th
-                              style={{ textAlign: 'center', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '75px' }}
+                              style={{ textAlign: 'center', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '85px' }}
                               onClick={() => handleBuzonSort('facturas')}
                               title="Ordenar por cantidad de facturas"
                             >
                               Facturas {renderBuzonSortArrow('facturas')}
                             </th>
                             <th
-                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '130px' }}
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '135px' }}
                               onClick={() => handleBuzonSort('total')}
                               title="Ordenar por monto total facturado"
                             >
                               Total Facturado {renderBuzonSortArrow('total')}
                             </th>
                             <th
-                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '115px' }}
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '120px' }}
                               onClick={() => handleBuzonSort('spot')}
                               title="Ordenar por detracción SPOT"
                             >
                               Detracción SPOT {renderBuzonSortArrow('spot')}
                             </th>
                             <th
-                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '125px' }}
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '135px' }}
                               onClick={() => handleBuzonSort('neto')}
                               title="Ordenar por neto a pagar"
                             >
                               Neto Proveedor {renderBuzonSortArrow('neto')}
-                            </th>
-                            <th
-                              style={{ textAlign: 'center', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '130px' }}
-                              onClick={() => handleBuzonSort('estado')}
-                              title="Ordenar por estado de pago"
-                            >
-                              Estado de Pago {renderBuzonSortArrow('estado')}
-                            </th>
-                            <th
-                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '85px' }}
-                              onClick={() => handleBuzonSort('total')}
-                              title="Ordenar por porcentaje de participación"
-                            >
-                              % Part. {renderBuzonSortArrow('total')}
                             </th>
                           </tr>
                         </thead>
@@ -3372,17 +3348,6 @@ export default function AdminDashboard({ onLogout }) {
                               </td>
                               <td style={{ verticalAlign: 'middle' }}>
                                 <div style={{ fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{p.nombre}</div>
-                              </td>
-                              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                {p.ruc ? (
-                                  <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', background: '#f1f5f9', color: '#0f172a', padding: '3px 7px', borderRadius: '4px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-block' }}>
-                                    {p.ruc}
-                                  </span>
-                                ) : (
-                                  <span style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', padding: '3px 7px', borderRadius: '4px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-block' }}>
-                                    Exterior / Sin RUC
-                                  </span>
-                                )}
                               </td>
                               <td style={{ verticalAlign: 'middle' }}>
                                 <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -3445,42 +3410,6 @@ export default function AdminDashboard({ onLogout }) {
                                     </span>
                                   )}
                                   {p.netoPEN === 0 && p.netoUSD === 0 && <span style={{ color: '#cbd5e1' }}>—</span>}
-                                </div>
-                              </td>
-                              <td style={{ textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                <span
-                                  style={{
-                                    fontSize: '0.75rem',
-                                    padding: '3px 8px',
-                                    borderRadius: '4px',
-                                    fontWeight: 600,
-                                    whiteSpace: 'nowrap',
-                                    display: 'inline-block',
-                                    background: p.pendientesCount === 0 ? '#ecfdf5' : p.vencidasCount > 0 ? '#fef2f2' : '#fffbeb',
-                                    color: p.pendientesCount === 0 ? '#047857' : p.vencidasCount > 0 ? '#b91c1c' : '#b45309',
-                                    border: `1px solid ${p.pendientesCount === 0 ? '#a7f3d0' : p.vencidasCount > 0 ? '#fca5a5' : '#fde68a'}`
-                                  }}
-                                >
-                                  {p.pendientesCount === 0
-                                    ? `${p.pagadasCount} Pagadas`
-                                    : `${p.pagadasCount} Pag. / ${p.pendientesCount} Pend.`}
-                                </span>
-                              </td>
-                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', minWidth: '65px' }}>
-                                  <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>
-                                    {p.percentage.toFixed(1)}%
-                                  </span>
-                                  <div style={{ width: '100%', height: '4px', background: '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
-                                    <div
-                                      style={{
-                                        width: `${Math.min(p.percentage, 100)}%`,
-                                        height: '100%',
-                                        background: p.percentage > 50 ? '#eab308' : p.percentage > 20 ? 'var(--accent-color)' : '#94a3b8',
-                                        borderRadius: '2px'
-                                      }}
-                                    />
-                                  </div>
                                 </div>
                               </td>
                             </tr>
