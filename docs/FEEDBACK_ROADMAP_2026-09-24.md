@@ -118,15 +118,35 @@
 
 ---
 
-## 5. Matriz de Dependencias y Orden de Ejecución
+## 5. Módulo: Rendición de Gastos y Vouchers de Desembolso
 
-| Fase | Tarea | Módulo | Complejidad | Impacto |
-| :--- | :--- | :--- | :--- | :--- |
-| **Fase 1** | Desdoble de correos con múltiples facturas emparejando PDF + XML por nombre base | Buzón Proveedores | Media-Alta | Crítico (Desbloquea pagos pendientes de Anngie) |
-| **Fase 2** | Descompresión de archivos `.zip` de SUNAT y extracción de `.xml` | Buzón Proveedores | Media | Alto (Soporte proveedores Montano, Café, Didáctica) |
-| **Fase 3** | Nomenclatura contable Melissa `[RUC]_[FACTURA]_[DETALLE].pdf` y exportación ZIP de PDFs | Buzón Proveedores | Baja-Media | Alto (Cumplimiento contable oficial) |
-| **Fase 4** | Extracción de tipo de bien/servicio SPOT y formato de miles en neto a transferir | Buzón Proveedores | Baja | Medio (Facilita pago de detracciones) |
-| **Fase 5** | Motivo en cronograma de cuotas y catálogo unificado de colaboradores | Préstamos | Baja | Medio (Orden administrativo) |
-| **Fase 6** | Consolidación histórica Cabify desde 01/01/2026 y extracción motivo columna AQ | Cabify | Media | Alto (Rendimiento y justificación de viajes) |
-| **Fase 7** | IA para detección de patrones, mapa de calor y análisis de coworking | Cabify | Alta | Analítico / Dirección ejecutiva |
-| **Fase 8** | Mockup funcional de RindeViáticos | Viáticos | Alta | Nueva funcionalidad |
+### 🔴 Prioridad 0 / Pendiente a Solucionar
+
+#### 5.1 Corrección y Robustecimiento en la Extracción del ID de Desembolso
+- **Problema Detectado:**
+  El script de extracción asistida por IA (`enrich-vouchers` / `batch-enrich-vouchers.mjs`) no está logrando leer ni capturar el `cr168_id_desembolso` (número de operación o referencia bancaria) en determinados registros que **sí tienen adjunto el archivo PDF o imagen del voucher de transferencia** en la columna `cr168_voucher_desembolso`.
+- **Causa Raíz a Investigar:**
+  - Comprobantes emitidos desde apps móviles de banca (BBVA, BCP, Interbank, Scotiabank) con formatos gráficos que no cuadran con los patrones de regex actuales.
+  - Vouchers en formato PDF que consisten exclusivamente en imagen rasterizada sin capa de texto seleccionable (requieren pipeline forzado con OCR/Visión).
+  - Tasa de rechazo o fallos de lectura por baja resolución en capturas de pantalla de colaboradores.
+- **Acciones Técnicas Pendientes:**
+  1. Identificar mediante query en Dataverse todos los registros con `cr168_voucher_desembolso_name ne null` y `cr168_id_desembolso eq null`.
+  2. Ajustar el prompt y las reglas de extracción de Kimi Vision / OCR para flexibilizar la captura de números de operación, referencias de transferencia y códigos de autorización bancaria.
+  3. Ejecutar un script de barrido y corrección sobre los vouchers afectados para poblar automáticamente los identificadores de desembolso faltantes.
+
+---
+
+## 6. Matriz de Dependencias y Orden de Ejecución
+
+| Fase | Tarea | Módulo | Complejidad | Impacto | Estado |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Fase 1** | Desdoble de correos con múltiples facturas emparejando PDF + XML por nombre base | Buzón Proveedores | Media-Alta | Crítico (Desbloquea pagos pendientes de Anngie) | ✅ Completado |
+| **Fase 2** | Descompresión de archivos `.zip` de SUNAT y extracción de `.xml` a columna dedicada `cr168_archivo_xml` | Buzón Proveedores | Media | Alto (Soporte proveedores Montano, Café, Didáctica) | ✅ Completado |
+| **Fase 3** | Corrección y reintento en lectura de `id_desembolso` para vouchers bancarios adjuntos sin procesar | Rendición / Vouchers | Media | Alto (Conciliación bancaria en ERP) | ⏳ Pendiente |
+| **Fase 4** | Nomenclatura contable Melissa `[RUC]_[FACTURA]_[DETALLE].pdf` y exportación ZIP de PDFs | Buzón Proveedores | Baja-Media | Alto (Cumplimiento contable oficial) | ⏳ Pendiente |
+| **Fase 5** | Extracción de tipo de bien/servicio SPOT y formato de miles en neto a transferir | Buzón Proveedores | Baja | Medio (Facilita pago de detracciones) | ✅ Completado |
+| **Fase 6** | Motivo en cronograma de cuotas y catálogo unificado de colaboradores | Préstamos | Baja | Medio (Orden administrativo) | ⏳ En Progreso |
+| **Fase 7** | Consolidación histórica Cabify desde 01/01/2026 y extracción motivo columna AQ | Cabify | Media | Alto (Rendimiento y justificación de viajes) | ⏳ Pendiente |
+| **Fase 8** | IA para detección de patrones, mapa de calor y análisis de coworking | Cabify | Alta | Analítico / Dirección ejecutiva | ⏳ Pendiente |
+| **Fase 9** | Mockup funcional de RindeViáticos | Viáticos | Alta | Nueva funcionalidad | ⏳ Pendiente |
+
