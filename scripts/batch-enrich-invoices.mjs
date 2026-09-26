@@ -46,23 +46,41 @@ async function main() {
   console.log('✅ Conexión con Dataverse autenticada exitosamente.\n');
 
   // Obtener facturas registradas en buzón
+  const campos = [
+    'cr168_reportedegastosid',
+    'cr168_vendedor',
+    'cr168_nombredelcomercio',
+    'cr168_rucdelcomercio',
+    'cr168_numerodecomprobante',
+    'cr168_tipodecomprobante',
+    'cr168_empresa',
+    'cr168_montototalincluyendoigv',
+    'cr168_voucher_desembolso_name',
+    'cr168_archivo_xml_name',
+    'cr168_ia_procesado',
+    'cr168_ia_confianza',
+    'cr168_detalle',
+    'cr168_nombrereporte'
+  ].join(',');
+
   const res = await axios.get(
-    `${DATAVERSE_BASE_URL}/cr168_reportedegastoses?$filter=cr168_voucher_desembolso_name ne null`,
+    `${DATAVERSE_BASE_URL}/cr168_reportedegastoses?$select=${campos}&$filter=cr168_voucher_desembolso_name ne null`,
     {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
     }
   );
 
   const allItems = res.data.value || [];
-  const buzonItems = allItems.filter(e => (e.cr168_detalle || '').startsWith('[Factura Correo]'));
+  const buzonItems = allItems.filter(e => 
+    (e.cr168_detalle || '').startsWith('[Factura Correo]') || 
+    (e.cr168_nombrereporte || '').startsWith('[Factura]')
+  );
 
   console.log(`Total facturas de buzón encontradas: ${buzonItems.length}`);
 
   const toProcess = buzonItems.filter(item => {
     if (IS_FORCE) return true;
-    const hasMetadata = item.cr168_detalle && item.cr168_detalle.includes('--- METADATOS PROVEEDOR ---');
-    const hasTotal = item.cr168_montototalincluyendoigv != null && item.cr168_montototalincluyendoigv > 0;
-    return !(hasMetadata && hasTotal);
+    return item.cr168_ia_procesado !== true;
   });
 
   console.log(`Facturas pendientes de procesar: ${toProcess.length}\n`);
