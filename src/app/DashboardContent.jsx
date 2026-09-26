@@ -165,8 +165,10 @@ export default function AdminDashboard({ onLogout }) {
   const isAutoSyncingRef = useRef(false);
 
   // Módulos y Navegación del Panel Lateral
-  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'prestamos' | 'proveedores' | 'cabify'
+  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'buzon' | 'prestamos' | 'cabify' | 'proveedores'
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
+  const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
+  const isBuzonView = activeModule === 'buzon';
   const [prestamosSubTab, setPrestamosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const sidebarCollapsed = false;
 
@@ -636,14 +638,14 @@ export default function AdminDashboard({ onLogout }) {
 
   // Lista única de empresas para el selector de filtros
   const empresasList = useMemo(() => {
-    const targetList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+    const targetList = isBuzonView ? buzonExpenses : rendicionExpenses;
     const list = targetList.map(e => e.cr168_empresa).filter(Boolean);
     return [...new Set(list)].sort();
-  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses]);
+  }, [isBuzonView, buzonExpenses, rendicionExpenses]);
 
   // Lista única de estados
   const statesList = useMemo(() => {
-    const targetList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+    const targetList = isBuzonView ? buzonExpenses : rendicionExpenses;
     const list = targetList.map(e => ({
       val: e.cr168_estado,
       text: e['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'
@@ -657,12 +659,12 @@ export default function AdminDashboard({ onLogout }) {
       }
     }
     return unique.sort((a, b) => a.text.localeCompare(b.text));
-  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses]);
+  }, [isBuzonView, buzonExpenses, rendicionExpenses]);
 
   // Filtrado y búsqueda de gastos según la pestaña activa
   const filteredExpenses = useMemo(() => {
-    // Si la subpestaña es buzón, el dataset base es buzonExpenses; en caso contrario, rendicionExpenses
-    const baseList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+    // Si la vista activa es buzón de proveedores, el dataset base es buzonExpenses; en caso contrario, rendicionExpenses
+    const baseList = isBuzonView ? buzonExpenses : rendicionExpenses;
 
     return baseList.filter(item => {
       const vendorArea = getVendorArea(item.cr168_vendedor);
@@ -698,7 +700,7 @@ export default function AdminDashboard({ onLogout }) {
 
       return matchesEmpresa && matchesEquipo && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange;
     });
-  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
+  }, [isBuzonView, buzonExpenses, rendicionExpenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
 
   // Ordenamiento de gastos basado en la columna de fecha activa (Gasto, Vencimiento o Creación)
   const sortedExpenses = useMemo(() => {
@@ -726,7 +728,7 @@ export default function AdminDashboard({ onLogout }) {
 
   // Calcular totales para los KPIs generales de la pestaña activa
   const stats = useMemo(() => {
-    const currentList = rindegastosSubTab === 'buzon' ? buzonExpenses : rendicionExpenses;
+    const currentList = isBuzonView ? buzonExpenses : rendicionExpenses;
     const totalCount = currentList.length;
     const totalAmount = currentList.reduce((sum, e) => sum + (e.cr168_montototalincluyendoigv || 0), 0);
     const approvedCount = currentList.filter(e => e.cr168_aprobado).length;
@@ -740,7 +742,7 @@ export default function AdminDashboard({ onLogout }) {
     let totalNetoPEN = 0;
     let totalNetoUSD = 0;
 
-    if (rindegastosSubTab === 'buzon') {
+    if (isBuzonView) {
       currentList.forEach(item => {
         const fin = getProviderInvoiceFinancials(item);
         const monto = item.cr168_montototalincluyendoigv || 0;
@@ -770,7 +772,7 @@ export default function AdminDashboard({ onLogout }) {
       pendingDisbursementCount,
       disbursedCount
     };
-  }, [rindegastosSubTab, buzonExpenses, rendicionExpenses]);
+  }, [isBuzonView, buzonExpenses, rendicionExpenses]);
 
   // Cálculos de Analítica Financiera (AISLAMIENTO ESTADÍSTICO: estrictamente sobre gastos de colaboradores de campo)
   const analyticsData = useMemo(() => {
@@ -1171,14 +1173,14 @@ export default function AdminDashboard({ onLogout }) {
   const generateExcelWorkbook = async () => {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    const sheetName = rindegastosSubTab === 'buzon' ? 'Buzón Proveedores' : 'Reporte de Gastos';
+    const sheetName = isBuzonView ? 'Buzón Proveedores' : 'Reporte de Gastos';
     const worksheet = workbook.addWorksheet(sheetName);
 
     let rows;
     let columns;
     let importeColIndexes;
 
-    if (rindegastosSubTab === 'buzon') {
+    if (isBuzonView) {
       rows = filteredExpenses.map(item => {
         const fin = getProviderInvoiceFinancials(item);
         const emision = item.cr168_fechadelgasto ? formatDisplayDate(item.cr168_fechadelgasto) : '';
@@ -1336,7 +1338,7 @@ export default function AdminDashboard({ onLogout }) {
 
     // Agregar tabla de datos con estilo formal en Excel
     worksheet.addTable({
-      name: rindegastosSubTab === 'buzon' ? 'BuzonProveedoresTabla' : 'ReporteGastosTabla',
+      name: isBuzonView ? 'BuzonProveedoresTabla' : 'ReporteGastosTabla',
       ref: 'A1',
       headerRow: true,
       totalsRow: false,
@@ -1386,7 +1388,7 @@ export default function AdminDashboard({ onLogout }) {
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = rindegastosSubTab === 'buzon' ? 'Buzon_Proveedores.xlsx' : 'Reporte_Gastos_Rindegastos.xlsx';
+      anchor.download = isBuzonView ? 'Buzon_Proveedores.xlsx' : 'Reporte_Gastos_Rindegastos.xlsx';
       anchor.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -1417,10 +1419,10 @@ export default function AdminDashboard({ onLogout }) {
       const zip = new JSZip();
 
       // Agregar el archivo Excel al ZIP
-      zip.file(rindegastosSubTab === 'buzon' ? 'Buzon_Proveedores.xlsx' : 'Reporte_Gastos_Rindegastos.xlsx', excelBuffer);
+      zip.file(isBuzonView ? 'Buzon_Proveedores.xlsx' : 'Reporte_Gastos_Rindegastos.xlsx', excelBuffer);
 
       // 3. Identificar los registros que cuentan con imágenes de comprobantes o archivos de voucher
-      const isBuzonTab = rindegastosSubTab === 'buzon';
+      const isBuzonTab = isBuzonView;
       const itemsWithImages = filteredExpenses.filter(item => {
         if (isBuzonTab) {
           return item.cr168_voucher_desembolso || item.cr168_voucher_desembolso_name || item.cr168_imagendelcomprobante_url;
@@ -1525,7 +1527,7 @@ export default function AdminDashboard({ onLogout }) {
       const url = window.URL.createObjectURL(zipContent);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = rindegastosSubTab === 'buzon' ? 'Buzon_Proveedores.zip' : 'Reporte_Gastos_Rindegastos.zip';
+      anchor.download = isBuzonView ? 'Buzon_Proveedores.zip' : 'Reporte_Gastos_Rindegastos.zip';
       anchor.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -1929,7 +1931,10 @@ export default function AdminDashboard({ onLogout }) {
           <button
             type="button"
             className={`menu-item ${activeModule === 'rindegastos' ? 'active' : ''}`}
-            onClick={() => setActiveModule('rindegastos')}
+            onClick={() => {
+              setActiveModule('rindegastos');
+              setSelectedIds([]);
+            }}
             title="Panel RindeGastos"
             aria-current={activeModule === 'rindegastos' ? 'page' : undefined}
           >
@@ -1940,6 +1945,25 @@ export default function AdminDashboard({ onLogout }) {
               <path d="M14 17h7M17.5 14v7"/>
             </svg>
             {!sidebarCollapsed && <span className="menu-label">Panel Rindegastos</span>}
+          </button>
+
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'buzon' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveModule('buzon');
+              setSelectedIds([]);
+              setVendedorFilter('');
+              setEquipoFilter('');
+            }}
+            title="Buzón Proveedores"
+            aria-current={activeModule === 'buzon' ? 'page' : undefined}
+          >
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Buzón Proveedores</span>}
           </button>
 
           <button
@@ -2022,134 +2046,172 @@ export default function AdminDashboard({ onLogout }) {
 
       {/* Main Content Area */}
       <main className="main-content-wrapper">
-        {activeModule === 'rindegastos' && (
+        {(activeModule === 'rindegastos' || activeModule === 'buzon') && (
           <>
-            {/* Navegación por Subpestañas (Tabla de Comprobantes vs Estadísticas Financieras) */}
-            <nav className="subtabs-navigation">
-              <div className="subtabs-inner">
-                <div className="subtabs-left-group">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={rindegastosSubTab === 'tabla'}
-                    className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
-                    onClick={() => {
-                      setRindegastosSubTab('tabla');
-                      setSelectedIds([]);
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="3" y="3" width="18" height="18" rx="2"/>
-                      <line x1="3" y1="9" x2="21" y2="9"/>
-                      <line x1="3" y1="15" x2="21" y2="15"/>
-                      <line x1="9" y1="3" x2="9" y2="21"/>
-                    </svg>
-                    <span>Tabla de Comprobantes</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={rindegastosSubTab === 'buzon'}
-                    className={`subtab-btn ${rindegastosSubTab === 'buzon' ? 'active' : ''}`}
-                    onClick={() => {
-                      setRindegastosSubTab('buzon');
-                      setSelectedIds([]);
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                      <polyline points="22,6 12,13 2,6"/>
-                    </svg>
-                    <span>Buzón Proveedores</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={rindegastosSubTab === 'estadisticas'}
-                    className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
-                    onClick={() => {
-                      setRindegastosSubTab('estadisticas');
-                      setSelectedIds([]);
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <line x1="18" y1="20" x2="18" y2="10"/>
-                      <line x1="12" y1="20" x2="12" y2="4"/>
-                      <line x1="6" y1="20" x2="6" y2="14"/>
-                    </svg>
-                    <span>Estadísticas Financieras</span>
-                  </button>
-                </div>
-
-                <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={handlePingErp}
-                    disabled={isCheckingErp}
-                    title="Verificar conexión con ERP Sea Fácil (Niuxpro)"
-                    style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
-                      <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
-                      <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
-                      <circle cx="12" cy="20" r="1" fill="currentColor"/>
-                    </svg>
-                    <span>{isCheckingErp ? 'Probando...' : 'Probar Conexión ERP'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="sync-invoices-btn"
-                    onClick={handleSyncInvoices}
-                    disabled={isSyncingInvoices}
-                    title="Sincronizar facturas .PDF del buzón proveedores.pe@blisscorp.lat a nombre de Adrián Murakami"
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isSyncingInvoices ? 'spin-icon' : ''} aria-hidden="true">
-                      <polyline points="23 4 23 10 17 10"/>
-                      <polyline points="1 20 1 14 7 14"/>
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                    </svg>
-                    <span>{isSyncingInvoices ? 'Sincronizando...' : 'Sincronizar Facturas'}</span>
-                  </button>
-
-                  {rindegastosSubTab === 'estadisticas' && (
-                    <div
-                      className="subtabs-right-filter"
+            {/* Navegación por Subpestañas del Módulo Activo */}
+            {activeModule === 'rindegastos' ? (
+              <nav className="subtabs-navigation" aria-label="Navegación del Panel Rindegastos">
+                <div className="subtabs-inner">
+                  <div className="subtabs-left-group" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={rindegastosSubTab === 'tabla'}
+                      className={`subtab-btn ${rindegastosSubTab === 'tabla' ? 'active' : ''}`}
                       onClick={() => {
-                        if (topVendorSelectRef.current) {
-                          if (typeof topVendorSelectRef.current.showPicker === 'function') {
-                            topVendorSelectRef.current.showPicker();
-                          } else {
-                            topVendorSelectRef.current.focus();
-                          }
-                        }
+                        setRindegastosSubTab('tabla');
+                        setSelectedIds([]);
                       }}
                     >
-                      <label htmlFor="topVendorFilterSelect" className="top-filter-label">
-                        Vendedor:
-                      </label>
-                      <select
-                        id="topVendorFilterSelect"
-                        ref={topVendorSelectRef}
-                        className="top-filter-select"
-                        value={vendedorFilter}
-                        onChange={(e) => setVendedorFilter(e.target.value)}
-                        title="Filtrar por Vendedor / Colaborador"
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <line x1="3" y1="9" x2="21" y2="9"/>
+                        <line x1="3" y1="15" x2="21" y2="15"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
+                      </svg>
+                      <span>Tabla de Comprobantes</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={rindegastosSubTab === 'estadisticas'}
+                      className={`subtab-btn ${rindegastosSubTab === 'estadisticas' ? 'active' : ''}`}
+                      onClick={() => {
+                        setRindegastosSubTab('estadisticas');
+                        setSelectedIds([]);
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                      </svg>
+                      <span>Estadísticas Financieras</span>
+                    </button>
+                  </div>
+
+                  <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handlePingErp}
+                      disabled={isCheckingErp}
+                      title="Verificar conexión con ERP Sea Fácil (Niuxpro)"
+                      style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                        <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                        <circle cx="12" cy="20" r="1" fill="currentColor"/>
+                      </svg>
+                      <span>{isCheckingErp ? 'Probando...' : 'Probar Conexión ERP'}</span>
+                    </button>
+
+                    {rindegastosSubTab === 'estadisticas' && (
+                      <div
+                        className="subtabs-right-filter"
+                        onClick={() => {
+                          if (topVendorSelectRef.current) {
+                            if (typeof topVendorSelectRef.current.showPicker === 'function') {
+                              topVendorSelectRef.current.showPicker();
+                            } else {
+                              topVendorSelectRef.current.focus();
+                            }
+                          }
+                        }}
                       >
-                        <option value="">(Todos los Vendedores)</option>
-                        {vendorsList.map((vendor) => (
-                          <option key={vendor} value={vendor}>
-                            {vendor}
-                          </option>
-                        ))}
-                      </select>
+                        <label htmlFor="topVendorFilterSelect" className="top-filter-label">
+                          Vendedor:
+                        </label>
+                        <select
+                          id="topVendorFilterSelect"
+                          ref={topVendorSelectRef}
+                          className="top-filter-select"
+                          value={vendedorFilter}
+                          onChange={(e) => setVendedorFilter(e.target.value)}
+                          title="Filtrar por Vendedor / Colaborador"
+                        >
+                          <option value="">(Todos los Vendedores)</option>
+                          {vendorsList.map((vendor) => (
+                            <option key={vendor} value={vendor}>
+                              {vendor}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="token-status-badge">
+                      <span className="status-dot" style={{ backgroundColor: '#10b981' }}></span>
+                      <span>Dataverse Activo</span>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </nav>
+              </nav>
+            ) : (
+              <nav className="subtabs-navigation" aria-label="Navegación del Buzón de Proveedores">
+                <div className="subtabs-inner">
+                  <div className="subtabs-left-group" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={buzonSubTab === 'tabla'}
+                      className={`subtab-btn ${buzonSubTab === 'tabla' ? 'active' : ''}`}
+                      onClick={() => {
+                        setBuzonSubTab('tabla');
+                        setSelectedIds([]);
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                        <polyline points="22,6 12,13 2,6"/>
+                      </svg>
+                      <span>Buzón Proveedores</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={buzonSubTab === 'estadisticas'}
+                      className={`subtab-btn ${buzonSubTab === 'estadisticas' ? 'active' : ''}`}
+                      onClick={() => {
+                        setBuzonSubTab('estadisticas');
+                        setSelectedIds([]);
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                      </svg>
+                      <span>Estadísticas Financieras</span>
+                    </button>
+                  </div>
+
+                  <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <button
+                      type="button"
+                      className="sync-invoices-btn"
+                      onClick={handleSyncInvoices}
+                      disabled={isSyncingInvoices}
+                      title="Sincronizar facturas .PDF del buzón proveedores.pe@blisscorp.lat a nombre de Adrián Murakami"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={isSyncingInvoices ? 'spin-icon' : ''} aria-hidden="true">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                      </svg>
+                      <span>{isSyncingInvoices ? 'Sincronizando...' : 'Sincronizar Facturas'}</span>
+                    </button>
+
+                    <div className="token-status-badge">
+                      <span className="status-dot" style={{ backgroundColor: '#10b981' }}></span>
+                      <span>Buzón Activo</span>
+                    </div>
+                  </div>
+                </div>
+              </nav>
+            )}
 
             <div className="dashboard-container">
               {syncBanner && (
@@ -2159,14 +2221,14 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
               )}
 
-              {erpBanner && (
+              {activeModule === 'rindegastos' && erpBanner && (
                 <div className={`sync-banner sync-banner-${erpBanner.type}`} role="status">
                   <span aria-hidden="true">{erpBanner.type === 'success' ? '✓' : erpBanner.type === 'error' ? '✕' : '!'}</span>
                   <span>{erpBanner.text}</span>
                 </div>
               )}
 
-            {rindegastosSubTab === 'estadisticas' ? (
+            {activeModule === 'rindegastos' && rindegastosSubTab === 'estadisticas' ? (
               <div className="analytics-dashboard-container">
                 {/* Resumen Ejecutivo KPI Cards */}
                 <section className="analytics-kpis-grid">
@@ -2474,6 +2536,23 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                 </div>
               </div>
+            ) : activeModule === 'buzon' && buzonSubTab === 'estadisticas' ? (
+              <div className="placeholder-module-screen" style={{ minHeight: 'calc(100vh - 220px)', padding: '2rem 1rem' }}>
+                <div className="placeholder-card">
+                  <svg className="placeholder-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="18" y1="20" x2="18" y2="10"/>
+                    <line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/>
+                  </svg>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                    Estadísticas Financieras
+                  </h2>
+                  <p className="status-text" style={{ margin: 0 }}>En proceso</p>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '380px', margin: '0.25rem 0 0', lineHeight: 1.5 }}>
+                    Módulo de analítica financiera, vencimientos y flujo de pagos a proveedores en preparación.
+                  </p>
+                </div>
+              </div>
             ) : (
               <>
                 {/* KPI Cards */}
@@ -2485,9 +2564,9 @@ export default function AdminDashboard({ onLogout }) {
                           <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Total Facturas Buzón' : 'Monto Total Registrado'}</span>
+                      <span className="kpi-label">{isBuzonView ? 'Total Facturas Buzón' : 'Monto Total Registrado'}</span>
                     </div>
-                    {rindegastosSubTab === 'buzon' ? (
+                    {isBuzonView ? (
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', flexWrap: 'wrap' }}>
                         <span className="kpi-value" style={{ margin: 0 }}>
                           S/ {(stats.totalAmountPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -2502,7 +2581,7 @@ export default function AdminDashboard({ onLogout }) {
                       <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     )}
                     <span className="kpi-sub">
-                      {rindegastosSubTab === 'buzon' 
+                      {isBuzonView 
                         ? (
                           stats.totalAmountUSD > 0
                             ? `Neto: S/ ${(stats.totalNetoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | $ ${(stats.totalNetoUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2518,7 +2597,7 @@ export default function AdminDashboard({ onLogout }) {
                           <polyline points="20 6 9 17 4 12"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Facturas Aprobadas' : 'Gastos Aprobados'}</span>
+                      <span className="kpi-label">{isBuzonView ? 'Facturas Aprobadas' : 'Gastos Aprobados'}</span>
                     </div>
                     <span className="kpi-value">{stats.approvedCount}</span>
                     <span className="kpi-sub">{stats.pendingApprovalCount} pendientes de aprobación</span>
@@ -2530,7 +2609,7 @@ export default function AdminDashboard({ onLogout }) {
                           <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Facturas Desembolsadas' : 'Gastos Desembolsados'}</span>
+                      <span className="kpi-label">{isBuzonView ? 'Facturas Desembolsadas' : 'Gastos Desembolsados'}</span>
                     </div>
                     <span className="kpi-value">{stats.disbursedCount}</span>
                     <span className="kpi-sub">Con voucher de pago cargado</span>
@@ -2542,7 +2621,7 @@ export default function AdminDashboard({ onLogout }) {
                           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                         </svg>
                       </span>
-                      <span className="kpi-label">{rindegastosSubTab === 'buzon' ? 'Facturas Pendientes' : 'Pendientes de Desembolso'}</span>
+                      <span className="kpi-label">{isBuzonView ? 'Facturas Pendientes' : 'Pendientes de Desembolso'}</span>
                     </div>
                     <span className="kpi-value">{stats.pendingDisbursementCount}</span>
                     <span className="kpi-sub">Esperando comprobante de pago</span>
@@ -2598,7 +2677,7 @@ export default function AdminDashboard({ onLogout }) {
                       <span className="search-icon"></span>
                       <input
                         type="text"
-                        placeholder={rindegastosSubTab === 'buzon' ? 'Buscar por proveedor, RUC, comprobante, ID desembolso...' : 'Buscar por vendedor, comercio, comprobante, ID desembolso...'}
+                        placeholder={isBuzonView ? 'Buscar por proveedor, RUC, comprobante, ID desembolso...' : 'Buscar por vendedor, comercio, comprobante, ID desembolso...'}
                         className="search-input"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -2734,7 +2813,7 @@ export default function AdminDashboard({ onLogout }) {
                                 }}
                               />
                             </th>
-                            {rindegastosSubTab === 'buzon' ? (
+                            {isBuzonView ? (
                               <>
                                 <th>
                                   <div className="header-with-filter">
@@ -2996,7 +3075,7 @@ export default function AdminDashboard({ onLogout }) {
                                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                                   </svg>
                                   <p style={{ fontWeight: '500' }}>
-                                    {rindegastosSubTab === 'buzon' 
+                                    {isBuzonView 
                                       ? 'No se encontraron facturas de proveedores con los filtros seleccionados.' 
                                       : 'No se encontraron gastos con los filtros seleccionados.'}
                                   </p>
@@ -3007,7 +3086,7 @@ export default function AdminDashboard({ onLogout }) {
                             sortedExpenses.map((item) => {
                               const isSelected = selectedIds.includes(item.cr168_reportedegastosid);
 
-                              if (rindegastosSubTab === 'buzon') {
+                              if (isBuzonView) {
                                 const fin = getProviderInvoiceFinancials(item);
                                 const isPaid = isExpensePaid(item);
                                 const vencStatus = getVencimientoStatus(fin.fechaVencimiento, isPaid);
