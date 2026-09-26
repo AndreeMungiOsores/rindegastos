@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getVendorArea } from '../lib/vendorAreaMatcher.js';
 import { parseProviderMetadataTag } from '../lib/providerMetadata.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
@@ -662,6 +662,19 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
+  // Consultar logos de proveedores desde Supabase
+  const fetchProviderLogos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/proveedores/logo');
+      const data = await res.json();
+      if (data.success && data.logos) {
+        setProviderLogos(data.logos);
+      }
+    } catch (err) {
+      console.warn('[Dashboard] Error al consultar logos de proveedores:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchExpenses();
     fetchTokenStatus();
@@ -678,20 +691,7 @@ export default function AdminDashboard({ onLogout }) {
     return () => {
       clearInterval(syncIntervalId);
     };
-  }, []);
-
-  // Consultar logos de proveedores desde Supabase
-  const fetchProviderLogos = useCallback(async () => {
-    try {
-      const res = await fetch('/api/proveedores/logo');
-      const data = await res.json();
-      if (data.success && data.logos) {
-        setProviderLogos(data.logos);
-      }
-    } catch (err) {
-      console.warn('[Dashboard] Error al consultar logos de proveedores:', err);
-    }
-  }, []);
+  }, [fetchProviderLogos]);
 
   // Manejador para abrir el selector de archivo para el logo
   const handleTriggerUpload = (provider) => {
