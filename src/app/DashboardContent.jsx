@@ -176,6 +176,7 @@ export default function AdminDashboard({ onLogout }) {
 
   // Voucher de desembolso individual
   const [drawerVoucherFile, setDrawerVoucherFile] = useState(null);
+  const [drawerHasXml, setDrawerHasXml] = useState(false);
 
   // Edición de Información del Comprobante
   const [isEditingComprobante, setIsEditingComprobante] = useState(false);
@@ -217,6 +218,46 @@ export default function AdminDashboard({ onLogout }) {
     const y = ((e.clientY - top) / height) * 100;
     setZoomPos({ x, y });
   };
+
+  // Verificación dinámica de disponibilidad de archivo XML para comprobantes de buzón
+  useEffect(() => {
+    if (!activeExpense) {
+      setDrawerHasXml(false);
+      return;
+    }
+
+    const isBuzon = Boolean(
+      (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) ||
+      (activeExpense.cr168_titulodegasto && activeExpense.cr168_titulodegasto.startsWith('[Factura]'))
+    );
+
+    const hasXmlAlready = Boolean(
+      (activeExpense.cr168_voucher_propina_name && activeExpense.cr168_voucher_propina_name.toLowerCase().endsWith('.xml')) ||
+      (activeExpense.cr168_detalle && activeExpense.cr168_detalle.match(/\(XML:\s*([^)]+)\)/i)) ||
+      (isBuzon && activeExpense.cr168_voucher_propina)
+    );
+
+    if (hasXmlAlready) {
+      setDrawerHasXml(true);
+      return;
+    }
+
+    if (isBuzon) {
+      let isCancelled = false;
+      fetch(`/api/gastos/xml?id=${activeExpense.cr168_reportedegastosid}`, { method: 'HEAD' })
+        .then(res => {
+          if (!isCancelled && res.ok) {
+            setDrawerHasXml(true);
+          }
+        })
+        .catch(() => {});
+      return () => {
+        isCancelled = true;
+      };
+    } else {
+      setDrawerHasXml(false);
+    }
+  }, [activeExpense]);
 
   // Resetear el zoom y edición al cerrar o cambiar de gasto
   useEffect(() => {
@@ -3764,7 +3805,8 @@ export default function AdminDashboard({ onLogout }) {
                     const hasXmlAttachment = Boolean(
                       isXmlInPropina ||
                       xmlMatchInDetalle ||
-                      (isBuzonItem && activeExpense.cr168_voucher_propina)
+                      (isBuzonItem && activeExpense.cr168_voucher_propina) ||
+                      drawerHasXml
                     );
 
                     if (!hasXmlAttachment) return null;

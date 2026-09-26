@@ -299,6 +299,11 @@ export function extractInvoiceFromXml(xmlStr) {
     const issueDate = extractTag('IssueDate');
     const currency = extractTag('DocumentCurrencyCode') || 'PEN';
 
+    const cleanCdata = (val) => {
+      if (!val) return null;
+      return val.replace(/^<!\[CDATA\[/i, '').replace(/\]\]>$/i, '').trim();
+    };
+
     // Emisor (AccountingSupplierParty)
     const supplierBlock = xmlStr.match(/<(?:[a-zA-Z0-9]+:)?AccountingSupplierParty[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?AccountingSupplierParty>/i);
     let rucEmisor = null;
@@ -309,8 +314,8 @@ export function extractInvoiceFromXml(xmlStr) {
         || sStr.match(/<(?:[a-zA-Z0-9]+:)?ID[^>]*>([0-9]{11})<\//i);
       if (rucM) rucEmisor = rucM[1].trim();
 
-      const nameM = sStr.match(/<(?:[a-zA-Z0-9]+:)?RegistrationName[^>]*>([^<]+)<\//i);
-      if (nameM) nombreEmisor = nameM[1].trim();
+      const nameM = sStr.match(/<(?:[a-zA-Z0-9]+:)?RegistrationName[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?RegistrationName>/i);
+      if (nameM) nombreEmisor = cleanCdata(nameM[1]);
     }
 
     // Cliente (AccountingCustomerParty)
@@ -323,8 +328,8 @@ export function extractInvoiceFromXml(xmlStr) {
         || cStr.match(/<(?:[a-zA-Z0-9]+:)?ID[^>]*>([0-9]{11})<\//i);
       if (rucM) clienteRuc = rucM[1].trim();
 
-      const nameM = cStr.match(/<(?:[a-zA-Z0-9]+:)?RegistrationName[^>]*>([^<]+)<\//i);
-      if (nameM) clienteEmpresa = nameM[1].trim();
+      const nameM = cStr.match(/<(?:[a-zA-Z0-9]+:)?RegistrationName[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?RegistrationName>/i);
+      if (nameM) clienteEmpresa = cleanCdata(nameM[1]);
     }
 
     // Totales

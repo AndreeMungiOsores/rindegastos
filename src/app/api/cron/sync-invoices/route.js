@@ -59,6 +59,115 @@ async function handleInvoiceSync() {
         const isDuplicatePdf = itemPdfName && registeredPdfs.has(itemPdfName);
 
         if (isDuplicatePdf) {
+          const existingExpense = existingExpenses.find(e => {
+            const vName = e.cr168_voucher_desembolso_name ? safeFileName(e.cr168_voucher_desembolso_name) : null;
+            return (vName && vName === itemPdfName) || (e.cr168_detalle && e.cr168_detalle.includes(item.pdfFileName));
+          });
+
+          if (existingExpense) {
+            const existingId = existingExpense.cr168_reportedegastosid;
+            const hasXmlAttached = Boolean(existingExpense.cr168_voucher_propina && existingExpense.cr168_voucher_propina_name);
+            const needsXmlUpload = Boolean((item.xmlContent || item.xmlBuffer) && !hasXmlAttached);
+            const needsEnrichment = !existingExpense.cr168_numerodecomprobante || 
+                                    !existingExpense.cr168_rucdelcomercio || 
+                                    Number(existingExpense.cr168_montototalincluyendoigv || 0) === 0;
+
+            if (needsXmlUpload || needsEnrichment) {
+              console.log(`[InvoiceCronSync] Actualizando gasto existente ${existingId} ("${item.subject}") con XML/enriquecimiento pendiente...`);
+
+              if (item.xmlContent || item.xmlBuffer) {
+                const xmlBuffer = item.xmlBuffer || Buffer.from(item.xmlContent, 'utf-8');
+                const xmlName = item.xmlFileName || `${item.pdfFileName.replace(/\.pdf$/i, '')}.xml`;
+
+                // 1. Guardar en disco local para acceso ultrarrápido
+                try {
+                  const fs = (await import('fs')).default;
+                  const path = (await import('path')).default;
+                  const XML_CACHE_DIR = path.join(process.cwd(), '.cache', 'invoices', 'xml');
+                  if (!fs.existsSync(XML_CACHE_DIR)) {
+                    fs.mkdirSync(XML_CACHE_DIR, { recursive: true });
+                  }
+                  fs.writeFileSync(path.join(XML_CACHE_DIR, `${existingId}.xml`), xmlBuffer);
+                } catch (cacheErr) {
+                  console.warn('[InvoiceCronSync] No se pudo guardar XML en caché local:', cacheErr.message);
+                }
+
+                // 2. Subir a Dataverse en columna cr168_voucher_propina si falta
+                if (needsXmlUpload) {
+                  try {
+                    await uploadFileToExpense(existingId, xmlBuffer, xmlName, 'cr168_voucher_propina');
+                    console.log(`[InvoiceCronSync] Archivo XML "${xmlName}" adjuntado al gasto existente ${existingId} en cr168_voucher_propina.`);
+                  } catch (xmlUploadErr) {
+                    console.warn(`[InvoiceCronSync] No se pudo adjuntar XML en Dataverse para ${existingId}:`, xmlUploadErr.message);
+                  }
+                }
+
+                // 3. Enriquecer datos tributarios en Dataverse si están incompletos
+                if (needsEnrichment) {
+                  try {
+                    let invoiceData = null;
+                    if (item.xmlContent) {
+                      console.log(`[InvoiceCronSync] Parseando XML UBL SUNAT para actualizar existente "${existingId}"...`);
+                      invoiceData = extractInvoiceFromXml(item.xmlContent);
+                    }
+                    if (!invoiceData || !invoiceData.total_factura) {
+                      invoiceData = await extractInvoiceFromBuffer(item.pdfBuffer, item.pdfFileName);
+                    }
+
+                    if (invoiceData && invoiceData.total_factura) {
+                      const spotTag = formatProviderMetadataTag(invoiceData);
+                      const xmlSuffix = item.xmlFileName ? ` (XML: ${item.xmlFileName})` : '';
+                      const baseDetalle = `[Factura Correo] ${item.subject} (${item.pdfFileName}${xmlSuffix})`.trim();
+                      const maxBaseLen = Math.max(20, 390 - spotTag.length);
+                      const safeBaseDetalle = baseDetalle.length > maxBaseLen ? baseDetalle.substring(0, maxBaseLen) : baseDetalle;
+
+                      let cleanMerchant = item.senderName || 'Proveedor General';
+                      if (item.senderEmail && item.senderEmail.includes('cabify')) {
+                        cleanMerchant = 'Cabify / Facturación Logistics';
+                      } else if (cleanMerchant.toLowerCase().includes('facturacion logistics')) {
+                        cleanMerchant = 'Facturación Logistics';
+                      }
+
+                      const enrichPayload = {
+                        cr168_montototalincluyendoigv: invoiceData.total_factura,
+                        cr168_base_gravada: invoiceData.base_gravada,
+                        cr168_tasa_igv: invoiceData.tasa_igv,
+                        cr168_igv_monto: invoiceData.igv_monto,
+                        cr168_inafecto: invoiceData.inafecto,
+                        cr168_rucdelcomercio: invoiceData.ruc_emisor || undefined,
+                        cr168_nombredelcomercio: invoiceData.nombre_emisor || cleanMerchant,
+                        cr168_numerodecomprobante: invoiceData.numero_comprobante || undefined,
+                        cr168_tipodecomprobante: invoiceData.tipo_comprobante || undefined,
+                        cr168_empresa: invoiceData.cliente_empresa || 'BLISSCORP S.A.C',
+                        cr168_ia_procesado: true,
+                        cr168_ia_confianza: invoiceData.confianza,
+                        cr168_detalle: `${safeBaseDetalle}${spotTag}`
+                      };
+
+                      if (invoiceData.fecha_emision) {
+                        enrichPayload.cr168_fechadelgasto = `${invoiceData.fecha_emision}T05:00:00Z`;
+                      }
+                      if (invoiceData.fecha_vencimiento) {
+                        enrichPayload.cr168_fecha = `${invoiceData.fecha_vencimiento}T05:00:00Z`;
+                      }
+
+                      await updateExpense(existingId, enrichPayload);
+                      console.log(`[InvoiceCronSync] Factura existente ${existingId} enriquecida exitosamente con datos del XML.`);
+                    }
+                  } catch (enrichErr) {
+                    console.warn(`[InvoiceCronSync] Error enriqueciendo gasto existente ${existingId}:`, enrichErr.message);
+                  }
+                }
+              }
+
+              skippedInvoices.push({
+                subject: item.subject,
+                reason: `PDF ya existía (${item.pdfFileName}), actualizado con XML y enriquecimiento tributario`
+              });
+              continue;
+            }
+          }
+
           console.log(`[InvoiceCronSync] Omitiendo factura duplicada en Dataverse: "${item.subject}" (PDF: ${item.pdfFileName})`);
           skippedInvoices.push({
             subject: item.subject,
