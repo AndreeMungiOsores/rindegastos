@@ -66,6 +66,13 @@
 - **Alcance:**
   - Clasificación para el ERP: Incorporar bandera contable para distinguir entre **Gasto con Crédito Fiscal** y **Gasto Reparable** (según si la empresa asume la retención del impuesto no domiciliado).
 
+#### [X] 1.8 Extracción de ID de Desembolso para Buzón de Proveedores e Indicador «Pagado» en Vencimiento
+- **Estado:** ✅ **COMPLETADO**
+- **Implementación:**
+  - Soporte en `enrich-vouchers` y `batch-enrich-vouchers.mjs` para procesar comprobantes bancarios subidos al buzón de facturas (`cr168_estado === 553050001` o nombres con patrones bancarios `BBVA`, `BCP`, `Interbank`, etc.).
+  - Extracción automática y manual (`⚡ Extraer ID con IA` desde el modal de detalle) del ID de desembolso guardado en Dataverse.
+  - Indicador visual verde `Pagado` en la columna Vencimiento de la tabla del buzón y en el drawer para comprobantes desembolsados o con voucher bancario, sustituyendo los estados de vencimiento.
+
 ---
 
 ## 2. Módulo: Préstamos a Colaboradores
@@ -174,3 +181,4 @@
 | **11** | IA para detección de patrones, mapa de calor y análisis de coworking en Cabify | Cabify | Alta | Analítico | **[ ] Pendiente** |
 | **12** | Mockup funcional e interactivo de RindeViáticos | Viáticos | Alta | Estratégico | **[ ] Pendiente** |
 | **13** | Clasificación contable para facturas no domiciliadas (crédito fiscal vs reparable) | Buzón Proveedores | Baja-Media | Medio | **[ ] Pendiente** |
+| **14** | Extracción de ID desembolso en buzón e indicador «Pagado» en columna vencimiento | Buzón Proveedores | Media | Alto | **[X] Completado** |

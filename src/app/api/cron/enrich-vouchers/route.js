@@ -8,12 +8,12 @@ import { extractVoucherMetadata } from '../../../../lib/kimiClient.js';
 
 const DATAVERSE_BASE_URL = 'https://org1123c726.api.crm2.dynamics.com/api/data/v9.2';
 
-export async function GET() {
-  return await handleEnrichVouchers();
+export async function GET(request) {
+  return await handleEnrichVouchers(request);
 }
 
-export async function POST() {
-  return await handleEnrichVouchers();
+export async function POST(request) {
+  return await handleEnrichVouchers(request);
 }
 
 async function downloadVoucher(expenseId, token) {
@@ -26,11 +26,25 @@ async function downloadVoucher(expenseId, token) {
   return Buffer.from(res.data);
 }
 
-async function handleEnrichVouchers() {
+async function handleEnrichVouchers(request) {
   const startTime = Date.now();
   console.log('[EnrichVouchersCron] Iniciando revisión de vouchers de desembolso pendientes...');
 
   try {
+    let targetId = null;
+    if (request) {
+      try {
+        const { searchParams } = new URL(request.url);
+        targetId = searchParams.get('id');
+        if (!targetId && request.method === 'POST') {
+          try {
+            const body = await request.clone().json();
+            if (body && body.id) targetId = body.id;
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
     const token = await getAccessToken();
 
     // 1. Consultar gastos con voucher que aún NO tienen cr168_id_desembolso
@@ -40,27 +54,61 @@ async function handleEnrichVouchers() {
       'cr168_montototalincluyendoigv',
       'cr168_voucher_desembolso_name',
       'cr168_id_desembolso',
-      'cr168_detalle'
+      'cr168_estado',
+      'cr168_detalle',
+      'cr168_nombrereporte'
     ].join(',');
 
-    const queryUrl = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses?%24select=${campos}&%24filter=cr168_voucher_desembolso_name ne null and cr168_id_desembolso eq null&%24top=50`;
-    const listRes = await axios.get(queryUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        'OData-MaxVersion': '4.0',
-        'OData-Version': '4.0'
+    let allRecords = [];
+    if (targetId) {
+      try {
+        const singleRes = await axios.get(`${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${targetId})?$select=${campos}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json'
+          }
+        });
+        if (singleRes.data) {
+          allRecords = [singleRes.data];
+        }
+      } catch (singleErr) {
+        console.warn(`[EnrichVouchersCron] No se pudo obtener gasto puntual ${targetId}:`, singleErr.message);
       }
-    });
+    } else {
+      const queryUrl = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses?%24select=${campos}&%24filter=cr168_voucher_desembolso_name ne null and cr168_id_desembolso eq null&%24top=50`;
+      const listRes = await axios.get(queryUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0'
+        }
+      });
+      allRecords = listRes.data?.value || [];
+    }
 
-    const allRecords = listRes.data?.value || [];
-
-    // Excluir facturas del buzón que no correspondan a vouchers bancarios
+    // Identificar comprobantes bancarios válidos para extraer ID desembolso
     const pending = allRecords.filter(g => {
+      if (targetId) {
+        return !!g.cr168_voucher_desembolso_name;
+      }
+
       const fn = (g.cr168_voucher_desembolso_name || '').toLowerCase();
-      const isFacturaSunat = /^[0-9]{11}-[0-9]{2}-[a-z0-9]+-[0-9]+\.pdf$/i.test(fn) ||
-                             (g.cr168_detalle && g.cr168_detalle.startsWith('[Factura Correo]'));
-      return !isFacturaSunat;
+      const isBuzon = (g.cr168_detalle && g.cr168_detalle.includes('[Factura Correo]')) ||
+                      (g.cr168_nombrereporte && g.cr168_nombrereporte.startsWith('[Factura]'));
+
+      // Para gastos de rendiciones normales de vendedores, todo archivo en voucher_desembolso es un voucher bancario
+      if (!isBuzon) return true;
+
+      // Para facturas del buzón de proveedores:
+      // Procesar si está marcado como Desembolsado (553050001) o tiene nombre de comprobante bancario
+      const isDesembolsado = parseInt(g.cr168_estado, 10) === 553050001;
+      const isBankFile = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(fn);
+      const isStrictFacturaSunat = /^[0-9]{11}-[0-9]{2}-[a-z0-9]+-[0-9]+\.pdf$/i.test(fn) ||
+                                   /^pdf-doc-[a-z0-9]+-[0-9]+/i.test(fn) ||
+                                   /^factura/i.test(fn);
+
+      return (isDesembolsado || isBankFile) && (!isStrictFacturaSunat || isBankFile);
     });
 
     if (pending.length === 0) {
@@ -74,8 +122,8 @@ async function handleEnrichVouchers() {
 
     console.log(`[EnrichVouchersCron] Se encontraron ${pending.length} voucher(s) pendiente(s).`);
 
-    // Procesar hasta 2 comprobantes por invocación para mantenerse holgadamente bajo los 60s
-    const batchToProcess = pending.slice(0, 2);
+    // Procesar hasta 5 comprobantes por invocación
+    const batchToProcess = pending.slice(0, targetId ? 1 : 5);
     const voucherCache = new Map();
     const exitosos = [];
     const omitidos = [];

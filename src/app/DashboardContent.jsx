@@ -20,9 +20,41 @@ function formatDisplayDate(dateStr) {
 }
 
 /**
+ * Determina si un gasto o factura comercial ya fue pagado / desembolsado
+ */
+function isExpensePaid(item) {
+  if (!item) return false;
+  // 1. Estado oficial Desembolsado en Dataverse
+  if (parseInt(item.cr168_estado, 10) === 553050001) return true;
+
+  // 2. Cuenta con ID de desembolso bancario
+  if (item.cr168_id_desembolso && String(item.cr168_id_desembolso).trim() !== '') return true;
+
+  const fn = (item.cr168_voucher_desembolso_name || '').toLowerCase();
+  const isBuzon = (item.cr168_detalle && item.cr168_detalle.includes('[Factura Correo]')) || 
+                  (item.cr168_nombrereporte && item.cr168_nombrereporte.startsWith('[Factura]'));
+
+  // 3. Para rendiciones de vendedores: si tiene voucher de desembolso cargado
+  if (!isBuzon && (item.cr168_voucher_desembolso || item.cr168_voucher_desembolso_name)) {
+    return true;
+  }
+
+  // 4. Para facturas de buzón: si el voucher adjunto es un comprobante de transferencia bancaria
+  if (isBuzon && fn) {
+    const isBankVoucher = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(fn);
+    if (isBankVoucher) return true;
+  }
+
+  return false;
+}
+
+/**
  * Evalúa el semáforo y estado de la fecha de vencimiento comercial de una factura
  */
-function getVencimientoStatus(vencimientoDateStr) {
+function getVencimientoStatus(vencimientoDateStr, isPaid = false) {
+  if (isPaid) {
+    return { status: 'pagado', label: 'Pagado', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' };
+  }
   if (!vencimientoDateStr) return null;
   const clean = vencimientoDateStr.includes('T') ? vencimientoDateStr.split('T')[0] : vencimientoDateStr;
   const parts = clean.split('-');
@@ -164,6 +196,7 @@ export default function AdminDashboard({ onLogout }) {
 
   // Estado para la sincronización diaria de facturas desde el buzón de correo
   const [isSyncingInvoices, setIsSyncingInvoices] = useState(false);
+  const [isExtractingVoucherId, setIsExtractingVoucherId] = useState(false);
   const [syncBanner, setSyncBanner] = useState(null);
 
   // Filtro de Rango de Fechas (Calendario Visual)
@@ -993,6 +1026,33 @@ export default function AdminDashboard({ onLogout }) {
       alert(`Error al aprobar registros: ${err.message}`);
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  // Extraer ID de desembolso con IA para el gasto activo bajo demanda
+  const handleExtractVoucherId = async (expenseId) => {
+    if (!expenseId || isExtractingVoucherId) return;
+    setIsExtractingVoucherId(true);
+    try {
+      const res = await fetch(`/api/cron/enrich-vouchers?id=${expenseId}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.processedCount > 0) {
+        const itemRes = await fetch('/api/gastos');
+        if (itemRes.ok) {
+          const allExp = await itemRes.json();
+          setExpenses(allExp);
+          const updated = allExp.find(e => e.cr168_reportedegastosid === expenseId);
+          if (updated) setActiveExpense({ ...updated });
+        }
+        alert('✅ ID de desembolso extraído con éxito por la IA.');
+      } else {
+        alert(data.message || 'No se detectó un número de operación válido en este voucher.');
+      }
+    } catch (err) {
+      console.error('Error al extraer ID de desembolso:', err);
+      alert(`Error al analizar voucher: ${err.message}`);
+    } finally {
+      setIsExtractingVoucherId(false);
     }
   };
 
@@ -2949,7 +3009,8 @@ export default function AdminDashboard({ onLogout }) {
 
                               if (rindegastosSubTab === 'buzon') {
                                 const fin = getProviderInvoiceFinancials(item);
-                                const vencStatus = getVencimientoStatus(fin.fechaVencimiento);
+                                const isPaid = isExpensePaid(item);
+                                const vencStatus = getVencimientoStatus(fin.fechaVencimiento, isPaid);
                                 const emisionDate = formatDisplayDate(item.cr168_fechadelgasto);
                                 const vencDate = formatDisplayDate(fin.fechaVencimiento);
 
@@ -3422,7 +3483,8 @@ export default function AdminDashboard({ onLogout }) {
                     (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[SPOT:')) ||
                     activeExpense.cr168_fecha) && (() => {
                     const fin = getProviderInvoiceFinancials(activeExpense);
-                    const vencStatus = getVencimientoStatus(fin.fechaVencimiento);
+                    const isPaid = isExpensePaid(activeExpense);
+                    const vencStatus = getVencimientoStatus(fin.fechaVencimiento, isPaid);
                     return (
                       <div className="detail-section" style={{ borderLeft: '3px solid var(--accent-color, #2563eb)', background: '#f8fafc', borderRadius: '0 8px 8px 0', padding: '1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>
@@ -3578,13 +3640,40 @@ export default function AdminDashboard({ onLogout }) {
                     <div className="info-row form-group" style={{ marginBottom: '1rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                         <span className="info-label" id="label-id-desembolso">ID Desembolso</span>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #64748b)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', userSelect: 'none' }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                          </svg>
-                          Solo lectura (IA)
-                        </span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                          {!activeExpense.cr168_id_desembolso && (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name) && (
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => handleExtractVoucherId(activeExpense.cr168_reportedegastosid)}
+                              disabled={isExtractingVoucherId}
+                              style={{
+                                fontSize: '0.72rem',
+                                padding: '0.15rem 0.5rem',
+                                minHeight: 'auto',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                borderColor: '#bfdbfe',
+                                cursor: isExtractingVoucherId ? 'not-allowed' : 'pointer',
+                                borderRadius: '4px'
+                              }}
+                              title="Ejecutar análisis con IA sobre el voucher actual para extraer el número de operación"
+                              aria-label="Extraer ID de desembolso con IA"
+                            >
+                              {isExtractingVoucherId ? 'Analizando...' : '⚡ Extraer ID con IA'}
+                            </button>
+                          )}
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #64748b)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', userSelect: 'none' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            Solo lectura (IA)
+                          </span>
+                        </div>
                       </div>
                       <input
                         type="text"

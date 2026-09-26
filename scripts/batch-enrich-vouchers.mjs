@@ -208,7 +208,9 @@ async function main() {
     'cr168_montototalincluyendoigv',
     'cr168_voucher_desembolso_name',
     'cr168_id_desembolso',
-    'cr168_detalle'
+    'cr168_estado',
+    'cr168_detalle',
+    'cr168_nombrereporte'
   ].join(',');
 
   let allRecords = [];
@@ -223,13 +225,24 @@ async function main() {
     nextUrl = listRes.data['@odata.nextLink'] || null;
   }
 
-  // Filtrar facturas de correo que no correspondan a vouchers bancarios
+  // Identificar comprobantes bancarios válidos para extraer ID desembolso
   const pending = allRecords.filter(g => {
     const fn = (g.cr168_voucher_desembolso_name || '').toLowerCase();
-    // Excluir facturas del buzón que tengan nombres de factura electrónica SUNAT (ej. RUC-01-FE01... o números largos de factura directa)
-    const isFacturaSunat = /^[0-9]{11}-[0-9]{2}-[a-z0-9]+-[0-9]+\.pdf$/i.test(fn) ||
-                           (g.cr168_detalle && g.cr168_detalle.startsWith('[Factura Correo]'));
-    return !isFacturaSunat;
+    const isBuzon = (g.cr168_detalle && g.cr168_detalle.includes('[Factura Correo]')) ||
+                    (g.cr168_nombrereporte && g.cr168_nombrereporte.startsWith('[Factura]'));
+
+    // Para gastos de rendiciones normales de vendedores, todo archivo en voucher_desembolso es un voucher bancario
+    if (!isBuzon) return true;
+
+    // Para facturas del buzón de proveedores:
+    // Procesar si está marcado como Desembolsado (553050001) o tiene nombre de comprobante bancario
+    const isDesembolsado = parseInt(g.cr168_estado, 10) === 553050001;
+    const isBankFile = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(fn);
+    const isStrictFacturaSunat = /^[0-9]{11}-[0-9]{2}-[a-z0-9]+-[0-9]+\.pdf$/i.test(fn) ||
+                                 /^pdf-doc-[a-z0-9]+-[0-9]+/i.test(fn) ||
+                                 /^factura/i.test(fn);
+
+    return (isDesembolsado || isBankFile) && (!isStrictFacturaSunat || isBankFile);
   });
 
   console.log(`📋 Total gastos con voucher bancario sin ID Desembolso: ${pending.length}`);
