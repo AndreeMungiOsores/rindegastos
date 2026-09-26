@@ -3929,8 +3929,9 @@ export default function AdminDashboard({ onLogout }) {
                     );
                   })()}
 
-                  {/* Voucher de Propina (Cargado desde Dataverse) */}
-                  {activeExpense.cr168_voucher_propina && (
+                  {/* Voucher de Propina (Cargado desde Dataverse para consumos de restaurantes) */}
+                  {activeExpense.cr168_voucher_propina && 
+                   !((activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) || (activeExpense.cr168_titulodegasto && activeExpense.cr168_titulodegasto.startsWith('[Factura]'))) && (
                     <div style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center' }}>
                       <span className="info-label" style={{ alignSelf: 'flex-start', fontWeight: 'bold' }}>
                         Voucher de Propina (Cargada desde Dataverse)
