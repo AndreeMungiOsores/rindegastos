@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",

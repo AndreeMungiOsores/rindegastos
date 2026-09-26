@@ -3235,3 +3235,138 @@ body {
   color: #334155;
   margin-top: 0.35rem;
 }
+
+/* Proveedores: Bandeja de Logo persistente en Supabase */
+.provider-logo-tray {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.provider-avatar-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.provider-avatar-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.provider-logo-pencil-btn {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #475569;
+  transition: all 0.15s ease;
+  padding: 0;
+  z-index: 2;
+}
+
+.provider-logo-pencil-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: var(--accent-color, #2563eb);
+  color: var(--accent-color, #2563eb);
+  transform: scale(1.12);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+}
+
+.provider-logo-pencil-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.provider-logo-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  background: var(--bg-surface, #ffffff);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border-color, #e2e8f0);
+  padding: 4px;
+  min-width: 135px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeInMenu 0.15s ease-out;
+}
+
+@keyframes fadeInMenu {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.provider-logo-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-primary, #334155);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.provider-logo-menu-item:hover {
+  background: var(--bg-surface-2, #f1f5f9);
+  color: var(--accent-color, #2563eb);
+}
+
+.provider-logo-menu-item.danger {
+  color: #ef4444;
+}
+
+.provider-logo-menu-item.danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.provider-logo-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #e2e8f0;
+  border-top-color: var(--accent-color, #2563eb);
+  border-radius: 50%;
+  animation: logoSpin 0.7s linear infinite;
+}
+
+@keyframes logoSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

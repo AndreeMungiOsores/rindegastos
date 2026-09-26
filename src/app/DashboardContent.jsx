@@ -130,6 +130,42 @@ function normalizeProviderName(name) {
   return norm.replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Obtiene las iniciales (1 o 2 letras) de un proveedor para su avatar por defecto
+ */
+function getProviderInitials(name) {
+  if (!name) return 'PR';
+  const clean = name.replace(/^(S\.?A\.?C\.?|SAC|S\.?A\.?|SA|S\.?R\.?L\.?|SRL|E\.?I\.?R\.?L\.?|EIRL)\s+/i, '')
+                    .replace(/\s+(S\.?A\.?C\.?|SAC|S\.?A\.?|SA|S\.?R\.?L\.?|SRL|E\.?I\.?R\.?L\.?|EIRL)$/i, '')
+                    .trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return clean.substring(0, 2).toUpperCase() || 'PR';
+}
+
+/**
+ * Paleta de colores consistente para el avatar sin logo según el nombre del proveedor
+ */
+function getProviderAvatarColor(name) {
+  const colors = [
+    { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' }, // blue
+    { bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d' }, // green
+    { bg: '#faf5ff', border: '#e9d5ff', text: '#7e22ce' }, // purple
+    { bg: '#fff7ed', border: '#fed7aa', text: '#c2410c' }, // orange
+    { bg: '#fdf2f8', border: '#fbcfe8', text: '#be185d' }, // pink
+    { bg: '#ecfeff', border: '#a5f3fc', text: '#0e7490' }, // cyan
+    { bg: '#f8fafc', border: '#cbd5e1', text: '#334155' }, // slate
+  ];
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
 export default function AdminDashboard({ onLogout }) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -217,6 +253,14 @@ export default function AdminDashboard({ onLogout }) {
   // Ordenamiento interactivo de proveedores en estadísticas financieras de buzón
   const [buzonProviderSortKey, setBuzonProviderSortKey] = useState('total'); // 'total' | 'nombre' | 'ruc' | 'facturas' | 'spot' | 'neto' | 'estado'
   const [buzonProviderSortDir, setBuzonProviderSortDir] = useState('desc'); // 'asc' | 'desc'
+
+  // Logos de proveedores en Supabase
+  const [providerLogos, setProviderLogos] = useState({});
+  const [loadingLogoKey, setLoadingLogoKey] = useState(null);
+  const [logoMenuOpenKey, setLogoMenuOpenKey] = useState(null);
+  const [targetProviderForLogo, setTargetProviderForLogo] = useState(null);
+  const logoFileInputRef = useRef(null);
+  const logoMenuRef = useRef(null);
 
   // Filtro de Rango de Fechas (Calendario Visual)
   const [filterStartDate, setFilterStartDate] = useState(null); // 'YYYY-MM-DD'
@@ -326,7 +370,7 @@ export default function AdminDashboard({ onLogout }) {
     setDrawerVoucherFile(null);
   }, [activeExpense]);
 
-  // Cerrar el dropdown y popover al hacer clic fuera
+  // Cerrar el dropdown, popover y menú de logo al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -334,6 +378,9 @@ export default function AdminDashboard({ onLogout }) {
       }
       if (calendarRef.current && !calendarRef.current.contains(event.target)) {
         setShowCalendarPopover(false);
+      }
+      if (logoMenuRef.current && !logoMenuRef.current.contains(event.target)) {
+        setLogoMenuOpenKey(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -618,6 +665,7 @@ export default function AdminDashboard({ onLogout }) {
   useEffect(() => {
     fetchExpenses();
     fetchTokenStatus();
+    fetchProviderLogos();
 
     // Sincronización inicial en background al montar la app
     runAutoSync();
@@ -631,6 +679,108 @@ export default function AdminDashboard({ onLogout }) {
       clearInterval(syncIntervalId);
     };
   }, []);
+
+  // Consultar logos de proveedores desde Supabase
+  const fetchProviderLogos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/proveedores/logo');
+      const data = await res.json();
+      if (data.success && data.logos) {
+        setProviderLogos(data.logos);
+      }
+    } catch (err) {
+      console.warn('[Dashboard] Error al consultar logos de proveedores:', err);
+    }
+  }, []);
+
+  // Manejador para abrir el selector de archivo para el logo
+  const handleTriggerUpload = (provider) => {
+    setTargetProviderForLogo(provider);
+    setLogoMenuOpenKey(null);
+    if (logoFileInputRef.current) {
+      logoFileInputRef.current.value = '';
+      logoFileInputRef.current.click();
+    }
+  };
+
+  // Manejador al seleccionar archivo de logo: optimiza y sube a Supabase
+  const handleLogoFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetProviderForLogo) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('La imagen no debe superar los 5 MB.');
+      return;
+    }
+
+    const p = targetProviderForLogo;
+    setLoadingLogoKey(p.key);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('providerKey', p.key);
+      formData.append('providerName', p.nombre || '');
+      if (p.ruc) formData.append('ruc', p.ruc);
+
+      const res = await fetch('/api/proveedores/logo', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+
+      if (result.success && result.logoUrl) {
+        setProviderLogos(prev => ({
+          ...prev,
+          [p.key]: {
+            provider_key: p.key,
+            logo_url: result.logoUrl,
+            provider_name: p.nombre,
+            ruc: p.ruc
+          }
+        }));
+      } else {
+        alert(`Error al guardar logo en Supabase: ${result.error || 'Ocurrió un error inesperado.'}`);
+      }
+    } catch (err) {
+      console.error('Error al subir logo a Supabase:', err);
+      alert(`Error de red al subir logo: ${err.message}`);
+    } finally {
+      setLoadingLogoKey(null);
+      setTargetProviderForLogo(null);
+      if (logoFileInputRef.current) logoFileInputRef.current.value = '';
+    }
+  };
+
+  // Manejador para eliminar logo de Supabase
+  const handleDeleteLogo = async (provider) => {
+    setLogoMenuOpenKey(null);
+    const confirmDelete = window.confirm(`¿Seguro que deseas eliminar el logo de "${provider.nombre}"?`);
+    if (!confirmDelete) return;
+
+    setLoadingLogoKey(provider.key);
+    try {
+      const res = await fetch(`/api/proveedores/logo?key=${encodeURIComponent(provider.key)}`, {
+        method: 'DELETE'
+      });
+      const result = await res.json();
+      if (result.success) {
+        setProviderLogos(prev => {
+          const next = { ...prev };
+          delete next[provider.key];
+          return next;
+        });
+      } else {
+        alert(`Error al eliminar logo de Supabase: ${result.error || 'Ocurrió un error inesperado.'}`);
+      }
+    } catch (err) {
+      console.error('Error al eliminar logo de Supabase:', err);
+      alert(`Error de red al eliminar logo: ${err.message}`);
+    } finally {
+      setLoadingLogoKey(null);
+    }
+  };
+
 
   // Partición de datos: Rendiciones de Colaboradores vs Facturas del Buzón de Proveedores
   const rendicionExpenses = useMemo(() => {
@@ -3015,6 +3165,13 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
 
                   <div className="ranking-table-wrapper" style={{ overflowX: 'auto' }}>
+                    <input
+                      type="file"
+                      ref={logoFileInputRef}
+                      style={{ display: 'none' }}
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                      onChange={handleLogoFileChange}
+                    />
                     {sortedBuzonProviders.length === 0 ? (
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '1.5rem', textAlign: 'center' }}>
                         No hay proveedores para mostrar con los filtros seleccionados.
@@ -3065,16 +3222,126 @@ export default function AdminDashboard({ onLogout }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {sortedBuzonProviders.map((p, idx) => (
-                            <tr key={p.key}>
-                              <td style={{ textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                <span className={`ranking-badge ${idx === 0 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-1' : idx === 1 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-2' : idx === 2 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-3' : ''}`}>
-                                  {idx + 1}
-                                </span>
-                              </td>
-                              <td style={{ verticalAlign: 'middle' }}>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{p.nombre}</div>
-                              </td>
+                          {sortedBuzonProviders.map((p, idx) => {
+                            const logoRecord = providerLogos[p.key];
+                            const logoUrl = logoRecord?.logo_url || (typeof logoRecord === 'string' ? logoRecord : null);
+                            const hasLogo = Boolean(logoUrl);
+                            const initials = getProviderInitials(p.nombre);
+                            const avatarColor = getProviderAvatarColor(p.nombre);
+                            const isLoadingThisLogo = loadingLogoKey === p.key;
+
+                            return (
+                              <tr key={p.key}>
+                                <td style={{ textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                  <span className={`ranking-badge ${idx === 0 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-1' : idx === 1 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-2' : idx === 2 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-3' : ''}`}>
+                                    {idx + 1}
+                                  </span>
+                                </td>
+                                <td style={{ verticalAlign: 'middle' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    {/* Bandeja de Logo con lápiz */}
+                                    <div
+                                      className="provider-logo-tray"
+                                      title={hasLogo ? `${p.nombre} (Logo guardado en Supabase)` : `${p.nombre} (Sin logo cargado)`}
+                                    >
+                                      <div
+                                        className="provider-avatar-box"
+                                        style={{
+                                          background: hasLogo ? '#ffffff' : avatarColor.bg,
+                                          border: `1.5px solid ${hasLogo ? '#e2e8f0' : avatarColor.border}`,
+                                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+                                        }}
+                                      >
+                                        {isLoadingThisLogo ? (
+                                          <div className="provider-logo-spinner" aria-label="Procesando logo..." />
+                                        ) : hasLogo ? (
+                                          <img
+                                            src={logoUrl}
+                                            alt={`Logo de ${p.nombre}`}
+                                            loading="lazy"
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: '0.82rem',
+                                              fontWeight: 700,
+                                              color: avatarColor.text,
+                                              letterSpacing: '0.5px'
+                                            }}
+                                          >
+                                            {initials}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Botoncito de lápiz en la esquina */}
+                                      <button
+                                        type="button"
+                                        className="provider-logo-pencil-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (hasLogo) {
+                                            setLogoMenuOpenKey(prev => prev === p.key ? null : p.key);
+                                          } else {
+                                            handleTriggerUpload(p);
+                                          }
+                                        }}
+                                        title={hasLogo ? 'Modificar o eliminar logo' : 'Cargar logo del proveedor'}
+                                        aria-label={`Gestionar logo de ${p.nombre}`}
+                                        aria-expanded={logoMenuOpenKey === p.key}
+                                        disabled={isLoadingThisLogo}
+                                      >
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                          <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                                        </svg>
+                                      </button>
+
+                                      {/* Menú flotante al hacer clic en el lápiz cuando ya tiene logo */}
+                                      {logoMenuOpenKey === p.key && (
+                                        <div
+                                          ref={logoMenuRef}
+                                          className="provider-logo-menu"
+                                          role="menu"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <button
+                                            type="button"
+                                            className="provider-logo-menu-item"
+                                            onClick={() => handleTriggerUpload(p)}
+                                          >
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                              <polyline points="17 8 12 3 7 8" />
+                                              <line x1="12" y1="3" x2="12" y2="15" />
+                                            </svg>
+                                            Cambiar logo
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="provider-logo-menu-item danger"
+                                            onClick={() => handleDeleteLogo(p)}
+                                          >
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                              <polyline points="3 6 5 6 21 6" />
+                                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                            </svg>
+                                            Eliminar logo
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Nombre del proveedor y RUC */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{p.nombre}</div>
+                                      {p.ruc && (
+                                        <span style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
+                                          RUC: {p.ruc}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
                               <td style={{ verticalAlign: 'middle' }}>
                                 <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
                                   {p.empresasList.map((emp) => (
@@ -3139,7 +3406,8 @@ export default function AdminDashboard({ onLogout }) {
                                 </div>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     )}
