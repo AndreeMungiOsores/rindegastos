@@ -193,21 +193,22 @@ export async function updateExpense(id, updateData) {
 }
 
 /**
- * Sube un archivo binario a la columna de tipo Archivo (cr168_voucher_desembolso) de un gasto.
+ * Sube un archivo binario a una columna de tipo Archivo (cr168_voucher_desembolso o cr168_voucher_propina) de un gasto.
  * @param {string} id - El UUID del gasto
  * @param {Buffer} fileBuffer - Los bytes binarios del archivo
  * @param {string} fileName - Nombre del archivo con su extensión
+ * @param {string} [columnName='cr168_voucher_desembolso'] - Columna de tipo archivo destino
  */
-export async function uploadFileToExpense(id, fileBuffer, fileName) {
+export async function uploadFileToExpense(id, fileBuffer, fileName, columnName = 'cr168_voucher_desembolso') {
   // Sanear el nombre del archivo para cumplir con las especificaciones de cabeceras HTTP de OData (solo ASCII sin espacios ni caracteres especiales)
   const safeFileName = fileName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // Remueve acentos
     .replace(/[^a-zA-Z0-9._-]/g, "_"); // Reemplaza espacios y caracteres especiales por guiones bajos
 
-  console.log(`[DataverseClient] Subiendo voucher a Dataverse para el gasto ${id} (Archivo saneado: ${safeFileName}, tamaño: ${fileBuffer.length} bytes)...`);
+  console.log(`[DataverseClient] Subiendo archivo a Dataverse para el gasto ${id} en ${columnName} (Archivo saneado: ${safeFileName}, tamaño: ${fileBuffer.length} bytes)...`);
   
-  const endpoint = `cr168_reportedegastoses(${id})/cr168_voucher_desembolso`;
+  const endpoint = `cr168_reportedegastoses(${id})/${columnName}`;
   const token = await getAccessToken();
   const url = `${DATAVERSE_BASE_URL}/${endpoint}`;
 

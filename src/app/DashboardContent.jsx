@@ -3744,14 +3744,158 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
                     {activeExpense.cr168_imagendelcomprobante_url
-                      ? 'Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en para ver en pantalla completa.'
+                      ? 'Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en ↗ para ver en pantalla completa.'
                       : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
-                      ? 'Previsualizando documento PDF adjunto del buzón. Haz clic en para abrir en nueva pestaña.'
+                      ? 'Previsualizando documento PDF adjunto del buzón. Haz clic en ↗ para abrir en nueva pestaña.'
                       : ''}
                   </span>
 
+                  {/* Tarjeta de Descarga de Archivo XML (SUNAT UBL 2.1) */}
+                  {(() => {
+                    const isBuzonItem = Boolean(
+                      (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) ||
+                      (activeExpense.cr168_titulodegasto && activeExpense.cr168_titulodegasto.startsWith('[Factura]'))
+                    );
+                    const isXmlInPropina = Boolean(
+                      activeExpense.cr168_voucher_propina_name &&
+                      activeExpense.cr168_voucher_propina_name.toLowerCase().endsWith('.xml')
+                    );
+                    const xmlMatchInDetalle = activeExpense.cr168_detalle?.match(/\(XML:\s*([^)]+)\)/i);
+                    const hasXmlAttachment = Boolean(
+                      isXmlInPropina ||
+                      xmlMatchInDetalle ||
+                      (isBuzonItem && activeExpense.cr168_voucher_propina)
+                    );
+
+                    if (!hasXmlAttachment) return null;
+
+                    const xmlDisplayFileName = (
+                      isXmlInPropina
+                        ? activeExpense.cr168_voucher_propina_name
+                        : xmlMatchInDetalle
+                        ? xmlMatchInDetalle[1].trim()
+                        : activeExpense.cr168_voucher_desembolso_name
+                        ? activeExpense.cr168_voucher_desembolso_name.replace(/\.pdf$/i, '.xml')
+                        : `${activeExpense.cr168_rucdelcomercio || 'factura'}-${activeExpense.cr168_numerodecomprobante || activeExpense.cr168_reportedegastosid}.xml`
+                    );
+
+                    return (
+                      <section
+                        aria-label="Archivo XML del comprobante electrónico"
+                        style={{
+                          width: '100%',
+                          marginTop: '1rem',
+                          padding: '0.85rem 1rem',
+                          borderRadius: '10px',
+                          backgroundColor: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.75rem',
+                          flexWrap: 'wrap',
+                          boxSizing: 'border-box'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '180px', flex: '1 1 200px' }}>
+                          <div
+                            style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '8px',
+                              backgroundColor: '#ffedd5',
+                              color: '#ea580c',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}
+                            aria-hidden="true"
+                          >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="16 18 22 12 16 6" />
+                              <polyline points="8 6 2 12 8 18" />
+                            </svg>
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <span
+                                style={{
+                                  fontWeight: 600,
+                                  fontSize: '0.82rem',
+                                  color: 'var(--text-primary, #0f172a)',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  maxWidth: '240px',
+                                  display: 'inline-block'
+                                }}
+                                title={xmlDisplayFileName}
+                              >
+                                {xmlDisplayFileName}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  backgroundColor: '#fed7aa',
+                                  color: '#9a3412',
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.5px'
+                                }}
+                              >
+                                XML UBL 2.1
+                              </span>
+                            </div>
+                            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--text-secondary, #64748b)' }}>
+                              Comprobante electrónico SUNAT
+                            </p>
+                          </div>
+                        </div>
+
+                        <a
+                          href={`/api/gastos/xml?id=${activeExpense.cr168_reportedegastosid}`}
+                          download={xmlDisplayFileName}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            padding: '0.45rem 0.85rem',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            backgroundColor: '#ffffff',
+                            color: '#0f172a',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '6px',
+                            textDecoration: 'none',
+                            whiteSpace: 'nowrap',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease-in-out',
+                            flexShrink: 0
+                          }}
+                          title="Descargar archivo XML oficial SUNAT"
+                          aria-label={`Descargar archivo XML ${xmlDisplayFileName}`}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          <span>Descargar XML</span>
+                        </a>
+                      </section>
+                    );
+                  })()}
+
                   {/* Voucher de Propina (Cargado desde Dataverse) */}
-                  {activeExpense.cr168_voucher_propina && (
+                  {activeExpense.cr168_voucher_propina &&
+                   !(activeExpense.cr168_voucher_propina_name && activeExpense.cr168_voucher_propina_name.toLowerCase().endsWith('.xml')) &&
+                   !((activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) || (activeExpense.cr168_titulodegasto && activeExpense.cr168_titulodegasto.startsWith('[Factura]'))) && (
                     <div style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'center' }}>
                       <span className="info-label" style={{ alignSelf: 'flex-start', fontWeight: 'bold' }}>
                         Voucher de Propina (Cargada desde Dataverse)

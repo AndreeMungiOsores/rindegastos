@@ -99,8 +99,35 @@ async function handleInvoiceSync() {
 
         // Subir voucher PDF si existe buffer
         if (item.pdfBuffer && item.pdfBuffer.length > 0) {
-          await uploadFileToExpense(expenseId, item.pdfBuffer, item.pdfFileName);
+          await uploadFileToExpense(expenseId, item.pdfBuffer, item.pdfFileName, 'cr168_voucher_desembolso');
           console.log(`[InvoiceCronSync] Archivo PDF "${item.pdfFileName}" adjuntado al gasto ${expenseId}.`);
+        }
+
+        // Subir y almacenar archivo XML si existe (en Dataverse cr168_voucher_propina y caché local)
+        if (item.xmlContent || item.xmlBuffer) {
+          const xmlBuffer = item.xmlBuffer || Buffer.from(item.xmlContent, 'utf-8');
+          const xmlName = item.xmlFileName || `${item.pdfFileName.replace(/\.pdf$/i, '')}.xml`;
+
+          // 1. Guardar en disco local para acceso ultrarrápido
+          try {
+            const fs = (await import('fs')).default;
+            const path = (await import('path')).default;
+            const XML_CACHE_DIR = path.join(process.cwd(), '.cache', 'invoices', 'xml');
+            if (!fs.existsSync(XML_CACHE_DIR)) {
+              fs.mkdirSync(XML_CACHE_DIR, { recursive: true });
+            }
+            fs.writeFileSync(path.join(XML_CACHE_DIR, `${expenseId}.xml`), xmlBuffer);
+          } catch (cacheErr) {
+            console.warn('[InvoiceCronSync] No se pudo guardar XML en caché local:', cacheErr.message);
+          }
+
+          // 2. Subir a Dataverse en columna de archivo cr168_voucher_propina
+          try {
+            await uploadFileToExpense(expenseId, xmlBuffer, xmlName, 'cr168_voucher_propina');
+            console.log(`[InvoiceCronSync] Archivo XML "${xmlName}" adjuntado al gasto ${expenseId} en cr168_voucher_propina.`);
+          } catch (xmlUploadErr) {
+            console.warn(`[InvoiceCronSync] No se pudo adjuntar XML en Dataverse:`, xmlUploadErr.message);
+          }
 
           // Enriquecimiento automático: primero XML si existe (100% exacto), luego Kimi AI
           try {
@@ -116,7 +143,8 @@ async function handleInvoiceSync() {
             }
 
             const spotTag = formatProviderMetadataTag(invoiceData);
-            const baseDetalle = `[Factura Correo] ${item.subject} (${item.pdfFileName})`.trim();
+            const xmlSuffix = item.xmlFileName ? ` (XML: ${item.xmlFileName})` : '';
+            const baseDetalle = `[Factura Correo] ${item.subject} (${item.pdfFileName}${xmlSuffix})`.trim();
             const maxBaseLen = Math.max(20, 390 - spotTag.length);
             const safeBaseDetalle = baseDetalle.length > maxBaseLen ? baseDetalle.substring(0, maxBaseLen) : baseDetalle;
 
