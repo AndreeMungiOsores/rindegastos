@@ -2906,7 +2906,155 @@ export default function AdminDashboard({ onLogout }) {
               </div>
             ) : activeModule === 'buzon' && buzonSubTab === 'estadisticas' ? (
               <div className="analytics-dashboard-container">
-                {/* 1. KPIs Ejecutivos Financieros */}
+                {/* 1. Concentración de Facturación por Proveedor */}
+                <div className="analytics-section-card full-width">
+                  <div className="analytics-section-header">
+                    <div>
+                      <h3 className="analytics-section-title">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                          <circle cx="8.5" cy="7" r="4"/>
+                          <polyline points="17 11 19 13 23 9"/>
+                        </svg>
+                        Concentración de Facturación por Proveedor
+                      </h3>
+                    </div>
+                    <span className="analytics-section-badge">{buzonAnalyticsData.byProvider.length} Proveedores</span>
+                  </div>
+
+                  <div className="ranking-table-wrapper" style={{ overflowX: 'auto' }}>
+                    {sortedBuzonProviders.length === 0 ? (
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '1.5rem', textAlign: 'center' }}>
+                        No hay proveedores para mostrar con los filtros seleccionados.
+                      </p>
+                    ) : (
+                      <table className="ranking-table" style={{ width: '100%' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '48px', textAlign: 'center', whiteSpace: 'nowrap' }}>#</th>
+                            <th
+                              style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}
+                              onClick={() => handleBuzonSort('nombre')}
+                              title="Ordenar por Razón Social"
+                            >
+                              Proveedor / Razón Social {renderBuzonSortArrow('nombre')}
+                            </th>
+                            <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>
+                              Empresas
+                            </th>
+                            <th
+                              style={{ textAlign: 'center', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '85px' }}
+                              onClick={() => handleBuzonSort('facturas')}
+                              title="Ordenar por cantidad de facturas"
+                            >
+                              Facturas {renderBuzonSortArrow('facturas')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '135px' }}
+                              onClick={() => handleBuzonSort('total')}
+                              title="Ordenar por monto total facturado"
+                            >
+                              Total Facturado {renderBuzonSortArrow('total')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '120px' }}
+                              onClick={() => handleBuzonSort('spot')}
+                              title="Ordenar por detracción SPOT"
+                            >
+                              Detracción SPOT {renderBuzonSortArrow('spot')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '135px' }}
+                              onClick={() => handleBuzonSort('neto')}
+                              title="Ordenar por neto a pagar"
+                            >
+                              Neto Proveedor {renderBuzonSortArrow('neto')}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedBuzonProviders.map((p, idx) => (
+                            <tr key={p.key}>
+                              <td style={{ textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                <span className={`ranking-badge ${idx === 0 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-1' : idx === 1 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-2' : idx === 2 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-3' : ''}`}>
+                                  {idx + 1}
+                                </span>
+                              </td>
+                              <td style={{ verticalAlign: 'middle' }}>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{p.nombre}</div>
+                              </td>
+                              <td style={{ verticalAlign: 'middle' }}>
+                                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                  {p.empresasList.map((emp) => (
+                                    <span
+                                      key={emp}
+                                      style={{
+                                        fontSize: '0.7rem',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        fontWeight: 600,
+                                        whiteSpace: 'nowrap',
+                                        background: emp === 'BLISSCORP' ? '#eff6ff' : emp === 'BLISSFARMA' ? '#f0fdf4' : '#faf5ff',
+                                        color: emp === 'BLISSCORP' ? '#1d4ed8' : emp === 'BLISSFARMA' ? '#15803d' : '#7e22ce',
+                                        border: `1px solid ${emp === 'BLISSCORP' ? '#bfdbfe' : emp === 'BLISSFARMA' ? '#bbf7d0' : '#e9d5ff'}`
+                                      }}
+                                    >
+                                      {emp}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 600, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                {p.facturasCount}
+                              </td>
+                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1px' }}>
+                                  {p.totalPEN > 0 && (
+                                    <span style={{ fontWeight: 700, color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
+                                      S/ {p.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  )}
+                                  {p.totalUSD > 0 && (
+                                    <span style={{ fontWeight: 700, color: '#0284c7', fontSize: p.totalPEN > 0 ? '0.78rem' : '0.88rem', whiteSpace: 'nowrap' }}>
+                                      $ {p.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                                    </span>
+                                  )}
+                                  {p.totalPEN === 0 && p.totalUSD === 0 && <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                {p.detraccionPEN > 0 ? (
+                                  <span style={{ fontWeight: 600, color: '#7c3aed', whiteSpace: 'nowrap' }}>
+                                    S/ {p.detraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#cbd5e1' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1px' }}>
+                                  {p.netoPEN > 0 && (
+                                    <span style={{ fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>
+                                      S/ {p.netoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  )}
+                                  {p.netoUSD > 0 && (
+                                    <span style={{ fontWeight: 600, color: '#0284c7', fontSize: p.netoPEN > 0 ? '0.78rem' : '0.88rem', whiteSpace: 'nowrap' }}>
+                                      $ {p.netoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                                    </span>
+                                  )}
+                                  {p.netoPEN === 0 && p.netoUSD === 0 && <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. KPIs Ejecutivos Financieros */}
                 <section className="analytics-kpis-grid">
                   <div className="analytics-kpi-card">
                     <div className="kpi-header">
@@ -3269,154 +3417,6 @@ export default function AdminDashboard({ onLogout }) {
                         </span>
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* 4. Concentración y Ranking Maestro por Proveedor */}
-                <div className="analytics-section-card full-width">
-                  <div className="analytics-section-header">
-                    <div>
-                      <h3 className="analytics-section-title">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                          <circle cx="8.5" cy="7" r="4"/>
-                          <polyline points="17 11 19 13 23 9"/>
-                        </svg>
-                        Concentración de Facturación por Proveedor
-                      </h3>
-                    </div>
-                    <span className="analytics-section-badge">{buzonAnalyticsData.byProvider.length} Proveedores</span>
-                  </div>
-
-                  <div className="ranking-table-wrapper" style={{ overflowX: 'auto' }}>
-                    {sortedBuzonProviders.length === 0 ? (
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '1.5rem', textAlign: 'center' }}>
-                        No hay proveedores para mostrar con los filtros seleccionados.
-                      </p>
-                    ) : (
-                      <table className="ranking-table" style={{ width: '100%' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ width: '48px', textAlign: 'center', whiteSpace: 'nowrap' }}>#</th>
-                            <th
-                              style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}
-                              onClick={() => handleBuzonSort('nombre')}
-                              title="Ordenar por Razón Social"
-                            >
-                              Proveedor / Razón Social {renderBuzonSortArrow('nombre')}
-                            </th>
-                            <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>
-                              Empresas
-                            </th>
-                            <th
-                              style={{ textAlign: 'center', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '85px' }}
-                              onClick={() => handleBuzonSort('facturas')}
-                              title="Ordenar por cantidad de facturas"
-                            >
-                              Facturas {renderBuzonSortArrow('facturas')}
-                            </th>
-                            <th
-                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '135px' }}
-                              onClick={() => handleBuzonSort('total')}
-                              title="Ordenar por monto total facturado"
-                            >
-                              Total Facturado {renderBuzonSortArrow('total')}
-                            </th>
-                            <th
-                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '120px' }}
-                              onClick={() => handleBuzonSort('spot')}
-                              title="Ordenar por detracción SPOT"
-                            >
-                              Detracción SPOT {renderBuzonSortArrow('spot')}
-                            </th>
-                            <th
-                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '135px' }}
-                              onClick={() => handleBuzonSort('neto')}
-                              title="Ordenar por neto a pagar"
-                            >
-                              Neto Proveedor {renderBuzonSortArrow('neto')}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sortedBuzonProviders.map((p, idx) => (
-                            <tr key={p.key}>
-                              <td style={{ textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                <span className={`ranking-badge ${idx === 0 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-1' : idx === 1 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-2' : idx === 2 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-3' : ''}`}>
-                                  {idx + 1}
-                                </span>
-                              </td>
-                              <td style={{ verticalAlign: 'middle' }}>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{p.nombre}</div>
-                              </td>
-                              <td style={{ verticalAlign: 'middle' }}>
-                                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                  {p.empresasList.map((emp) => (
-                                    <span
-                                      key={emp}
-                                      style={{
-                                        fontSize: '0.7rem',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        fontWeight: 600,
-                                        whiteSpace: 'nowrap',
-                                        background: emp === 'BLISSCORP' ? '#eff6ff' : emp === 'BLISSFARMA' ? '#f0fdf4' : '#faf5ff',
-                                        color: emp === 'BLISSCORP' ? '#1d4ed8' : emp === 'BLISSFARMA' ? '#15803d' : '#7e22ce',
-                                        border: `1px solid ${emp === 'BLISSCORP' ? '#bfdbfe' : emp === 'BLISSFARMA' ? '#bbf7d0' : '#e9d5ff'}`
-                                      }}
-                                    >
-                                      {emp}
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                              <td style={{ textAlign: 'center', fontWeight: 600, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                {p.facturasCount}
-                              </td>
-                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1px' }}>
-                                  {p.totalPEN > 0 && (
-                                    <span style={{ fontWeight: 700, color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
-                                      S/ {p.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                  )}
-                                  {p.totalUSD > 0 && (
-                                    <span style={{ fontWeight: 700, color: '#0284c7', fontSize: p.totalPEN > 0 ? '0.78rem' : '0.88rem', whiteSpace: 'nowrap' }}>
-                                      $ {p.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                                    </span>
-                                  )}
-                                  {p.totalPEN === 0 && p.totalUSD === 0 && <span style={{ color: '#cbd5e1' }}>—</span>}
-                                </div>
-                              </td>
-                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                {p.detraccionPEN > 0 ? (
-                                  <span style={{ fontWeight: 600, color: '#7c3aed', whiteSpace: 'nowrap' }}>
-                                    S/ {p.detraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                ) : (
-                                  <span style={{ color: '#cbd5e1' }}>—</span>
-                                )}
-                              </td>
-                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1px' }}>
-                                  {p.netoPEN > 0 && (
-                                    <span style={{ fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>
-                                      S/ {p.netoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                  )}
-                                  {p.netoUSD > 0 && (
-                                    <span style={{ fontWeight: 600, color: '#0284c7', fontSize: p.netoPEN > 0 ? '0.78rem' : '0.88rem', whiteSpace: 'nowrap' }}>
-                                      $ {p.netoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                                    </span>
-                                  )}
-                                  {p.netoPEN === 0 && p.netoUSD === 0 && <span style={{ color: '#cbd5e1' }}>—</span>}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
                   </div>
                 </div>
               </div>
