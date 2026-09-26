@@ -214,6 +214,10 @@ export default function AdminDashboard({ onLogout }) {
   const [isExtractingVoucherId, setIsExtractingVoucherId] = useState(false);
   const [syncBanner, setSyncBanner] = useState(null);
 
+  // Ordenamiento interactivo de proveedores en estadísticas financieras de buzón
+  const [buzonProviderSortKey, setBuzonProviderSortKey] = useState('total'); // 'total' | 'nombre' | 'ruc' | 'facturas' | 'spot' | 'neto' | 'estado'
+  const [buzonProviderSortDir, setBuzonProviderSortDir] = useState('desc'); // 'asc' | 'desc'
+
   // Filtro de Rango de Fechas (Calendario Visual)
   const [filterStartDate, setFilterStartDate] = useState(null); // 'YYYY-MM-DD'
   const [filterEndDate, setFilterEndDate] = useState(null); // 'YYYY-MM-DD'
@@ -1104,7 +1108,11 @@ export default function AdminDashboard({ onLogout }) {
       }
 
       if (item.cr168_empresa) {
-        pGroup.empresas.add(item.cr168_empresa);
+        let emp = (item.cr168_empresa || '').trim().toUpperCase();
+        if (emp.includes('BLISSCORP')) emp = 'BLISSCORP';
+        else if (emp.includes('BLISSFARMA')) emp = 'BLISSFARMA';
+        else if (emp.includes('SKINBLISS')) emp = 'SKINBLISS';
+        pGroup.empresas.add(emp);
       }
     }
 
@@ -1157,7 +1165,11 @@ export default function AdminDashboard({ onLogout }) {
     // Paso 4: Agrupación por Empresa Receptora
     const empresaMap = new Map();
     for (const item of list) {
-      const emp = (item.cr168_empresa || 'Sin Empresa').trim();
+      let emp = (item.cr168_empresa || 'Sin Empresa').trim();
+      const normEmp = emp.toUpperCase();
+      if (normEmp.includes('BLISSCORP')) emp = 'BLISSCORP';
+      else if (normEmp.includes('BLISSFARMA')) emp = 'BLISSFARMA';
+      else if (normEmp.includes('SKINBLISS')) emp = 'SKINBLISS';
       if (!empresaMap.has(emp)) {
         empresaMap.set(emp, { empresa: emp, count: 0, totalPEN: 0, totalUSD: 0, detraccionPEN: 0 });
       }
@@ -1209,6 +1221,63 @@ export default function AdminDashboard({ onLogout }) {
       byEmpresa
     };
   }, [buzonExpenses, empresaFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
+
+  // Lista ordenada interactivamente para el ranking de proveedores en estadísticas de buzón
+  const sortedBuzonProviders = useMemo(() => {
+    const list = [...buzonAnalyticsData.byProvider];
+    return list.sort((a, b) => {
+      let diff = 0;
+      if (buzonProviderSortKey === 'nombre') {
+        const valA = (a.nombre || '').toLowerCase();
+        const valB = (b.nombre || '').toLowerCase();
+        return buzonProviderSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      } else if (buzonProviderSortKey === 'ruc') {
+        const valA = a.ruc || '99999999999';
+        const valB = b.ruc || '99999999999';
+        return buzonProviderSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      } else if (buzonProviderSortKey === 'facturas') {
+        diff = a.facturasCount - b.facturasCount;
+      } else if (buzonProviderSortKey === 'spot') {
+        diff = a.detraccionPEN - b.detraccionPEN;
+      } else if (buzonProviderSortKey === 'neto') {
+        const wA = a.netoPEN + (a.netoUSD * 3.75);
+        const wB = b.netoPEN + (b.netoUSD * 3.75);
+        diff = wA - wB;
+      } else if (buzonProviderSortKey === 'estado') {
+        diff = a.pendientesCount - b.pendientesCount;
+      } else {
+        // default 'total' o '% part'
+        const wA = a.totalPEN + (a.totalUSD * 3.75);
+        const wB = b.totalPEN + (b.totalUSD * 3.75);
+        diff = wA - wB;
+      }
+      return buzonProviderSortDir === 'asc' ? diff : -diff;
+    });
+  }, [buzonAnalyticsData.byProvider, buzonProviderSortKey, buzonProviderSortDir]);
+
+  const handleBuzonSort = (key) => {
+    if (buzonProviderSortKey === key) {
+      setBuzonProviderSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setBuzonProviderSortKey(key);
+      setBuzonProviderSortDir(key === 'nombre' || key === 'ruc' ? 'asc' : 'desc');
+    }
+  };
+
+  const renderBuzonSortArrow = (key) => {
+    if (buzonProviderSortKey !== key) {
+      return (
+        <span style={{ color: '#94a3b8', fontSize: '0.68rem', marginLeft: '4px', opacity: 0.6 }} aria-hidden="true">
+          ↕
+        </span>
+      );
+    }
+    return (
+      <span style={{ color: 'var(--navy-900)', fontSize: '0.72rem', marginLeft: '4px', fontWeight: 800 }} aria-hidden="true">
+        {buzonProviderSortDir === 'asc' ? '▲' : '▼'}
+      </span>
+    );
+  };
 
   // Calcular la suma de monto SOLO para las filas que estén seleccionadas por el usuario
   const selectedSum = useMemo(() => {
@@ -3222,58 +3291,110 @@ export default function AdminDashboard({ onLogout }) {
                     <span className="analytics-section-badge">{buzonAnalyticsData.byProvider.length} Proveedores</span>
                   </div>
 
-                  <div className="ranking-table-wrapper">
-                    {buzonAnalyticsData.byProvider.length === 0 ? (
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '1rem' }}>No hay proveedores para mostrar con los filtros seleccionados.</p>
+                  <div className="ranking-table-wrapper" style={{ overflowX: 'auto' }}>
+                    {sortedBuzonProviders.length === 0 ? (
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '1.5rem', textAlign: 'center' }}>
+                        No hay proveedores para mostrar con los filtros seleccionados.
+                      </p>
                     ) : (
-                      <table className="ranking-table">
+                      <table className="ranking-table" style={{ width: '100%', minWidth: '980px' }}>
                         <thead>
                           <tr>
-                            <th style={{ width: '40px' }}>#</th>
-                            <th>Proveedor / Razón Social</th>
-                            <th>RUC / ID Fiscal</th>
-                            <th>Empresas</th>
-                            <th style={{ textAlign: 'center' }}>Facturas</th>
-                            <th style={{ textAlign: 'right' }}>Total S/</th>
-                            <th style={{ textAlign: 'right' }}>Total USD $</th>
-                            <th style={{ textAlign: 'right' }}>Detracción S/</th>
-                            <th style={{ textAlign: 'right' }}>Neto Proveedor</th>
-                            <th style={{ textAlign: 'center' }}>Estado de Pago</th>
-                            <th style={{ textAlign: 'right' }}>% Part.</th>
+                            <th style={{ width: '48px', textAlign: 'center', whiteSpace: 'nowrap' }}>#</th>
+                            <th
+                              style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}
+                              onClick={() => handleBuzonSort('nombre')}
+                              title="Ordenar por Razón Social"
+                            >
+                              Proveedor / Razón Social {renderBuzonSortArrow('nombre')}
+                            </th>
+                            <th
+                              style={{ cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '125px' }}
+                              onClick={() => handleBuzonSort('ruc')}
+                              title="Ordenar por RUC"
+                            >
+                              RUC / ID Fiscal {renderBuzonSortArrow('ruc')}
+                            </th>
+                            <th style={{ whiteSpace: 'nowrap', minWidth: '120px' }}>
+                              Empresas
+                            </th>
+                            <th
+                              style={{ textAlign: 'center', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '75px' }}
+                              onClick={() => handleBuzonSort('facturas')}
+                              title="Ordenar por cantidad de facturas"
+                            >
+                              Facturas {renderBuzonSortArrow('facturas')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '130px' }}
+                              onClick={() => handleBuzonSort('total')}
+                              title="Ordenar por monto total facturado"
+                            >
+                              Total Facturado {renderBuzonSortArrow('total')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '115px' }}
+                              onClick={() => handleBuzonSort('spot')}
+                              title="Ordenar por detracción SPOT"
+                            >
+                              Detracción SPOT {renderBuzonSortArrow('spot')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', minWidth: '125px' }}
+                              onClick={() => handleBuzonSort('neto')}
+                              title="Ordenar por neto a pagar"
+                            >
+                              Neto Proveedor {renderBuzonSortArrow('neto')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'center', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '130px' }}
+                              onClick={() => handleBuzonSort('estado')}
+                              title="Ordenar por estado de pago"
+                            >
+                              Estado de Pago {renderBuzonSortArrow('estado')}
+                            </th>
+                            <th
+                              style={{ textAlign: 'right', cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', width: '85px' }}
+                              onClick={() => handleBuzonSort('total')}
+                              title="Ordenar por porcentaje de participación"
+                            >
+                              % Part. {renderBuzonSortArrow('total')}
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {buzonAnalyticsData.byProvider.map((p, idx) => (
+                          {sortedBuzonProviders.map((p, idx) => (
                             <tr key={p.key}>
-                              <td>
-                                <span className={`ranking-badge ${idx === 0 ? 'rank-1' : idx === 1 ? 'rank-2' : idx === 2 ? 'rank-3' : ''}`}>
+                              <td style={{ textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                <span className={`ranking-badge ${idx === 0 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-1' : idx === 1 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-2' : idx === 2 && buzonProviderSortKey === 'total' && buzonProviderSortDir === 'desc' ? 'rank-3' : ''}`}>
                                   {idx + 1}
                                 </span>
                               </td>
-                              <td>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.nombre}</div>
+                              <td style={{ verticalAlign: 'middle' }}>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>{p.nombre}</div>
                               </td>
-                              <td>
+                              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                                 {p.ruc ? (
-                                  <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', background: '#f1f5f9', color: '#0f172a', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', background: '#f1f5f9', color: '#0f172a', padding: '3px 7px', borderRadius: '4px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-block' }}>
                                     {p.ruc}
                                   </span>
                                 ) : (
-                                  <span style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  <span style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', padding: '3px 7px', borderRadius: '4px', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-block' }}>
                                     Exterior / Sin RUC
                                   </span>
                                 )}
                               </td>
-                              <td>
-                                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                              <td style={{ verticalAlign: 'middle' }}>
+                                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
                                   {p.empresasList.map((emp) => (
                                     <span
                                       key={emp}
                                       style={{
                                         fontSize: '0.7rem',
-                                        padding: '1px 5px',
-                                        borderRadius: '3px',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
                                         fontWeight: 600,
+                                        whiteSpace: 'nowrap',
                                         background: emp === 'BLISSCORP' ? '#eff6ff' : emp === 'BLISSFARMA' ? '#f0fdf4' : '#faf5ff',
                                         color: emp === 'BLISSCORP' ? '#1d4ed8' : emp === 'BLISSFARMA' ? '#15803d' : '#7e22ce',
                                         border: `1px solid ${emp === 'BLISSCORP' ? '#bfdbfe' : emp === 'BLISSFARMA' ? '#bbf7d0' : '#e9d5ff'}`
@@ -3284,28 +3405,57 @@ export default function AdminDashboard({ onLogout }) {
                                   ))}
                                 </div>
                               </td>
-                              <td style={{ textAlign: 'center', fontWeight: 600 }}>{p.facturasCount}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 700, color: p.totalPEN > 0 ? 'var(--accent-color)' : '#94a3b8' }}>
-                                {p.totalPEN > 0 ? `S/ ${p.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                              <td style={{ textAlign: 'center', fontWeight: 600, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                {p.facturasCount}
                               </td>
-                              <td style={{ textAlign: 'right', fontWeight: 700, color: p.totalUSD > 0 ? '#0284c7' : '#94a3b8' }}>
-                                {p.totalUSD > 0 ? `$ ${p.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1px' }}>
+                                  {p.totalPEN > 0 && (
+                                    <span style={{ fontWeight: 700, color: 'var(--accent-color)', whiteSpace: 'nowrap' }}>
+                                      S/ {p.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  )}
+                                  {p.totalUSD > 0 && (
+                                    <span style={{ fontWeight: 700, color: '#0284c7', fontSize: p.totalPEN > 0 ? '0.78rem' : '0.88rem', whiteSpace: 'nowrap' }}>
+                                      $ {p.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                                    </span>
+                                  )}
+                                  {p.totalPEN === 0 && p.totalUSD === 0 && <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </div>
                               </td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: p.detraccionPEN > 0 ? '#7c3aed' : '#94a3b8' }}>
-                                {p.detraccionPEN > 0 ? `S/ ${p.detraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                {p.detraccionPEN > 0 ? (
+                                  <span style={{ fontWeight: 600, color: '#7c3aed', whiteSpace: 'nowrap' }}>
+                                    S/ {p.detraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#cbd5e1' }}>—</span>
+                                )}
                               </td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: '#334155' }}>
-                                {p.totalUSD > 0
-                                  ? `$ ${p.netoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : `S/ ${p.netoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '1px' }}>
+                                  {p.netoPEN > 0 && (
+                                    <span style={{ fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>
+                                      S/ {p.netoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  )}
+                                  {p.netoUSD > 0 && (
+                                    <span style={{ fontWeight: 600, color: '#0284c7', fontSize: p.netoPEN > 0 ? '0.78rem' : '0.88rem', whiteSpace: 'nowrap' }}>
+                                      $ {p.netoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                                    </span>
+                                  )}
+                                  {p.netoPEN === 0 && p.netoUSD === 0 && <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </div>
                               </td>
-                              <td style={{ textAlign: 'center' }}>
+                              <td style={{ textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                                 <span
                                   style={{
                                     fontSize: '0.75rem',
-                                    padding: '2px 7px',
+                                    padding: '3px 8px',
                                     borderRadius: '4px',
                                     fontWeight: 600,
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-block',
                                     background: p.pendientesCount === 0 ? '#ecfdf5' : p.vencidasCount > 0 ? '#fef2f2' : '#fffbeb',
                                     color: p.pendientesCount === 0 ? '#047857' : p.vencidasCount > 0 ? '#b91c1c' : '#b45309',
                                     border: `1px solid ${p.pendientesCount === 0 ? '#a7f3d0' : p.vencidasCount > 0 ? '#fca5a5' : '#fde68a'}`
@@ -3316,8 +3466,22 @@ export default function AdminDashboard({ onLogout }) {
                                     : `${p.pagadasCount} Pag. / ${p.pendientesCount} Pend.`}
                                 </span>
                               </td>
-                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                {p.percentage.toFixed(1)}%
+                              <td style={{ textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', minWidth: '65px' }}>
+                                  <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.88rem' }}>
+                                    {p.percentage.toFixed(1)}%
+                                  </span>
+                                  <div style={{ width: '100%', height: '4px', background: '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
+                                    <div
+                                      style={{
+                                        width: `${Math.min(p.percentage, 100)}%`,
+                                        height: '100%',
+                                        background: p.percentage > 50 ? '#eab308' : p.percentage > 20 ? 'var(--accent-color)' : '#94a3b8',
+                                        borderRadius: '2px'
+                                      }}
+                                    />
+                                  </div>
+                                </div>
                               </td>
                             </tr>
                           ))}
