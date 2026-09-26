@@ -2906,7 +2906,99 @@ export default function AdminDashboard({ onLogout }) {
               </div>
             ) : activeModule === 'buzon' && buzonSubTab === 'estadisticas' ? (
               <div className="analytics-dashboard-container">
-                {/* 1. Concentración de Facturación por Proveedor */}
+                {/* 1. KPIs Ejecutivos Financieros */}
+                <section className="analytics-kpis-grid">
+                  <div className="analytics-kpi-card">
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Total Facturado Proveedores</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span className="analytics-kpi-value" style={{ fontSize: '1.6rem' }}>
+                        S/ {buzonAnalyticsData.totalAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {buzonAnalyticsData.totalAmountUSD > 0 && (
+                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0369a1' }}>
+                          + $ {buzonAnalyticsData.totalAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </span>
+                      )}
+                    </div>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.totalCount} comprobantes ({buzonAnalyticsData.byProvider.length} proveedores registrados)
+                    </span>
+                  </div>
+
+                  <div className="analytics-kpi-card success">
+                    <div className="kpi-header">
+                      <span className="kpi-icon" style={{ color: '#059669', background: '#ecfdf5' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Total Pagado / Liquidado</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span className="analytics-kpi-value" style={{ color: '#047857', fontSize: '1.6rem' }}>
+                        S/ {buzonAnalyticsData.pagadasAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {buzonAnalyticsData.pagadasAmountUSD > 0 && (
+                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#047857' }}>
+                          + $ {buzonAnalyticsData.pagadasAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </span>
+                      )}
+                    </div>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.pagadasCount} facturas canceladas ({buzonAnalyticsData.totalCount > 0 ? Math.round((buzonAnalyticsData.pagadasCount / buzonAnalyticsData.totalCount) * 100) : 0}% efectividad)
+                    </span>
+                  </div>
+
+                  <div className="analytics-kpi-card warning">
+                    <div className="kpi-header">
+                      <span className="kpi-icon" style={{ color: '#d97706', background: '#fffbeb' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Cuentas por Pagar (Pendientes)</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span className="analytics-kpi-value" style={{ color: buzonAnalyticsData.vencidasCount > 0 ? '#b91c1c' : '#b45309', fontSize: '1.6rem' }}>
+                        S/ {buzonAnalyticsData.pendientesAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {buzonAnalyticsData.pendientesAmountUSD > 0 && (
+                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: buzonAnalyticsData.vencidasCount > 0 ? '#b91c1c' : '#b45309' }}>
+                          + $ {buzonAnalyticsData.pendientesAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </span>
+                      )}
+                    </div>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.pendientesCount} por pagar ({buzonAnalyticsData.vencidasCount > 0 ? `${buzonAnalyticsData.vencidasCount} facturas vencidas` : 'todas al día'})
+                    </span>
+                  </div>
+
+                  <div className="analytics-kpi-card purple">
+                    <div className="kpi-header">
+                      <span className="kpi-icon" style={{ color: '#7c3aed', background: '#f5f3ff' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Detracciones SPOT (Banco Nación)</span>
+                    </div>
+                    <span className="analytics-kpi-value" style={{ color: '#6d28d9', fontSize: '1.6rem' }}>
+                      S/ {buzonAnalyticsData.totalDetraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.spotCount} comprobantes con SPOT (Neto prov: S/ {buzonAnalyticsData.totalNetoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                    </span>
+                  </div>
+                </section>
+
+                {/* 2. Concentración de Facturación por Proveedor */}
                 <div className="analytics-section-card full-width">
                   <div className="analytics-section-header">
                     <div>
@@ -3054,99 +3146,7 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                 </div>
 
-                {/* 2. KPIs Ejecutivos Financieros */}
-                <section className="analytics-kpis-grid">
-                  <div className="analytics-kpi-card">
-                    <div className="kpi-header">
-                      <span className="kpi-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                        </svg>
-                      </span>
-                      <span className="analytics-kpi-label">Total Facturado Proveedores</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                      <span className="analytics-kpi-value" style={{ fontSize: '1.6rem' }}>
-                        S/ {buzonAnalyticsData.totalAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {buzonAnalyticsData.totalAmountUSD > 0 && (
-                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0369a1' }}>
-                          + $ {buzonAnalyticsData.totalAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                        </span>
-                      )}
-                    </div>
-                    <span className="analytics-kpi-sub">
-                      {buzonAnalyticsData.totalCount} comprobantes ({buzonAnalyticsData.byProvider.length} proveedores registrados)
-                    </span>
-                  </div>
-
-                  <div className="analytics-kpi-card success">
-                    <div className="kpi-header">
-                      <span className="kpi-icon" style={{ color: '#059669', background: '#ecfdf5' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
-                      </span>
-                      <span className="analytics-kpi-label">Total Pagado / Liquidado</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                      <span className="analytics-kpi-value" style={{ color: '#047857', fontSize: '1.6rem' }}>
-                        S/ {buzonAnalyticsData.pagadasAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {buzonAnalyticsData.pagadasAmountUSD > 0 && (
-                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#047857' }}>
-                          + $ {buzonAnalyticsData.pagadasAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                        </span>
-                      )}
-                    </div>
-                    <span className="analytics-kpi-sub">
-                      {buzonAnalyticsData.pagadasCount} facturas canceladas ({buzonAnalyticsData.totalCount > 0 ? Math.round((buzonAnalyticsData.pagadasCount / buzonAnalyticsData.totalCount) * 100) : 0}% efectividad)
-                    </span>
-                  </div>
-
-                  <div className="analytics-kpi-card warning">
-                    <div className="kpi-header">
-                      <span className="kpi-icon" style={{ color: '#d97706', background: '#fffbeb' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                      </span>
-                      <span className="analytics-kpi-label">Cuentas por Pagar (Pendientes)</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                      <span className="analytics-kpi-value" style={{ color: buzonAnalyticsData.vencidasCount > 0 ? '#b91c1c' : '#b45309', fontSize: '1.6rem' }}>
-                        S/ {buzonAnalyticsData.pendientesAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {buzonAnalyticsData.pendientesAmountUSD > 0 && (
-                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: buzonAnalyticsData.vencidasCount > 0 ? '#b91c1c' : '#b45309' }}>
-                          + $ {buzonAnalyticsData.pendientesAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                        </span>
-                      )}
-                    </div>
-                    <span className="analytics-kpi-sub">
-                      {buzonAnalyticsData.pendientesCount} por pagar ({buzonAnalyticsData.vencidasCount > 0 ? `${buzonAnalyticsData.vencidasCount} facturas vencidas` : 'todas al día'})
-                    </span>
-                  </div>
-
-                  <div className="analytics-kpi-card purple">
-                    <div className="kpi-header">
-                      <span className="kpi-icon" style={{ color: '#7c3aed', background: '#f5f3ff' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
-                        </svg>
-                      </span>
-                      <span className="analytics-kpi-label">Detracciones SPOT (Banco Nación)</span>
-                    </div>
-                    <span className="analytics-kpi-value" style={{ color: '#6d28d9', fontSize: '1.6rem' }}>
-                      S/ {buzonAnalyticsData.totalDetraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <span className="analytics-kpi-sub">
-                      {buzonAnalyticsData.spotCount} comprobantes con SPOT (Neto prov: S/ {buzonAnalyticsData.totalNetoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                    </span>
-                  </div>
-                </section>
-
-                {/* 2. Evolución Mensual de Facturación */}
+                {/* 3. Evolución Mensual de Facturación */}
                 <div className="analytics-section-card full-width">
                   <div className="analytics-section-header">
                     <h3 className="analytics-section-title">
