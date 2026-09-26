@@ -117,6 +117,19 @@ function getProviderInvoiceFinancials(item) {
   };
 }
 
+/**
+ * Normaliza nombres comerciales de proveedores para emparejamiento por similitud
+ * Remueve sufijos societarios comunes (S.A.C., S.A., E.I.R.L., etc.) y caracteres especiales
+ */
+function normalizeProviderName(name) {
+  if (!name) return '';
+  let norm = name.toUpperCase().trim();
+  norm = norm.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  norm = norm.replace(/\b(S\.?A\.?C\.?|S\.?A\.?|E\.?I\.?R\.?L\.?|S\.?R\.?L\.?|SOCIEDAD ANONIMA CERRADA|SOCIEDAD ANONIMA|EMPRESA INDIVIDUAL DE RESPONSABILIDAD LIMITADA|CORPORATION|CORP|INC|LLC|LTD|SUCURSAL DEL PERU|DEL PERU)\b/gi, ' ');
+  norm = norm.replace(/[^A-Z0-9\s]/g, ' ');
+  return norm.replace(/\s+/g, ' ').trim();
+}
+
 export default function AdminDashboard({ onLogout }) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -930,6 +943,272 @@ export default function AdminDashboard({ onLogout }) {
       byMonth
     };
   }, [filteredExpenses]);
+
+  // Cálculos de Analítica Financiera para Buzón de Proveedores (Cuentas por Pagar & Concentración de Proveedores)
+  const buzonAnalyticsData = useMemo(() => {
+    const list = buzonExpenses.filter(item => {
+      const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
+      const matchesEstado = estadoFilter ? String(item.cr168_estado) === String(estadoFilter) : true;
+      const matchesAprobado = aprobadoFilter ? String(item.cr168_aprobado) === String(aprobadoFilter) : true;
+      
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = searchTerm ? (
+        (item.cr168_empresa && item.cr168_empresa.toLowerCase().includes(searchLower)) ||
+        (item.cr168_nombredelcomercio && item.cr168_nombredelcomercio.toLowerCase().includes(searchLower)) ||
+        (item.cr168_rucdelcomercio && item.cr168_rucdelcomercio.toLowerCase().includes(searchLower)) ||
+        (item.cr168_numerodecomprobante && item.cr168_numerodecomprobante.toLowerCase().includes(searchLower)) ||
+        (item.cr168_detalle && item.cr168_detalle.toLowerCase().includes(searchLower)) ||
+        (item.cr168_id_desembolso && String(item.cr168_id_desembolso).toLowerCase().includes(searchLower))
+      ) : true;
+
+      let matchesDateRange = true;
+      if (filterStartDate || filterEndDate) {
+        if (item.cr168_fechadelgasto) {
+          const expenseDateStr = item.cr168_fechadelgasto.split('T')[0];
+          if (filterStartDate && expenseDateStr < filterStartDate) matchesDateRange = false;
+          if (filterEndDate && expenseDateStr > filterEndDate) matchesDateRange = false;
+        } else {
+          matchesDateRange = false;
+        }
+      }
+
+      return matchesEmpresa && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange;
+    });
+
+    let totalAmountPEN = 0;
+    let totalAmountUSD = 0;
+    let totalNetoPEN = 0;
+    let totalNetoUSD = 0;
+    let totalDetraccionPEN = 0;
+    let spotCount = 0;
+    let pagadasCount = 0;
+    let pagadasAmountPEN = 0;
+    let pagadasAmountUSD = 0;
+    let pendientesCount = 0;
+    let pendientesAmountPEN = 0;
+    let pendientesAmountUSD = 0;
+    let vencidasCount = 0;
+    let vencidasAmountPEN = 0;
+    let vencidasAmountUSD = 0;
+    let porVencerCount = 0;
+    let porVencerAmountPEN = 0;
+    let alDiaCount = 0;
+    let countContado = 0;
+    let countCredito = 0;
+
+    // Paso 1: Mapeo de nombres normalizados a RUCs oficiales conocidos
+    const normNameToRuc = new Map();
+    for (const item of list) {
+      const ruc = (item.cr168_rucdelcomercio || '').trim().replace(/\D/g, '');
+      const normName = normalizeProviderName(item.cr168_nombredelcomercio);
+      if (ruc.length === 11 && normName) {
+        normNameToRuc.set(normName, ruc);
+      }
+    }
+
+    // Paso 2: Agrupación por RUC (o RUC inferido) y por similitud de nombre
+    const providerGroups = new Map();
+
+    for (const item of list) {
+      const fin = getProviderInvoiceFinancials(item);
+      const isPaid = isExpensePaid(item);
+      const monto = Number(item.cr168_montototalincluyendoigv || 0);
+      const vencStatus = getVencimientoStatus(fin.fechaVencimiento, isPaid);
+
+      if (fin.moneda === 'USD') {
+        totalAmountUSD += monto;
+        totalNetoUSD += fin.montoNeto || 0;
+      } else {
+        totalAmountPEN += monto;
+        totalNetoPEN += fin.montoNeto || 0;
+        totalDetraccionPEN += fin.montoDetraccion || 0;
+      }
+
+      if (fin.aplicaDetraccion || fin.montoDetraccion > 0) {
+        spotCount += 1;
+      }
+
+      if (isPaid) {
+        pagadasCount += 1;
+        if (fin.moneda === 'USD') pagadasAmountUSD += monto;
+        else pagadasAmountPEN += monto;
+      } else {
+        pendientesCount += 1;
+        if (fin.moneda === 'USD') pendientesAmountUSD += monto;
+        else pendientesAmountPEN += monto;
+
+        if (vencStatus && vencStatus.status === 'vencido') {
+          vencidasCount += 1;
+          if (fin.moneda === 'USD') vencidasAmountUSD += monto;
+          else vencidasAmountPEN += monto;
+        } else if (vencStatus && (vencStatus.status === 'por_vencer' || vencStatus.status === 'hoy')) {
+          porVencerCount += 1;
+          porVencerAmountPEN += monto;
+        } else {
+          alDiaCount += 1;
+        }
+      }
+
+      if (fin.condicionPago === 'CREDITO') {
+        countCredito += 1;
+      } else {
+        countContado += 1;
+      }
+
+      // Agrupación de proveedor por RUC o por similitud en razón social
+      let ruc = (item.cr168_rucdelcomercio || '').trim().replace(/\D/g, '');
+      const normName = normalizeProviderName(item.cr168_nombredelcomercio);
+      if (ruc.length !== 11 && normName && normNameToRuc.has(normName)) {
+        ruc = normNameToRuc.get(normName);
+      }
+
+      const groupKey = ruc.length === 11 ? `ruc_${ruc}` : `name_${normName || 'DESCONOCIDO'}`;
+
+      if (!providerGroups.has(groupKey)) {
+        providerGroups.set(groupKey, {
+          key: groupKey,
+          ruc: ruc.length === 11 ? ruc : null,
+          nombre: (item.cr168_nombredelcomercio || '').trim() || (ruc ? `RUC ${ruc}` : 'Proveedor sin nombre'),
+          facturasCount: 0,
+          totalPEN: 0,
+          totalUSD: 0,
+          detraccionPEN: 0,
+          netoPEN: 0,
+          netoUSD: 0,
+          pagadasCount: 0,
+          pendientesCount: 0,
+          vencidasCount: 0,
+          empresas: new Set(),
+          monedaPrincipal: fin.moneda
+        });
+      }
+
+      const pGroup = providerGroups.get(groupKey);
+      pGroup.facturasCount += 1;
+      if (fin.moneda === 'USD') {
+        pGroup.totalUSD += monto;
+        pGroup.netoUSD += fin.montoNeto || 0;
+      } else {
+        pGroup.totalPEN += monto;
+        pGroup.netoPEN += fin.montoNeto || 0;
+        pGroup.detraccionPEN += fin.montoDetraccion || 0;
+      }
+
+      if (isPaid) {
+        pGroup.pagadasCount += 1;
+      } else {
+        pGroup.pendientesCount += 1;
+        if (vencStatus && vencStatus.status === 'vencido') {
+          pGroup.vencidasCount += 1;
+        }
+      }
+
+      if (item.cr168_empresa) {
+        pGroup.empresas.add(item.cr168_empresa);
+      }
+    }
+
+    const grandTotalWeight = totalAmountPEN + (totalAmountUSD * 3.75);
+
+    const byProvider = Array.from(providerGroups.values()).map(p => {
+      const pWeight = p.totalPEN + (p.totalUSD * 3.75);
+      return {
+        ...p,
+        empresasList: Array.from(p.empresas),
+        percentage: grandTotalWeight > 0 ? (pWeight / grandTotalWeight) * 100 : 0
+      };
+    }).sort((a, b) => (b.totalPEN + b.totalUSD * 3.75) - (a.totalPEN + a.totalUSD * 3.75));
+
+    // Paso 3: Agrupación mensual
+    const monthMap = new Map();
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+    for (const item of list) {
+      const dateStr = item.cr168_fechadelgasto || item.cr168_fecha || item.createdon;
+      if (!dateStr) continue;
+      const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+      const parts = cleanDate.split('-');
+      if (parts.length < 2) continue;
+      const year = parts[0];
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      if (monthIdx < 0 || monthIdx > 11) continue;
+      const key = `${year}-${String(monthIdx + 1).padStart(2, '0')}`;
+      const label = `${monthNames[monthIdx]} ${year}`;
+
+      if (!monthMap.has(key)) {
+        monthMap.set(key, { key, label, count: 0, totalPEN: 0, totalUSD: 0, detraccionPEN: 0, netoPEN: 0, netoUSD: 0 });
+      }
+
+      const mData = monthMap.get(key);
+      const fin = getProviderInvoiceFinancials(item);
+      const monto = Number(item.cr168_montototalincluyendoigv || 0);
+      mData.count += 1;
+      if (fin.moneda === 'USD') {
+        mData.totalUSD += monto;
+        mData.netoUSD += fin.montoNeto || 0;
+      } else {
+        mData.totalPEN += monto;
+        mData.netoPEN += fin.montoNeto || 0;
+        mData.detraccionPEN += fin.montoDetraccion || 0;
+      }
+    }
+    const byMonth = Array.from(monthMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+
+    // Paso 4: Agrupación por Empresa Receptora
+    const empresaMap = new Map();
+    for (const item of list) {
+      const emp = (item.cr168_empresa || 'Sin Empresa').trim();
+      if (!empresaMap.has(emp)) {
+        empresaMap.set(emp, { empresa: emp, count: 0, totalPEN: 0, totalUSD: 0, detraccionPEN: 0 });
+      }
+      const eData = empresaMap.get(emp);
+      const fin = getProviderInvoiceFinancials(item);
+      const monto = Number(item.cr168_montototalincluyendoigv || 0);
+      eData.count += 1;
+      if (fin.moneda === 'USD') {
+        eData.totalUSD += monto;
+      } else {
+        eData.totalPEN += monto;
+        eData.detraccionPEN += fin.montoDetraccion || 0;
+      }
+    }
+    const byEmpresa = Array.from(empresaMap.values())
+      .map(e => {
+        const eWeight = e.totalPEN + (e.totalUSD * 3.75);
+        return {
+          ...e,
+          percentage: grandTotalWeight > 0 ? (eWeight / grandTotalWeight) * 100 : 0
+        };
+      })
+      .sort((a, b) => (b.totalPEN + b.totalUSD * 3.75) - (a.totalPEN + a.totalUSD * 3.75));
+
+    return {
+      totalCount: list.length,
+      totalAmountPEN,
+      totalAmountUSD,
+      totalNetoPEN,
+      totalNetoUSD,
+      totalDetraccionPEN,
+      spotCount,
+      pagadasCount,
+      pagadasAmountPEN,
+      pagadasAmountUSD,
+      pendientesCount,
+      pendientesAmountPEN,
+      pendientesAmountUSD,
+      vencidasCount,
+      vencidasAmountPEN,
+      vencidasAmountUSD,
+      porVencerCount,
+      porVencerAmountPEN,
+      alDiaCount,
+      countContado,
+      countCredito,
+      byProvider,
+      byMonth,
+      byEmpresa
+    };
+  }, [buzonExpenses, empresaFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
 
   // Calcular la suma de monto SOLO para las filas que estén seleccionadas por el usuario
   const selectedSum = useMemo(() => {
@@ -2189,6 +2468,26 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
 
                   <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    {buzonSubTab === 'estadisticas' && (
+                      <div className="top-filter-group" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <label htmlFor="buzonEmpresaFilterSelect" className="top-filter-label">
+                          Empresa:
+                        </label>
+                        <select
+                          id="buzonEmpresaFilterSelect"
+                          className="top-filter-select"
+                          value={empresaFilter}
+                          onChange={(e) => setEmpresaFilter(e.target.value)}
+                          title="Filtrar estadísticas por Empresa"
+                        >
+                          <option value="">(Todas las Empresas)</option>
+                          <option value="BLISSCORP">BLISSCORP</option>
+                          <option value="BLISSFARMA">BLISSFARMA</option>
+                          <option value="SKINBLISS">SKINBLISS</option>
+                        </select>
+                      </div>
+                    )}
+
                     <button
                       type="button"
                       className="sync-invoices-btn"
@@ -2537,20 +2836,495 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
               </div>
             ) : activeModule === 'buzon' && buzonSubTab === 'estadisticas' ? (
-              <div className="placeholder-module-screen" style={{ minHeight: 'calc(100vh - 220px)', padding: '2rem 1rem' }}>
-                <div className="placeholder-card">
-                  <svg className="placeholder-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <line x1="18" y1="20" x2="18" y2="10"/>
-                    <line x1="12" y1="20" x2="12" y2="4"/>
-                    <line x1="6" y1="20" x2="6" y2="14"/>
-                  </svg>
-                  <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                    Estadísticas Financieras
-                  </h2>
-                  <p className="status-text" style={{ margin: 0 }}>En proceso</p>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '380px', margin: '0.25rem 0 0', lineHeight: 1.5 }}>
-                    Módulo de analítica financiera, vencimientos y flujo de pagos a proveedores en preparación.
-                  </p>
+              <div className="analytics-dashboard-container">
+                {/* 1. KPIs Ejecutivos Financieros */}
+                <section className="analytics-kpis-grid">
+                  <div className="analytics-kpi-card">
+                    <div className="kpi-header">
+                      <span className="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Total Facturado Proveedores</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span className="analytics-kpi-value" style={{ fontSize: '1.6rem' }}>
+                        S/ {buzonAnalyticsData.totalAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {buzonAnalyticsData.totalAmountUSD > 0 && (
+                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0369a1' }}>
+                          + $ {buzonAnalyticsData.totalAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </span>
+                      )}
+                    </div>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.totalCount} comprobantes ({buzonAnalyticsData.byProvider.length} proveedores registrados)
+                    </span>
+                  </div>
+
+                  <div className="analytics-kpi-card success">
+                    <div className="kpi-header">
+                      <span className="kpi-icon" style={{ color: '#059669', background: '#ecfdf5' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Total Pagado / Liquidado</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span className="analytics-kpi-value" style={{ color: '#047857', fontSize: '1.6rem' }}>
+                        S/ {buzonAnalyticsData.pagadasAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {buzonAnalyticsData.pagadasAmountUSD > 0 && (
+                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#047857' }}>
+                          + $ {buzonAnalyticsData.pagadasAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </span>
+                      )}
+                    </div>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.pagadasCount} facturas canceladas ({buzonAnalyticsData.totalCount > 0 ? Math.round((buzonAnalyticsData.pagadasCount / buzonAnalyticsData.totalCount) * 100) : 0}% efectividad)
+                    </span>
+                  </div>
+
+                  <div className="analytics-kpi-card warning">
+                    <div className="kpi-header">
+                      <span className="kpi-icon" style={{ color: '#d97706', background: '#fffbeb' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Cuentas por Pagar (Pendientes)</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span className="analytics-kpi-value" style={{ color: buzonAnalyticsData.vencidasCount > 0 ? '#b91c1c' : '#b45309', fontSize: '1.6rem' }}>
+                        S/ {buzonAnalyticsData.pendientesAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {buzonAnalyticsData.pendientesAmountUSD > 0 && (
+                        <span style={{ fontSize: '0.92rem', fontWeight: 700, color: buzonAnalyticsData.vencidasCount > 0 ? '#b91c1c' : '#b45309' }}>
+                          + $ {buzonAnalyticsData.pendientesAmountUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </span>
+                      )}
+                    </div>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.pendientesCount} por pagar ({buzonAnalyticsData.vencidasCount > 0 ? `${buzonAnalyticsData.vencidasCount} facturas vencidas` : 'todas al día'})
+                    </span>
+                  </div>
+
+                  <div className="analytics-kpi-card purple">
+                    <div className="kpi-header">
+                      <span className="kpi-icon" style={{ color: '#7c3aed', background: '#f5f3ff' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+                        </svg>
+                      </span>
+                      <span className="analytics-kpi-label">Detracciones SPOT (Banco Nación)</span>
+                    </div>
+                    <span className="analytics-kpi-value" style={{ color: '#6d28d9', fontSize: '1.6rem' }}>
+                      S/ {buzonAnalyticsData.totalDetraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="analytics-kpi-sub">
+                      {buzonAnalyticsData.spotCount} comprobantes con SPOT (Neto prov: S/ {buzonAnalyticsData.totalNetoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                    </span>
+                  </div>
+                </section>
+
+                {/* 2. Evolución Mensual de Facturación */}
+                <div className="analytics-section-card full-width">
+                  <div className="analytics-section-header">
+                    <h3 className="analytics-section-title">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                      </svg>
+                      Evolución Mensual de Facturación Proveedores
+                    </h3>
+                    <span className="analytics-section-badge">{buzonAnalyticsData.byMonth.length} Períodos</span>
+                  </div>
+
+                  <div className="monthly-chart-and-table-grid">
+                    {/* Gráfico SVG de Barras */}
+                    <div className="monthly-bar-chart-card">
+                      <span className="chart-header-subtitle">Tendencia Mensual Acumulada (S/ equiv.)</span>
+                      
+                      {buzonAnalyticsData.byMonth.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros de fecha para generar el gráfico.</p>
+                      ) : (() => {
+                        const amounts = buzonAnalyticsData.byMonth.map(m => m.totalPEN + (m.totalUSD * 3.75));
+                        const rawMax = Math.max(...amounts, 100);
+                        const maxVal = Math.ceil(rawMax / 1000) * 1000 || 1000;
+                        const ticks = [maxVal, maxVal * 0.75, maxVal * 0.5, maxVal * 0.25, 0];
+                        const N = buzonAnalyticsData.byMonth.length;
+                        const plotWidth = 430;
+                        const plotHeight = 170;
+                        const marginLeft = 75;
+                        const marginTop = 20;
+
+                        return (
+                          <div className="svg-chart-wrapper">
+                            <svg viewBox="0 0 520 220" preserveAspectRatio="xMidYMid meet">
+                              <defs>
+                                <linearGradient id="buzonBarGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#2563eb" />
+                                  <stop offset="100%" stopColor="#93c5fd" />
+                                </linearGradient>
+                              </defs>
+
+                              {ticks.map((t, idx) => {
+                                const fraction = 1 - (t / maxVal);
+                                const lineY = marginTop + fraction * plotHeight;
+                                return (
+                                  <g key={idx}>
+                                    <line
+                                      x1={marginLeft}
+                                      y1={lineY}
+                                      x2={marginLeft + plotWidth}
+                                      y2={lineY}
+                                      stroke="#e2e8f0"
+                                      strokeDasharray="3 3"
+                                    />
+                                    <text
+                                      x={marginLeft - 8}
+                                      y={lineY + 4}
+                                      textAnchor="end"
+                                      fontSize="10"
+                                      fontWeight="600"
+                                      fill="#64748b"
+                                    >
+                                      S/ {t >= 1000 ? `${(t / 1000).toFixed(1)}k` : t.toFixed(0)}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+
+                              {buzonAnalyticsData.byMonth.map((m, i) => {
+                                const mTotalEquiv = m.totalPEN + (m.totalUSD * 3.75);
+                                const slotWidth = plotWidth / N;
+                                const barWidth = Math.min(slotWidth * 0.48, 38);
+                                const centerX = marginLeft + (i + 0.5) * slotWidth;
+                                const barX = centerX - barWidth / 2;
+                                const barHeight = (mTotalEquiv / maxVal) * plotHeight;
+                                const barY = marginTop + plotHeight - barHeight;
+
+                                const labelParts = m.label.split(' ');
+                                const shortLabel = labelParts.length === 2 ? `${labelParts[0].substring(0, 3)} ${labelParts[1]}` : m.label;
+
+                                return (
+                                  <g key={m.key}>
+                                    <rect
+                                      x={barX}
+                                      y={barY}
+                                      width={barWidth}
+                                      height={Math.max(barHeight, 3)}
+                                      rx="4"
+                                      ry="4"
+                                      fill="url(#buzonBarGradient)"
+                                      className="chart-bar-rect"
+                                    >
+                                      <title>{`${m.label}: S/ ${m.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2 })}${m.totalUSD > 0 ? ` + $ ${m.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2 })}` : ''} (${m.count} facturas)`}</title>
+                                    </rect>
+
+                                    {mTotalEquiv > 0 && (
+                                      <text
+                                        x={centerX}
+                                        y={barY - 5}
+                                        textAnchor="middle"
+                                        fontSize="9"
+                                        fontWeight="700"
+                                        fill="#1e40af"
+                                      >
+                                        S/ {mTotalEquiv >= 1000 ? `${(mTotalEquiv / 1000).toFixed(1)}k` : mTotalEquiv.toFixed(0)}
+                                      </text>
+                                    )}
+
+                                    <text
+                                      x={centerX}
+                                      y="212"
+                                      textAnchor="middle"
+                                      fontSize="10"
+                                      fontWeight="600"
+                                      fill="#475569"
+                                    >
+                                      {shortLabel}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </svg>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Tabla de Matriz Mensual */}
+                    <div className="ranking-table-wrapper">
+                      {buzonAnalyticsData.byMonth.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros disponibles.</p>
+                      ) : (
+                        <table className="monthly-matrix-table">
+                          <thead>
+                            <tr>
+                              <th>Mes / Período</th>
+                              <th>Facturas</th>
+                              <th>Total S/</th>
+                              <th>Total USD $</th>
+                              <th>SPOT (S/)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {buzonAnalyticsData.byMonth.map((m) => (
+                              <tr key={m.key}>
+                                <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{m.label}</td>
+                                <td>{m.count} facturas</td>
+                                <td style={{ fontWeight: '700', color: '#0369a1' }}>
+                                  S/ {m.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td style={{ fontWeight: '600', color: m.totalUSD > 0 ? '#0284c7' : '#94a3b8' }}>
+                                  {m.totalUSD > 0 ? `$ ${m.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                                </td>
+                                <td style={{ fontWeight: '600', color: m.detraccionPEN > 0 ? '#7c3aed' : '#94a3b8' }}>
+                                  {m.detraccionPEN > 0 ? `S/ ${m.detraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Grid 2 Columnas: Facturación por Empresa Receptora + Semáforo de Vencimiento */}
+                <div className="analytics-grid-two-columns">
+                  {/* Empresa Receptora */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M3 21h18M3 7v14M21 7v14M6 11h3M6 15h3M15 11h3M15 15h3M9 3h6v4H9z"/>
+                        </svg>
+                        Facturación por Empresa Receptora
+                      </h3>
+                      <span className="analytics-section-badge">{buzonAnalyticsData.byEmpresa.length} Empresas</span>
+                    </div>
+                    <div className="bar-distribution-list">
+                      {buzonAnalyticsData.byEmpresa.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros para mostrar.</p>
+                      ) : (
+                        buzonAnalyticsData.byEmpresa.map((item) => {
+                          const empUpper = item.empresa.toUpperCase();
+                          const empClass = empUpper.includes('CORP') ? 'area-visita' :
+                                           empUpper.includes('FARMA') ? 'area-ti' : 'area-gerencia';
+                          return (
+                            <div key={item.empresa} className="bar-distribution-item">
+                              <div className="bar-distribution-info">
+                                <span className="bar-distribution-name">
+                                  <strong>{item.empresa}</strong>
+                                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>({item.count} facturas)</span>
+                                </span>
+                                <span className="bar-distribution-metrics">
+                                  S/ {item.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  {item.totalUSD > 0 && (
+                                    <span style={{ fontSize: '0.78rem', color: '#0369a1', marginLeft: '0.35rem' }}>
+                                      + ${item.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: '0.4rem', fontWeight: 500 }}>
+                                    ({item.percentage.toFixed(1)}%)
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="progress-track">
+                                <div className={`progress-fill ${empClass}`} style={{ width: `${Math.min(item.percentage, 100)}%` }}></div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Semáforo de Vencimiento y Pagos */}
+                  <div className="analytics-section-card">
+                    <div className="analytics-section-header">
+                      <h3 className="analytics-section-title">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        Semáforo de Vencimiento & Cartera
+                      </h3>
+                      <span className="analytics-section-badge">Estado de Pagos</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.75rem' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#047857', textTransform: 'uppercase' }}>Pagadas / Desembolsadas</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#065f46', marginTop: '0.2rem' }}>{buzonAnalyticsData.pagadasCount}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#047857', marginTop: '0.1rem' }}>
+                          S/ {buzonAnalyticsData.pagadasAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '0.75rem' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', textTransform: 'uppercase' }}>Al Día (Vigentes)</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#15803d', marginTop: '0.2rem' }}>{buzonAnalyticsData.alDiaCount}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '0.1rem' }}>Pendientes sin vencer</div>
+                      </div>
+
+                      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '0.75rem' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#d97706', textTransform: 'uppercase' }}>Por Vencer (&le; 5 días)</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#b45309', marginTop: '0.2rem' }}>{buzonAnalyticsData.porVencerCount}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#d97706', marginTop: '0.1rem' }}>
+                          S/ {buzonAnalyticsData.porVencerAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '0.75rem' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#dc2626', textTransform: 'uppercase' }}>Vencidas (En Mora)</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#991b1b', marginTop: '0.2rem' }}>{buzonAnalyticsData.vencidasCount}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#dc2626', marginTop: '0.1rem' }}>
+                          S/ {buzonAnalyticsData.vencidasAmountPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Condición de Pago:</span>
+                      <div style={{ display: 'flex', gap: '0.6rem' }}>
+                        <span style={{ background: '#f1f5f9', color: '#334155', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600 }}>
+                          Contado: {buzonAnalyticsData.countContado}
+                        </span>
+                        <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600 }}>
+                          Crédito: {buzonAnalyticsData.countCredito}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Concentración y Ranking Maestro por Proveedor */}
+                <div className="analytics-section-card full-width">
+                  <div className="analytics-section-header">
+                    <div>
+                      <h3 className="analytics-section-title">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                          <circle cx="8.5" cy="7" r="4"/>
+                          <polyline points="17 11 19 13 23 9"/>
+                        </svg>
+                        Concentración de Facturación por Proveedor
+                      </h3>
+                      <p style={{ margin: '0.25rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        Agrupado deterministamente por RUC oficial (11 dígitos) y por similitud de razón social normalizada.
+                      </p>
+                    </div>
+                    <span className="analytics-section-badge">{buzonAnalyticsData.byProvider.length} Proveedores</span>
+                  </div>
+
+                  <div className="ranking-table-wrapper">
+                    {buzonAnalyticsData.byProvider.length === 0 ? (
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '1rem' }}>No hay proveedores para mostrar con los filtros seleccionados.</p>
+                    ) : (
+                      <table className="ranking-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '40px' }}>#</th>
+                            <th>Proveedor / Razón Social</th>
+                            <th>RUC / ID Fiscal</th>
+                            <th>Empresas</th>
+                            <th style={{ textAlign: 'center' }}>Facturas</th>
+                            <th style={{ textAlign: 'right' }}>Total S/</th>
+                            <th style={{ textAlign: 'right' }}>Total USD $</th>
+                            <th style={{ textAlign: 'right' }}>Detracción S/</th>
+                            <th style={{ textAlign: 'right' }}>Neto Proveedor</th>
+                            <th style={{ textAlign: 'center' }}>Estado de Pago</th>
+                            <th style={{ textAlign: 'right' }}>% Part.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {buzonAnalyticsData.byProvider.map((p, idx) => (
+                            <tr key={p.key}>
+                              <td>
+                                <span className={`ranking-badge ${idx === 0 ? 'rank-1' : idx === 1 ? 'rank-2' : idx === 2 ? 'rank-3' : ''}`}>
+                                  {idx + 1}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.nombre}</div>
+                              </td>
+                              <td>
+                                {p.ruc ? (
+                                  <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', background: '#f1f5f9', color: '#0f172a', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                    {p.ruc}
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                    Exterior / Sin RUC
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                  {p.empresasList.map((emp) => (
+                                    <span
+                                      key={emp}
+                                      style={{
+                                        fontSize: '0.7rem',
+                                        padding: '1px 5px',
+                                        borderRadius: '3px',
+                                        fontWeight: 600,
+                                        background: emp === 'BLISSCORP' ? '#eff6ff' : emp === 'BLISSFARMA' ? '#f0fdf4' : '#faf5ff',
+                                        color: emp === 'BLISSCORP' ? '#1d4ed8' : emp === 'BLISSFARMA' ? '#15803d' : '#7e22ce',
+                                        border: `1px solid ${emp === 'BLISSCORP' ? '#bfdbfe' : emp === 'BLISSFARMA' ? '#bbf7d0' : '#e9d5ff'}`
+                                      }}
+                                    >
+                                      {emp}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 600 }}>{p.facturasCount}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: p.totalPEN > 0 ? 'var(--accent-color)' : '#94a3b8' }}>
+                                {p.totalPEN > 0 ? `S/ ${p.totalPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: p.totalUSD > 0 ? '#0284c7' : '#94a3b8' }}>
+                                {p.totalUSD > 0 ? `$ ${p.totalUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: p.detraccionPEN > 0 ? '#7c3aed' : '#94a3b8' }}>
+                                {p.detraccionPEN > 0 ? `S/ ${p.detraccionPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: '#334155' }}>
+                                {p.totalUSD > 0
+                                  ? `$ ${p.netoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `S/ ${p.netoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span
+                                  style={{
+                                    fontSize: '0.75rem',
+                                    padding: '2px 7px',
+                                    borderRadius: '4px',
+                                    fontWeight: 600,
+                                    background: p.pendientesCount === 0 ? '#ecfdf5' : p.vencidasCount > 0 ? '#fef2f2' : '#fffbeb',
+                                    color: p.pendientesCount === 0 ? '#047857' : p.vencidasCount > 0 ? '#b91c1c' : '#b45309',
+                                    border: `1px solid ${p.pendientesCount === 0 ? '#a7f3d0' : p.vencidasCount > 0 ? '#fca5a5' : '#fde68a'}`
+                                  }}
+                                >
+                                  {p.pendientesCount === 0
+                                    ? `${p.pagadasCount} Pagadas`
+                                    : `${p.pagadasCount} Pag. / ${p.pendientesCount} Pend.`}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {p.percentage.toFixed(1)}%
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
