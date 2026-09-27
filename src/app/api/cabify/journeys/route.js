@@ -41,6 +41,7 @@ export async function GET(request) {
       summary: result.summary,
       journeys: result.journeys,
       isFallback: !!result.isFallback,
+      fromSupabase: !!result.fromSupabase,
       warning: result.warning || null
     });
   } catch (error) {

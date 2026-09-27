@@ -1,6 +1,7 @@
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { getSupabaseAdmin, CABIFY_TABLE } from './supabaseClient.js';
 
 const CLIENT_ID = process.env.CABIFY_CLIENT_ID || '23fabf6450d345f3abd39adef09082fe';
 const CLIENT_SECRET = process.env.CABIFY_CLIENT_SECRET || 'BfXWeP0BPIPEp1MV';
@@ -223,10 +224,172 @@ function formatDateLima(dateStr) {
 }
 
 /**
+ * Consulta viajes desde la tabla persistente de Supabase por rango de fechas
+ */
+export async function getJourneysFromSupabase({ from, to }) {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from(CABIFY_TABLE)
+      .select('*')
+      .gte('invoice_date', from)
+      .lte('invoice_date', to)
+      .order('start_at', { ascending: false });
+
+    if (error) {
+      console.warn('[CabifyClient/Supabase] Error consultando tabla:', error.message);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      return null;
+    }
+
+    const journeys = data.map(row => ({
+      id: row.id,
+      ticketCode: row.ticket_code || 'S/N',
+      journeyId: row.journey_id || '',
+      invoiceDate: row.invoice_date || '',
+      startAt: row.start_at || '',
+      endAt: row.end_at || '',
+      dateFormatted: formatDateLima(row.start_at),
+      riderId: row.rider_id || '',
+      riderName: row.rider_name || 'Colaborador Cabify',
+      riderEmail: row.rider_email || '',
+      riderPhone: row.rider_phone || '',
+      origin: row.origin || '',
+      destination: row.destination || '',
+      chargeCode: row.charge_code || 'Movilidad General',
+      description: row.description || '',
+      totalPEN: Number(row.total_pen) || 0,
+      currency: row.currency || 'PEN'
+    }));
+
+    let totalAmount = 0;
+    const passengerTotals = new Map();
+
+    journeys.forEach(j => {
+      totalAmount += j.totalPEN;
+      const pName = j.riderName || 'Otros';
+      const current = passengerTotals.get(pName) || { name: pName, email: j.riderEmail, total: 0, trips: 0 };
+      current.total += j.totalPEN;
+      current.trips += 1;
+      passengerTotals.set(pName, current);
+    });
+
+    totalAmount = Math.round(totalAmount * 100) / 100;
+    const totalTrips = journeys.length;
+    const avgAmount = totalTrips > 0 ? Math.round((totalAmount / totalTrips) * 100) / 100 : 0;
+
+    const passengersArray = Array.from(passengerTotals.values())
+      .map(p => ({ ...p, total: Math.round(p.total * 100) / 100 }))
+      .sort((a, b) => b.total - a.total);
+
+    const topPassenger = passengersArray.length > 0 ? passengersArray[0] : null;
+
+    return {
+      journeys,
+      summary: {
+        totalAmount,
+        totalTrips,
+        avgAmount,
+        currency: 'PEN',
+        topPassenger,
+        byPassenger: passengersArray
+      },
+      fromSupabase: true
+    };
+  } catch (err) {
+    console.warn('[CabifyClient/Supabase] Excepción en getJourneysFromSupabase:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Guarda o actualiza un lote de viajes enriquecidos en Supabase
+ */
+export async function upsertJourneysToSupabase(enrichedJourneys) {
+  if (!Array.isArray(enrichedJourneys) || enrichedJourneys.length === 0) {
+    return { count: 0 };
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const rows = enrichedJourneys.map(j => {
+      let invDate = null;
+      if (j.invoiceDate) {
+        invDate = j.invoiceDate.includes('T') ? j.invoiceDate.split('T')[0] : j.invoiceDate;
+      } else if (j.startAt) {
+        invDate = j.startAt.includes('T') ? j.startAt.split('T')[0] : j.startAt;
+      }
+
+      let startIso = null;
+      if (j.startAt) {
+        try { startIso = new Date(j.startAt).toISOString(); } catch {}
+      }
+
+      let endIso = null;
+      if (j.endAt) {
+        try { endIso = new Date(j.endAt).toISOString(); } catch {}
+      }
+
+      return {
+        id: j.id || j.ticketCode || j.journeyId,
+        ticket_code: j.ticketCode || null,
+        journey_id: j.journeyId || null,
+        invoice_date: invDate,
+        start_at: startIso,
+        end_at: endIso,
+        rider_id: j.riderId || null,
+        rider_name: j.riderName || null,
+        rider_email: j.riderEmail || null,
+        rider_phone: j.riderPhone || null,
+        origin: j.origin || null,
+        destination: j.destination || null,
+        charge_code: j.chargeCode || 'Movilidad General',
+        description: j.description || null,
+        total_pen: Number(j.totalPEN) || 0,
+        currency: j.currency || 'PEN',
+        updated_at: new Date().toISOString()
+      };
+    });
+
+    const chunkSize = 100;
+    let saved = 0;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const { error } = await supabase
+        .from(CABIFY_TABLE)
+        .upsert(chunk, { onConflict: 'id' });
+
+      if (error) {
+        console.error('[CabifyClient/Supabase] Error en upsert chunk:', error.message);
+      } else {
+        saved += chunk.length;
+      }
+    }
+
+    return { count: saved };
+  } catch (err) {
+    console.error('[CabifyClient/Supabase] Error al guardar en Supabase:', err.message);
+    return { count: 0, error: err.message };
+  }
+}
+
+/**
  * Obtiene todas las ventas/viajes corporativos en un rango de fechas,
  * enriquecidos con nombre del colaborador, ruta, fechas y costos.
  */
 export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false }) {
+  // 1. Si no es forzado, intentar leer primero desde la base de datos de Supabase (instantáneo)
+  if (!forceRefresh) {
+    const fromSupabase = await getJourneysFromSupabase({ from, to });
+    if (fromSupabase && fromSupabase.journeys && fromSupabase.journeys.length > 0) {
+      console.log(`[CabifyClient] Servidos ${fromSupabase.journeys.length} viajes desde Supabase (${from} a ${to})`);
+      return fromSupabase;
+    }
+  }
+
   const cacheKey = `sales_${from}_${to}_${currency}`;
   if (!forceRefresh) {
     const cached = readCache(cacheKey, 1800000); // 30 minutos
@@ -436,6 +599,16 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
       byPassenger: passengersArray
     }
   };
+
+  // Persistir en la base de datos de Supabase para futuras consultas ultrarrápidas
+  if (enrichedJourneys.length > 0) {
+    try {
+      await upsertJourneysToSupabase(enrichedJourneys);
+      console.log(`[CabifyClient] Guardados ${enrichedJourneys.length} viajes en Supabase (${from} a ${to})`);
+    } catch (e) {
+      console.warn('[CabifyClient] Advertencia al persistir viajes en Supabase:', e.message);
+    }
+  }
 
   // Solo escribir en caché si obtuvimos viajes o si la consulta concluyó de forma limpia
   if (enrichedJourneys.length > 0 || !hasFetchError) {

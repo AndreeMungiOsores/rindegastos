@@ -29,6 +29,38 @@ export default function CabifyMobilityModule() {
 
   const [selectedJourney, setSelectedJourney] = useState(null);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+
+  // Sincronización histórica (Enero a hoy) hacia Supabase
+  const handleSyncHistory = async () => {
+    const confirm = window.confirm(
+      '¿Deseas descargar y guardar en Supabase todos los viajes de Cabify desde Enero de 2026 hasta hoy?\n\nEsto dejará todo el historial guardado en tu base de datos para que los próximos accesos carguen de forma instantánea.'
+    );
+    if (!confirm) return;
+
+    setIsSyncingHistory(true);
+    setSyncNotice('Iniciando sincronización histórica 2026 hacia Supabase...');
+    try {
+      const res = await fetch('/api/cabify/sync-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: selectedYear })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSyncNotice(`✅ ${data.message}`);
+        setTimeout(() => setSyncNotice(null), 8000);
+        loadData(false);
+      } else {
+        throw new Error(data.error || 'Fallo en la sincronización histórica');
+      }
+    } catch (err) {
+      console.error('Error al sincronizar historial:', err);
+      setError(`Error al sincronizar historial: ${err.message}`);
+    } finally {
+      setIsSyncingHistory(false);
+    }
+  };
 
   // Función principal para cargar datos
   const loadData = async (forceRefresh = false) => {
@@ -352,8 +384,8 @@ export default function CabifyMobilityModule() {
               type="button"
               className="sync-invoices-btn"
               onClick={() => loadData(true)}
-              disabled={loading || refreshing}
-              title="Consultar la API oficial de Cabify en vivo"
+              disabled={loading || refreshing || isSyncingHistory}
+              title="Consultar la API oficial de Cabify en vivo para este mes"
             >
               <svg
                 className={refreshing ? 'spin-icon' : ''}
@@ -372,6 +404,38 @@ export default function CabifyMobilityModule() {
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
               </svg>
               <span>{refreshing ? 'Sincronizando...' : 'Sincronizar en Vivo'}</span>
+            </button>
+
+            <button
+              type="button"
+              className="sync-invoices-btn"
+              style={{
+                background: 'var(--bg-surface-2, #f8fafc)',
+                color: 'var(--text-secondary, #475569)',
+                borderColor: 'var(--border-color, #cbd5e1)',
+                boxShadow: 'none'
+              }}
+              onClick={handleSyncHistory}
+              disabled={loading || refreshing || isSyncingHistory}
+              title="Descargar y guardar en Supabase todo el historial de viajes de 2026 a la fecha"
+            >
+              <svg
+                className={isSyncingHistory ? 'spin-icon' : ''}
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>{isSyncingHistory ? 'Guardando 2026...' : 'Histórico 2026'}</span>
             </button>
           </div>
         </div>

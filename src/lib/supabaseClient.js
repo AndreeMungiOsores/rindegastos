@@ -5,6 +5,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABAS
 
 export const LOGOS_BUCKET = process.env.SUPABASE_LOGOS_BUCKET || 'panel-rindegastos-logos';
 export const LOGOS_TABLE = process.env.SUPABASE_LOGOS_TABLE || 'panel_rindegastos_proveedores_logos';
+export const CABIFY_TABLE = process.env.SUPABASE_CABIFY_TABLE || 'panel_rindegastos_cabify_viajes';
 
 let supabaseInstance = null;
 
