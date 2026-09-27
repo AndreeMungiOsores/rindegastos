@@ -11,7 +11,7 @@ let supabaseInstance = null;
 export function getSupabaseAdmin() {
   if (!supabaseInstance) {
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase URL or Key is not defined in environment variables.');
+      throw new Error('Faltan configurar las variables de entorno de Supabase en el panel de Vercel (Settings > Environment Variables).');
     }
     supabaseInstance = createClient(supabaseUrl, supabaseKey, {
       auth: {
