@@ -233,8 +233,7 @@ export async function getJourneysFromSupabase({ from, to }) {
       .from(CABIFY_TABLE)
       .select('*')
       .gte('invoice_date', from)
-      .lte('invoice_date', to)
-      .order('start_at', { ascending: false });
+      .lte('invoice_date', to);
 
     if (error) {
       console.warn('[CabifyClient/Supabase] Error consultando tabla:', error.message);
@@ -244,6 +243,9 @@ export async function getJourneysFromSupabase({ from, to }) {
     if (!data || data.length === 0) {
       return null;
     }
+
+    // Ordenar en memoria por fecha y hora descendente (ultrarrápido y determinista)
+    data.sort((a, b) => new Date(b.start_at || 0) - new Date(a.start_at || 0));
 
     const journeys = data.map(row => ({
       id: row.id,
@@ -260,6 +262,7 @@ export async function getJourneysFromSupabase({ from, to }) {
       origin: row.origin || '',
       destination: row.destination || '',
       chargeCode: row.charge_code || 'Movilidad General',
+      motivo: row.motivo || null,
       description: row.description || '',
       totalPEN: Number(row.total_pen) || 0,
       currency: row.currency || 'PEN'
@@ -287,6 +290,16 @@ export async function getJourneysFromSupabase({ from, to }) {
 
     const topPassenger = passengersArray.length > 0 ? passengersArray[0] : null;
 
+    let maxUpdatedAt = null;
+    data.forEach(row => {
+      if (row.updated_at) {
+        const u = new Date(row.updated_at).getTime();
+        if (!maxUpdatedAt || u > maxUpdatedAt) {
+          maxUpdatedAt = u;
+        }
+      }
+    });
+
     return {
       journeys,
       summary: {
@@ -297,7 +310,8 @@ export async function getJourneysFromSupabase({ from, to }) {
         topPassenger,
         byPassenger: passengersArray
       },
-      fromSupabase: true
+      fromSupabase: true,
+      lastSyncAt: maxUpdatedAt ? new Date(maxUpdatedAt).toISOString() : null
     };
   } catch (err) {
     console.warn('[CabifyClient/Supabase] Excepción en getJourneysFromSupabase:', err.message);
@@ -315,6 +329,22 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
 
   try {
     const supabase = getSupabaseAdmin();
+
+    // Preservar motivos preexistentes en Supabase para no sobreescribirlos con null
+    const ids = enrichedJourneys.map(j => j.id || j.ticketCode || j.journeyId).filter(Boolean);
+    const existingMotivosMap = new Map();
+    if (ids.length > 0) {
+      const { data: existingRows } = await supabase
+        .from(CABIFY_TABLE)
+        .select('id, motivo')
+        .in('id', ids.slice(0, 1000))
+        .not('motivo', 'is', null);
+
+      if (existingRows) {
+        existingRows.forEach(r => existingMotivosMap.set(r.id, r.motivo));
+      }
+    }
+
     const rows = enrichedJourneys.map(j => {
       let invDate = null;
       if (j.invoiceDate) {
@@ -333,8 +363,11 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
         try { endIso = new Date(j.endAt).toISOString(); } catch {}
       }
 
+      const rowId = j.id || j.ticketCode || j.journeyId;
+      const finalMotivo = j.motivo || existingMotivosMap.get(rowId) || null;
+
       return {
-        id: j.id || j.ticketCode || j.journeyId,
+        id: rowId,
         ticket_code: j.ticketCode || null,
         journey_id: j.journeyId || null,
         invoice_date: invDate,
@@ -347,6 +380,7 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
         origin: j.origin || null,
         destination: j.destination || null,
         charge_code: j.chargeCode || 'Movilidad General',
+        motivo: finalMotivo,
         description: j.description || null,
         total_pen: Number(j.totalPEN) || 0,
         currency: j.currency || 'PEN',
@@ -559,6 +593,7 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
       origin: originFull,
       destination: destFull,
       chargeCode: typeObj.charge_code || 'Movilidad General',
+      motivo: detail?.reason || typeObj.reason || null,
       description: typeObj.description || '',
       totalPEN,
       currency: sale.currency || 'PEN'

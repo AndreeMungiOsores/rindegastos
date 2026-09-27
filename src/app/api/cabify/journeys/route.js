@@ -35,6 +35,23 @@ export async function GET(request) {
 
     const result = await getCorporateJourneys({ from, to, currency: 'PEN', forceRefresh });
 
+    const now = new Date();
+    const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const isCurrentMonth = from.startsWith(currentYearMonth);
+
+    // Estrategia Stale-While-Revalidate: si es el mes activo y los datos en Supabase tienen >15 min
+    let needsBackgroundRevalidation = false;
+    if (!forceRefresh && isCurrentMonth && result.fromSupabase) {
+      if (!result.lastSyncAt) {
+        needsBackgroundRevalidation = true;
+      } else {
+        const lastSyncTime = new Date(result.lastSyncAt).getTime();
+        if (Date.now() - lastSyncTime > 15 * 60 * 1000) { // 15 minutos
+          needsBackgroundRevalidation = true;
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       period: { from, to },
@@ -42,6 +59,9 @@ export async function GET(request) {
       journeys: result.journeys,
       isFallback: !!result.isFallback,
       fromSupabase: !!result.fromSupabase,
+      isCurrentMonth,
+      lastSyncAt: result.lastSyncAt || null,
+      needsBackgroundRevalidation,
       warning: result.warning || null
     });
   } catch (error) {

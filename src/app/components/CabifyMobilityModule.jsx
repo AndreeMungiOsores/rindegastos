@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -8,6 +8,9 @@ const MONTH_NAMES = [
 ];
 
 export default function CabifyMobilityModule() {
+  // Bandera para herramientas de administración (ocultas en la interfaz principal)
+  const SHOW_ADMIN_CABIFY_TOOLS = false;
+
   const currentDate = new Date();
   const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1); // 1-indexed
@@ -30,6 +33,25 @@ export default function CabifyMobilityModule() {
   const [selectedJourney, setSelectedJourney] = useState(null);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const lastSyncTimeFormatted = useMemo(() => {
+    if (!lastSyncAt) return null;
+    try {
+      const d = new Date(lastSyncAt);
+      return d.toLocaleTimeString('es-PE', {
+        timeZone: 'America/Lima',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return null;
+    }
+  }, [lastSyncAt]);
 
   // Sincronización histórica (Enero a hoy) hacia Supabase
   const handleSyncHistory = async () => {
@@ -62,46 +84,123 @@ export default function CabifyMobilityModule() {
     }
   };
 
-  // Función principal para cargar datos
-  const loadData = async (forceRefresh = false) => {
-    if (forceRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+  // Importar Motivos desde el reporte oficial exportado de Cabify Empresas
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingExcel(true);
+    setSyncNotice('Procesando archivo oficial de Cabify para extraer motivos de viaje...');
     setError(null);
 
     try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/cabify/import-excel', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error procesando el archivo Excel.');
+      }
+
+      setSyncNotice(`✅ ${data.message}`);
+      setTimeout(() => setSyncNotice(null), 8000);
+      loadData(false);
+    } catch (err) {
+      console.error('Error importando motivos:', err);
+      setError(`Error al importar archivo: ${err.message}`);
+    } finally {
+      setIsImportingExcel(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const abortControllerRef = useRef(null);
+
+  // Función principal para cargar datos (con soporte para revalidación silenciosa en background)
+  const loadData = async (forceRefresh = false, isBackground = false) => {
+    // Si es una carga de usuario (cambio de mes o refresco manual), abortar peticiones previas en curso
+    if (!isBackground) {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+    }
+
+    const currentController = !isBackground ? abortControllerRef.current : null;
+
+    if (isBackground) {
+      setIsBackgroundSyncing(true);
+    } else if (forceRefresh) {
+      setRefreshing(true);
+      setError(null);
+    } else {
+      setLoading(true);
+      setError(null);
+    }
+
+    try {
       const url = `/api/cabify/journeys?month=${selectedMonth}&year=${selectedYear}${forceRefresh ? '&refresh=true' : ''}`;
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        signal: currentController ? currentController.signal : undefined
+      });
       const data = await res.json();
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Error al obtener datos de Cabify');
       }
 
-      setJourneys(data.journeys || []);
+      const newJourneys = data.journeys || [];
+      setJourneys(newJourneys);
       setSummary(data.summary || null);
-      setCurrentPage(1);
+      if (data.lastSyncAt) {
+        setLastSyncAt(data.lastSyncAt);
+      }
+
+      if (!isBackground) {
+        setCurrentPage(1);
+      }
 
       if (data.isFallback && data.warning) {
         setSyncNotice(data.warning);
         setTimeout(() => setSyncNotice(null), 6000);
-      } else if (forceRefresh) {
-        setSyncNotice(`Sincronización en vivo completada: ${(data.journeys || []).length} viajes actualizados.`);
+      } else if (forceRefresh && !isBackground) {
+        setSyncNotice(`Sincronización en vivo completada: ${newJourneys.length} viajes.`);
         setTimeout(() => setSyncNotice(null), 4000);
       }
+
+      // Revalidación silenciosa en background para el mes activo si los datos en Supabase tienen > 15 min
+      if (!forceRefresh && !isBackground && data.needsBackgroundRevalidation) {
+        setTimeout(() => {
+          loadData(true, true);
+        }, 150);
+      }
     } catch (err) {
+      if (err.name === 'AbortError') {
+        return; // Cancelación limpia por nueva selección de mes
+      }
       console.error('[CabifyModule] Error al cargar:', err);
-      if (journeys.length > 0) {
-        setSyncNotice('No se pudo conectar con la API de Cabify en este momento. Se mantienen los datos cargados previamente.');
-        setTimeout(() => setSyncNotice(null), 6000);
-      } else {
-        setError(err.message || 'No se pudo conectar con la API de Cabify');
+      if (!isBackground) {
+        if (journeys.length > 0) {
+          setSyncNotice('No se pudo conectar con la API de Cabify en este momento. Se mantienen los datos cargados previamente.');
+          setTimeout(() => setSyncNotice(null), 6000);
+        } else {
+          setError(err.message || 'No se pudo conectar con la API de Cabify');
+        }
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isBackground) {
+        setIsBackgroundSyncing(false);
+      } else {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -126,6 +225,7 @@ export default function CabifyMobilityModule() {
         (j.origin || '').toLowerCase().includes(q) ||
         (j.destination || '').toLowerCase().includes(q) ||
         (j.chargeCode || '').toLowerCase().includes(q) ||
+        (j.motivo || '').toLowerCase().includes(q) ||
         (j.description || '').toLowerCase().includes(q)
       );
     }
@@ -203,7 +303,8 @@ export default function CabifyMobilityModule() {
         { header: 'Teléfono',               key: 'phone', width: 16 },
         { header: 'Ruta Origen',            key: 'origin', width: 34 },
         { header: 'Ruta Destino',           key: 'destination', width: 34 },
-        { header: 'Centro de Costos / Motivo', key: 'charge_code', width: 22 },
+        { header: 'Centro de Costos',       key: 'charge_code', width: 20 },
+        { header: 'Motivo del Viaje',       key: 'motivo', width: 30 },
         { header: 'Moneda',                 key: 'currency', width: 10 },
         { header: 'Importe Total (S/)',     key: 'amount', width: 18 },
         { header: 'Imputación de Pago',     key: 'imputation', width: 34 }
@@ -230,6 +331,7 @@ export default function CabifyMobilityModule() {
           origin: j.origin,
           destination: j.destination,
           charge_code: j.chargeCode,
+          motivo: j.motivo || 'No especificado',
           currency: j.currency,
           amount: j.totalPEN,
           imputation: 'Reembolso Tarjeta Crédito Adrián Murakami'
@@ -384,11 +486,17 @@ export default function CabifyMobilityModule() {
               type="button"
               className="sync-invoices-btn"
               onClick={() => loadData(true)}
-              disabled={loading || refreshing || isSyncingHistory}
-              title="Consultar la API oficial de Cabify en vivo para este mes"
+              disabled={loading || refreshing || isSyncingHistory || isBackgroundSyncing}
+              aria-busy={refreshing || isBackgroundSyncing}
+              aria-label="Sincronizar viajes de Cabify en vivo"
+              title={
+                lastSyncTimeFormatted
+                  ? `Última sincronización con Cabify: ${lastSyncTimeFormatted}. Clic para actualizar en vivo.`
+                  : 'Consultar la API oficial de Cabify en vivo para este mes'
+              }
             >
               <svg
-                className={refreshing ? 'spin-icon' : ''}
+                className={refreshing || isBackgroundSyncing ? 'spin-icon' : ''}
                 width="13"
                 height="13"
                 viewBox="0 0 24 24"
@@ -403,40 +511,93 @@ export default function CabifyMobilityModule() {
                 <polyline points="1 20 1 14 7 14"/>
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
               </svg>
-              <span>{refreshing ? 'Sincronizando...' : 'Sincronizar en Vivo'}</span>
+              <span>
+                {isBackgroundSyncing
+                  ? 'Actualizando...'
+                  : refreshing
+                  ? 'Sincronizando...'
+                  : 'Sincronizar en Vivo'}
+              </span>
             </button>
 
-            <button
-              type="button"
-              className="sync-invoices-btn"
-              style={{
-                background: 'var(--bg-surface-2, #f8fafc)',
-                color: 'var(--text-secondary, #475569)',
-                borderColor: 'var(--border-color, #cbd5e1)',
-                boxShadow: 'none'
-              }}
-              onClick={handleSyncHistory}
-              disabled={loading || refreshing || isSyncingHistory}
-              title="Descargar y guardar en Supabase todo el historial de viajes de 2026 a la fecha"
-            >
-              <svg
-                className={isSyncingHistory ? 'spin-icon' : ''}
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              <span>{isSyncingHistory ? 'Guardando 2026...' : 'Histórico 2026'}</span>
-            </button>
+            {/* Opciones avanzadas de administración (ocultas por defecto) */}
+            {SHOW_ADMIN_CABIFY_TOOLS && (
+              <>
+                <button
+                  type="button"
+                  className="sync-invoices-btn"
+                  style={{
+                    background: 'var(--bg-surface-2, #f8fafc)',
+                    color: 'var(--text-secondary, #475569)',
+                    borderColor: 'var(--border-color, #cbd5e1)',
+                    boxShadow: 'none'
+                  }}
+                  onClick={handleSyncHistory}
+                  disabled={loading || refreshing || isSyncingHistory}
+                  title="Descargar y guardar en Supabase todo el historial de viajes de 2026 a la fecha"
+                >
+                  <svg
+                    className={isSyncingHistory ? 'spin-icon' : ''}
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span>{isSyncingHistory ? 'Guardando 2026...' : 'Histórico 2026'}</span>
+                </button>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: 'none' }}
+                  aria-hidden="true"
+                />
+
+                <button
+                  type="button"
+                  className="sync-invoices-btn"
+                  style={{
+                    background: 'var(--bg-surface-2, #f8fafc)',
+                    color: 'var(--text-secondary, #475569)',
+                    borderColor: 'var(--border-color, #cbd5e1)',
+                    boxShadow: 'none'
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading || refreshing || isSyncingHistory || isImportingExcel}
+                  title="Cargar el reporte oficial Excel de Cabify Empresas (Columna AQ) para actualizar los motivos de viaje"
+                >
+                  <svg
+                    className={isImportingExcel ? 'spin-icon' : ''}
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <polyline points="9 15 12 12 15 15" />
+                  </svg>
+                  <span>{isImportingExcel ? 'Procesando Excel...' : 'Importar Motivos Excel'}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </nav>
@@ -694,6 +855,17 @@ export default function CabifyMobilityModule() {
                             <span className="cabify-route-addr">{j.destination}</span>
                           </div>
                         </div>
+                        {j.motivo && (
+                          <div className="cabify-table-motivo-tag" title={`Motivo: ${j.motivo}`}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                              <polyline points="14 2 14 8 20 8"/>
+                              <line x1="16" y1="13" x2="8" y2="13"/>
+                              <line x1="16" y1="17" x2="8" y2="17"/>
+                            </svg>
+                            <span>{j.motivo}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="cabify-td-ticket">
@@ -1109,13 +1281,30 @@ export default function CabifyMobilityModule() {
                 </div>
 
                 <div className="cabify-detail-field">
-                  <span className="detail-label">Centro de Costos / Motivo</span>
-                  <span className="detail-value">{selectedJourney.chargeCode}</span>
+                  <span className="detail-label">Centro de Costos</span>
+                  <span className="detail-value">{selectedJourney.chargeCode || 'Movilidad General'}</span>
                 </div>
 
                 <div className="cabify-detail-field">
                   <span className="detail-label">Importe del Servicio</span>
                   <span className="detail-value-price">S/ {selectedJourney.totalPEN.toFixed(2)}</span>
+                </div>
+
+                <div className="cabify-detail-field full-width">
+                  <span className="detail-label">Motivo del Viaje</span>
+                  {selectedJourney.motivo ? (
+                    <div className="cabify-motive-box" role="status" aria-label="Motivo del viaje registrado">
+                      <span aria-hidden="true">💬</span>
+                      <span>{selectedJourney.motivo}</span>
+                    </div>
+                  ) : (
+                    <div className="cabify-motive-empty">
+                      <span>No registrado en la solicitud móvil</span>
+                      <span className="cabify-motive-empty-sub">
+                        (Cabify almacena el motivo libre en el informe oficial de Cabify Empresas)
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {selectedJourney.description && (

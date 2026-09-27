@@ -2899,6 +2899,32 @@ body {
   padding: 0 0.35rem;
 }
 
+.cabify-table-motivo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  background: #F0FDF4;
+  border: 1px solid #DCFCE7;
+  border-radius: 4px;
+  font-size: 0.73rem;
+  font-weight: 500;
+  color: #15803D;
+  max-width: 100%;
+}
+
+.cabify-table-motivo-tag svg {
+  flex-shrink: 0;
+  color: #16A34A;
+}
+
+.cabify-table-motivo-tag span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cabify-td-ticket {
   text-align: center;
 }
@@ -3234,6 +3260,37 @@ body {
   font-size: 0.78rem;
   color: #334155;
   margin-top: 0.35rem;
+}
+
+.cabify-motive-box {
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #166534;
+  line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.cabify-motive-empty {
+  background: var(--bg-surface-2);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.cabify-motive-empty-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  margin-top: 0.2rem;
 }
 
 /* Proveedores: Bandeja de Logo persistente en Supabase */
