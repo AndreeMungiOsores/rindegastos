@@ -2399,6 +2399,32 @@ export default function AdminDashboard({ onLogout }) {
     );
   };
 
+  // Metadatos financieros, moneda y validación de voucher para el modal de detalle del gasto activo
+  const activeExpenseFin = activeExpense ? getProviderInvoiceFinancials(activeExpense) : null;
+  const modalCurrency = (activeExpenseFin?.moneda === 'USD' || (activeExpense?.cr168_detalle || '').includes('USD') || (activeExpense?.cr168_detalle || '').includes('Mon:USD')) ? '$' : 'S/';
+
+  const isBuzonActiveExpense = Boolean(
+    activeExpense && (
+      (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')) ||
+      (activeExpense.cr168_nombrereporte && activeExpense.cr168_nombrereporte.startsWith('[Factura]')) ||
+      (activeExpense.cr168_titulodegasto && activeExpense.cr168_titulodegasto.startsWith('[Factura]'))
+    )
+  );
+  const isActiveExpenseDesembolsado = Boolean(activeExpense && parseInt(activeExpense.cr168_estado, 10) === 553050001);
+  const activeVoucherFileName = (activeExpense?.cr168_voucher_desembolso_name || '').toLowerCase();
+  const isActiveBankVoucher = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(activeVoucherFileName);
+
+  // En facturas de buzón de proveedores, el archivo adjunto en Dataverse corresponde a la factura en PDF del emisor.
+  // Solo se considera que hay voucher de desembolso bancario si el gasto está efectivamente desembolsado y posee comprobante bancario.
+  // En rendiciones normales de vendedores, cr168_voucher_desembolso corresponde directamente al voucher de pago.
+  const hasPaymentVoucher = Boolean(
+    activeExpense && (
+      isBuzonActiveExpense
+        ? (isActiveExpenseDesembolsado && isActiveBankVoucher)
+        : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name)
+    )
+  );
+
   return (
     <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Sidebar Navigation */}
@@ -4377,7 +4403,7 @@ export default function AdminDashboard({ onLogout }) {
                                     </code>
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
-                                    S/ {(item.cr168_montototalincluyendoigv || 0).toFixed(2)}
+                                    {((item.cr168_detalle || '').includes('USD') ? '$' : 'S/')} {(item.cr168_montototalincluyendoigv || 0).toFixed(2)}
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })}>
                                     <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
@@ -4570,7 +4596,7 @@ export default function AdminDashboard({ onLogout }) {
                         <div className="info-row">
                           <span className="info-label">Monto Total (IGV Inc.)</span>
                           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                            <span style={{ position: 'absolute', left: '10px', color: '#64748b', fontWeight: 'bold', fontSize: '0.85rem' }}>S/</span>
+                            <span style={{ position: 'absolute', left: '10px', color: '#64748b', fontWeight: 'bold', fontSize: '0.85rem' }}>{modalCurrency}</span>
                             <input
                               type="number"
                               step="0.01"
@@ -4589,7 +4615,7 @@ export default function AdminDashboard({ onLogout }) {
                           <div className="info-row" style={{ marginTop: '0.85rem' }}>
                             <span className="info-label">Monto Propina</span>
                             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                              <span style={{ position: 'absolute', left: '10px', color: '#64748b', fontWeight: 'bold', fontSize: '0.85rem' }}>S/</span>
+                              <span style={{ position: 'absolute', left: '10px', color: '#64748b', fontWeight: 'bold', fontSize: '0.85rem' }}>{modalCurrency}</span>
                               <input
                                 type="number"
                                 step="0.01"
@@ -4626,13 +4652,13 @@ export default function AdminDashboard({ onLogout }) {
                         </div>
                         <div className="info-row">
                           <span className="info-label">Monto Total (IGV Inc.)</span>
-                          <span className="info-value amount total-amount">S/ {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
+                          <span className="info-value amount total-amount">{modalCurrency} {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
                         </div>
                         {activeExpense.cr168_monto_propina !== undefined && activeExpense.cr168_monto_propina !== null && (
                           <div className="info-row">
                             <span className="info-label">Monto Propina</span>
                             <span className="info-value amount">
-                              S/ {Number(activeExpense.cr168_monto_propina).toFixed(2)}
+                              {modalCurrency} {Number(activeExpense.cr168_monto_propina).toFixed(2)}
                             </span>
                           </div>
                         )}
@@ -4661,7 +4687,7 @@ export default function AdminDashboard({ onLogout }) {
                         <div className="info-row">
                           <span className="info-label">Base Imponible</span>
                           <span className="info-value amount">
-                            S/ {Number(activeExpense.cr168_base_gravada).toFixed(2)}
+                            {modalCurrency} {Number(activeExpense.cr168_base_gravada).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -4669,7 +4695,7 @@ export default function AdminDashboard({ onLogout }) {
                         <div className="info-row">
                           <span className="info-label">IGV</span>
                           <span className="info-value amount">
-                            S/ {Number(activeExpense.cr168_igv_monto).toFixed(2)}
+                            {modalCurrency} {Number(activeExpense.cr168_igv_monto).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -4677,7 +4703,7 @@ export default function AdminDashboard({ onLogout }) {
                         <div className="info-row">
                           <span className="info-label">Recargo al Consumo</span>
                           <span className="info-value amount">
-                            S/ {Number(activeExpense.cr168_recargo_consumo).toFixed(2)}
+                            {modalCurrency} {Number(activeExpense.cr168_recargo_consumo).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -4685,7 +4711,7 @@ export default function AdminDashboard({ onLogout }) {
                         <div className="info-row">
                           <span className="info-label">Inafecto</span>
                           <span className="info-value amount">
-                            S/ {Number(activeExpense.cr168_inafecto).toFixed(2)}
+                            {modalCurrency} {Number(activeExpense.cr168_inafecto).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -4855,7 +4881,7 @@ export default function AdminDashboard({ onLogout }) {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                         <span className="info-label" id="label-id-desembolso">ID Desembolso</span>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                          {!activeExpense.cr168_id_desembolso && (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name) && (
+                          {!activeExpense.cr168_id_desembolso && hasPaymentVoucher && (
                             <button
                               type="button"
                               className="btn btn-secondary"
