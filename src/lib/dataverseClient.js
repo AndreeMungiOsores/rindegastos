@@ -238,6 +238,57 @@ export async function uploadFileToExpense(id, fileBuffer, fileName, columnName =
 }
 
 /**
+ * Descarga el contenido binario de una columna de archivo o imagen de un gasto en Dataverse.
+ * @param {string} expenseId - El UUID del gasto
+ * @param {string} columnName - Nombre lógico de la columna (ej. cr168_voucher_desembolso, cr168_voucher_propina)
+ * @returns {Promise<Buffer|null>}
+ */
+export async function fetchExpenseBinary(expenseId, columnName) {
+  try {
+    let token = await getAccessToken();
+    const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${expenseId})/${columnName}/$value?size=full`;
+    let response;
+    try {
+      response = await axios({
+        method: 'GET',
+        url,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/octet-stream'
+        },
+        responseType: 'arraybuffer',
+        timeout: 30000
+      });
+    } catch (err) {
+      if (err.response && err.response.status === 401) {
+        invalidateCache();
+        token = await getAccessToken();
+        response = await axios({
+          method: 'GET',
+          url,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/octet-stream'
+          },
+          responseType: 'arraybuffer',
+          timeout: 30000
+        });
+      } else {
+        throw err;
+      }
+    }
+    if (!response.data || response.data.length === 0) return null;
+    return Buffer.from(response.data);
+  } catch (err) {
+    if (err.response && [404, 204].includes(err.response.status)) {
+      return null;
+    }
+    console.warn(`[DataverseClient] No se pudo descargar columna ${columnName} para gasto ${expenseId}:`, err.message);
+    return null;
+  }
+}
+
+/**
  * Obtiene todos los préstamos registrados junto con sus cuotas vinculadas.
  * @returns {Promise<Array>} Lista de préstamos con sus cuotas consolidadas
  */

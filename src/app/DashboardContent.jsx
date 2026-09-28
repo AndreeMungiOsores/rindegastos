@@ -1587,13 +1587,29 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
+  // Verifica si un gasto cuenta con voucher bancario real de desembolso
+  const checkHasPaymentVoucher = (exp) => {
+    if (!exp) return false;
+    const isBuzon = Boolean(
+      (exp.cr168_detalle && exp.cr168_detalle.includes('[Factura Correo]')) ||
+      (exp.cr168_nombrereporte && exp.cr168_nombrereporte.startsWith('[Factura]')) ||
+      (exp.cr168_titulodegasto && exp.cr168_titulodegasto.startsWith('[Factura]'))
+    );
+    if (!isBuzon) {
+      return Boolean(exp.cr168_voucher_desembolso || exp.cr168_voucher_desembolso_name);
+    }
+    const fn = (exp.cr168_voucher_desembolso_name || '').toLowerCase();
+    const isBank = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(fn);
+    return Boolean(exp.cr168_voucher_desembolso && isBank);
+  };
+
   // Guardar cambios del modal de detalle
   const handleSaveChanges = async (e) => {
     e.preventDefault();
     if (!activeExpense) return;
 
     const isDesembolsado = parseInt(activeExpense.cr168_estado, 10) === 553050001;
-    const hasExistingVoucher = !!activeExpense.cr168_voucher_desembolso;
+    const hasExistingVoucher = checkHasPaymentVoucher(activeExpense);
     
     // Si es estado desembolsado y no tiene voucher previo ni se seleccionó uno nuevo
     if (isDesembolsado && !hasExistingVoucher && (!drawerVoucherFile || drawerVoucherFile === 'replace_request')) {
@@ -1664,7 +1680,7 @@ export default function AdminDashboard({ onLogout }) {
     if (!activeExpense) return;
 
     const isDesembolsado = parseInt(activeExpense.cr168_estado, 10) === 553050001;
-    const hasExistingVoucher = !!activeExpense.cr168_voucher_desembolso;
+    const hasExistingVoucher = checkHasPaymentVoucher(activeExpense);
 
     if (isDesembolsado && !hasExistingVoucher && (!drawerVoucherFile || drawerVoucherFile === 'replace_request')) {
       alert('Por favor, adjunta el comprobante (voucher) de desembolso para poder guardar con el estado Desembolsado.');
@@ -2447,16 +2463,8 @@ export default function AdminDashboard({ onLogout }) {
   const activeVoucherFileName = (activeExpense?.cr168_voucher_desembolso_name || '').toLowerCase();
   const isActiveBankVoucher = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(activeVoucherFileName);
 
-  // En facturas de buzón de proveedores, el archivo adjunto en Dataverse corresponde a la factura en PDF del emisor.
-  // Solo se considera que hay voucher de desembolso bancario si el gasto está efectivamente desembolsado y posee comprobante bancario.
-  // En rendiciones normales de vendedores, cr168_voucher_desembolso corresponde directamente al voucher de pago.
-  const hasPaymentVoucher = Boolean(
-    activeExpense && (
-      isBuzonActiveExpense
-        ? (isActiveExpenseDesembolsado && isActiveBankVoucher)
-        : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name)
-    )
-  );
+  // Determina si el gasto posee voucher bancario de desembolso válido
+  const hasPaymentVoucher = checkHasPaymentVoucher(activeExpense);
 
   return (
     <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -4973,15 +4981,15 @@ export default function AdminDashboard({ onLogout }) {
                       <div className="info-row form-group" style={{ marginBottom: '1rem', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
                         <span className="info-label" style={{ fontWeight: 'bold', color: 'var(--accent-color)' }}>Voucher de Desembolso</span>
                         
-                        {activeExpense.cr168_voucher_desembolso && !drawerVoucherFile ? (
+                        {hasPaymentVoucher && !drawerVoucherFile ? (
                           <div style={{ marginTop: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px 10px', marginBottom: '8px' }}>
                               <a
-                                href={`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}`}
+                                href={`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}&type=voucher`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 style={{ fontSize: '0.85rem', color: 'var(--primary-color)', textDecoration: 'underline', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}
-                                title="Ver comprobante actual"
+                                title="Ver comprobante de desembolso bancario actual"
                               >
                                 {activeExpense.cr168_voucher_desembolso_name || 'Ver Voucher actual'}
                               </a>
@@ -4997,7 +5005,7 @@ export default function AdminDashboard({ onLogout }) {
                                 Reemplazar
                               </button>
                             </div>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ya existe un comprobante guardado. Haz clic en él para visualizarlo.</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ya existe un comprobante bancario guardado. Haz clic en él para visualizarlo.</span>
                           </div>
                         ) : (
                           <div style={{ marginTop: '8px' }}>
@@ -5078,7 +5086,7 @@ export default function AdminDashboard({ onLogout }) {
                   <span className="info-label" style={{ alignSelf: 'flex-start', fontWeight: 'bold' }}>
                     {activeExpense.cr168_imagendelcomprobante_url
                       ? 'Foto del Comprobante (Cargada desde Dataverse)'
-                      : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
+                      : (activeExpense.cr168_voucher_propina_name || activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
                       ? 'Comprobante PDF (Adjunto del Buzón)'
                       : 'Foto del Comprobante'}
                   </span>
@@ -5115,21 +5123,21 @@ export default function AdminDashboard({ onLogout }) {
                           onClick={() => setIsZoomed(!isZoomed)}
                         />
                       </>
-                    ) : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]'))) ? (
+                    ) : (activeExpense.cr168_voucher_propina_name || activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]'))) ? (
                       <>
                         <button
                           type="button"
                           className="btn-expand-floating"
-                          title="Ver PDF en pantalla completa (nueva pestaña)"
+                          title="Ver Comprobante PDF (Adjunto del Buzón) en pantalla completa (nueva pestaña)"
                           onClick={() => {
-                            window.open(`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}`);
+                            window.open(`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}&type=factura`);
                           }}
                         >
                           ↗
                         </button>
                         <iframe
-                          src={`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}`}
-                          title="Previsualización PDF Comprobante"
+                          src={`/api/gastos/voucher?id=${activeExpense.cr168_reportedegastosid}&type=factura`}
+                          title="Comprobante PDF (Adjunto del Buzón)"
                           className="pdf-preview-iframe"
                           style={{ width: '100%', height: '100%', border: 'none', minHeight: '340px', borderRadius: '12px' }}
                         />
@@ -5148,8 +5156,8 @@ export default function AdminDashboard({ onLogout }) {
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '90%' }}>
                     {activeExpense.cr168_imagendelcomprobante_url
                       ? 'Haz clic sobre la imagen para activar/desactivar el zoom de lupa. Haz clic en ↗ para ver en pantalla completa.'
-                      : (activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
-                      ? 'Previsualizando documento PDF adjunto del buzón. Haz clic en ↗ para abrir en nueva pestaña.'
+                      : (activeExpense.cr168_voucher_propina_name || activeExpense.cr168_voucher_desembolso || activeExpense.cr168_voucher_desembolso_name || (activeExpense.cr168_detalle && activeExpense.cr168_detalle.includes('[Factura Correo]')))
+                      ? 'Previsualizando Comprobante PDF (Adjunto del Buzón). Haz clic en ↗ para abrir en nueva pestaña.'
                       : ''}
                   </span>
 
@@ -5173,6 +5181,8 @@ export default function AdminDashboard({ onLogout }) {
                         ? activeExpense.cr168_archivo_xml_name
                         : xmlMatchInDetalle
                         ? xmlMatchInDetalle[1].trim()
+                        : activeExpense.cr168_voucher_propina_name
+                        ? activeExpense.cr168_voucher_propina_name.replace(/\.pdf$/i, '.xml')
                         : activeExpense.cr168_voucher_desembolso_name
                         ? activeExpense.cr168_voucher_desembolso_name.replace(/\.pdf$/i, '.xml')
                         : `${activeExpense.cr168_rucdelcomercio || 'factura'}-${activeExpense.cr168_numerodecomprobante || activeExpense.cr168_reportedegastosid}.xml`

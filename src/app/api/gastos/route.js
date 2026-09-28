@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getExpenses, updateExpense, getExpense, uploadFileToExpense } from '../../../lib/dataverseClient.js';
+import { getExpenses, updateExpense, getExpense, uploadFileToExpense, fetchExpenseBinary } from '../../../lib/dataverseClient.js';
 import { sendEmail } from '../../../lib/graphClient.js';
 import { extractVoucherMetadata } from '../../../lib/kimiClient.js';
 
@@ -15,6 +15,51 @@ export async function GET() {
       { error: 'Error al obtener los gastos de Dataverse', details: error.message },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Sube el voucher bancario a cr168_voucher_desembolso asegurando que la factura PDF
+ * previa del buzón se resguarde en cr168_voucher_propina si aún residía en voucher_desembolso.
+ */
+async function uploadVoucherSafely(expenseId, voucherBuffer, voucherName, knownExpense = null) {
+  try {
+    let exp = knownExpense;
+    if (!exp) {
+      try {
+        exp = await getExpense(expenseId);
+      } catch (e) {
+        console.warn(`[uploadVoucherSafely] No se pudo obtener gasto ${expenseId}:`, e.message);
+      }
+    }
+
+    const isBuzon = Boolean(
+      exp && (
+        (exp.cr168_detalle && exp.cr168_detalle.includes('[Factura Correo]')) ||
+        (exp.cr168_nombrereporte && exp.cr168_nombrereporte.startsWith('[Factura]'))
+      )
+    );
+
+    if (isBuzon && exp) {
+      const prevVoucherName = (exp.cr168_voucher_desembolso_name || '').toLowerCase();
+      const isBankVoucher = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(prevVoucherName);
+      
+      // Si cr168_voucher_desembolso tiene la factura PDF y cr168_voucher_propina no tiene la factura aún:
+      if (exp.cr168_voucher_desembolso && !isBankVoucher && !exp.cr168_voucher_propina_name) {
+        console.log(`[uploadVoucherSafely] Resguardando factura previa ${exp.cr168_voucher_desembolso_name} en cr168_voucher_propina...`);
+        const invoiceBuffer = await fetchExpenseBinary(expenseId, 'cr168_voucher_desembolso');
+        if (invoiceBuffer && invoiceBuffer.length > 0) {
+          await uploadFileToExpense(expenseId, invoiceBuffer, exp.cr168_voucher_desembolso_name, 'cr168_voucher_propina');
+          console.log(`[uploadVoucherSafely] Factura previa resguardada exitosamente en cr168_voucher_propina.`);
+        }
+      }
+    }
+
+    // Subir el voucher de desembolso bancario a su columna correspondiente
+    await uploadFileToExpense(expenseId, voucherBuffer, voucherName, 'cr168_voucher_desembolso');
+  } catch (err) {
+    console.error(`[uploadVoucherSafely] Error al subir voucher seguro para ${expenseId}:`, err.message);
+    throw err;
   }
 }
 
@@ -103,7 +148,7 @@ export async function PATCH(request) {
           
           if (voucherBuffer) {
             try {
-              await uploadFileToExpense(expenseId, voucherBuffer, voucherName);
+              await uploadVoucherSafely(expenseId, voucherBuffer, voucherName);
             } catch (uploadErr) {
               console.error(`Error al subir voucher para gasto ${expenseId}:`, uploadErr.message);
             }
@@ -239,7 +284,7 @@ export async function PATCH(request) {
       // Subir el voucher de desembolso si se proporcionó y auto-extraer ID
       if (voucherBuffer) {
         try {
-          await uploadFileToExpense(id, voucherBuffer, voucherName);
+          await uploadVoucherSafely(id, voucherBuffer, voucherName, previousExpense);
           try {
             const extracted = await extractVoucherMetadata(voucherBuffer, voucherName);
             if (extracted?.id_desembolso) {

@@ -91,6 +91,11 @@ async function handleInvoiceSync() {
             return true;
           }
 
+          // E. Coincidencia por nombre en voucher_propina (factura PDF de buzón resguardada)
+          if (itemPdfName && e.cr168_voucher_propina_name && safeFileName(e.cr168_voucher_propina_name) === itemPdfName) {
+            return true;
+          }
+
           return false;
         });
 
@@ -239,10 +244,10 @@ async function handleInvoiceSync() {
 
         console.log(`[InvoiceCronSync] Gasto registrado exitosamente en Dataverse con ID: ${expenseId} (Vendedor: ${assignedVendor})`);
 
-        // Subir voucher PDF si existe buffer
+        // Subir factura PDF del emisor a cr168_voucher_propina (resguardo de factura fiscal para proveedores)
         if (item.pdfBuffer && item.pdfBuffer.length > 0) {
-          await uploadFileToExpense(expenseId, item.pdfBuffer, item.pdfFileName, 'cr168_voucher_desembolso');
-          console.log(`[InvoiceCronSync] Archivo PDF "${item.pdfFileName}" adjuntado al gasto ${expenseId}.`);
+          await uploadFileToExpense(expenseId, item.pdfBuffer, item.pdfFileName, 'cr168_voucher_propina');
+          console.log(`[InvoiceCronSync] Archivo PDF "${item.pdfFileName}" adjuntado al gasto ${expenseId} en cr168_voucher_propina.`);
         }
 
         // Subir y almacenar archivo XML si existe (en Dataverse cr168_archivo_xml y caché local)
@@ -335,7 +340,8 @@ async function handleInvoiceSync() {
         registeredPdfs.add(itemPdfName);
         existingExpenses.push({
           cr168_reportedegastosid: expenseId,
-          cr168_voucher_desembolso_name: item.pdfFileName,
+          cr168_voucher_propina_name: item.pdfFileName,
+          cr168_voucher_desembolso_name: null,
           cr168_archivo_xml_name: item.xmlFileName || null,
           cr168_numerodecomprobante: itemNumero,
           cr168_rucdelcomercio: itemRuc,
