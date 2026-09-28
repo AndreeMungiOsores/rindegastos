@@ -243,7 +243,10 @@ export default function AdminDashboard({ onLogout }) {
   const [newLoanNumeroCuotas, setNewLoanNumeroCuotas] = useState(1);
   const [newLoanFechaInicioPago, setNewLoanFechaInicioPago] = useState('');
   const [newLoanMesDescuento, setNewLoanMesDescuento] = useState('');
+  const [newLoanIncluirGrati, setNewLoanIncluirGrati] = useState(false);
+  const [newLoanTipoGrati, setNewLoanTipoGrati] = useState('diciembre');
   const [newLoanEstado, setNewLoanEstado] = useState('Pendiente');
+
 
   // Estado para la sincronización diaria de facturas desde el buzón de correo
   const [isSyncingInvoices, setIsSyncingInvoices] = useState(false);
@@ -2251,7 +2254,9 @@ export default function AdminDashboard({ onLogout }) {
         numeroCuotas: newLoanModalidad === 'Pago en Cuotas' ? Math.max(1, parseInt(newLoanNumeroCuotas, 10) || 1) : 1,
         fechaDesembolso: newLoanFechaDesembolso,
         fechaInicioPago: newLoanFechaInicioPago,
-        mesDescuento: newLoanMesDescuento
+        mesDescuento: newLoanMesDescuento,
+        incluirGrati: newLoanModalidad === 'Pago en Cuotas' && newLoanIncluirGrati,
+        tipoGrati: newLoanTipoGrati
       };
 
       const res = await fetch('/api/prestamos', {
@@ -2274,6 +2279,8 @@ export default function AdminDashboard({ onLogout }) {
       setNewLoanNumeroCuotas(1);
       setNewLoanFechaInicioPago('');
       setNewLoanMesDescuento('');
+      setNewLoanIncluirGrati(false);
+      setNewLoanTipoGrati('diciembre');
       setIsAddLoanModalOpen(false);
       await fetchLoans();
     } catch (err) {
@@ -5994,6 +6001,62 @@ export default function AdminDashboard({ onLogout }) {
                           placeholder="Ej. 2, 3, 6, 12"
                           required
                         />
+                      </div>
+                    )}
+
+                    {newLoanModalidad === 'Pago en Cuotas' && (
+                      <div style={{ background: 'var(--bg-surface-2, #f7f9fc)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', marginBottom: newLoanIncluirGrati ? '0.65rem' : '0' }}>
+                          <input
+                            type="checkbox"
+                            checked={newLoanIncluirGrati}
+                            onChange={(e) => setNewLoanIncluirGrati(e.target.checked)}
+                            style={{ width: '15px', height: '15px', accentColor: 'var(--primary-color, #2563eb)', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--navy-900)' }}>
+                            Incluir descuento en Gratificación
+                          </span>
+                        </label>
+                        {newLoanIncluirGrati && (
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.1rem' }}>
+                            <button
+                              type="button"
+                              onClick={() => setNewLoanTipoGrati('julio')}
+                              style={{
+                                flex: 1,
+                                padding: '0.4rem 0.5rem',
+                                fontSize: '0.78rem',
+                                fontWeight: '600',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                border: newLoanTipoGrati === 'julio' ? '2px solid var(--primary-color, #2563eb)' : '1px solid var(--border-color)',
+                                background: newLoanTipoGrati === 'julio' ? 'var(--primary-color, #2563eb)' : '#ffffff',
+                                color: newLoanTipoGrati === 'julio' ? '#ffffff' : 'var(--text-secondary)',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              🌞 Grati Julio (15/07)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewLoanTipoGrati('diciembre')}
+                              style={{
+                                flex: 1,
+                                padding: '0.4rem 0.5rem',
+                                fontSize: '0.78rem',
+                                fontWeight: '600',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                border: newLoanTipoGrati === 'diciembre' ? '2px solid var(--primary-color, #2563eb)' : '1px solid var(--border-color)',
+                                background: newLoanTipoGrati === 'diciembre' ? 'var(--primary-color, #2563eb)' : '#ffffff',
+                                color: newLoanTipoGrati === 'diciembre' ? '#ffffff' : 'var(--text-secondary)',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              ❄️ Grati Diciembre (15/12)
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 

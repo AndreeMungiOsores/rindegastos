@@ -296,7 +296,9 @@ export async function createLoan(loanData) {
     numeroCuotas,
     fechaDesembolso,
     fechaInicioPago,
-    mesDescuento
+    mesDescuento,
+    incluirGrati = false,
+    tipoGrati = 'diciembre'
   } = loanData;
 
   const numCuotas = modalidad === 'Pago en Cuotas' ? Math.max(1, parseInt(numeroCuotas, 10) || 1) : 1;
@@ -305,14 +307,54 @@ export async function createLoan(loanData) {
 
   const codigo = `PRE-${Date.now().toString().slice(-6)}`;
 
-  // Fecha fin calculada para préstamos en cuotas
-  let fechaFin = fechaInicioPago;
-  if (numCuotas > 1 && fechaInicioPago) {
-    const startDate = new Date(`${fechaInicioPago}T00:00:00`);
-    startDate.setMonth(startDate.getMonth() + (numCuotas - 1));
-    const lastDayOfMonth = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-    fechaFin = lastDayOfMonth.toISOString().split('T')[0];
+  const monthNames = [
+    'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
+    'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
+  ];
+
+  // ── Generar slots de cuotas (fechas + etiquetas) ──────────────────────────
+  const slots = [];
+  const activarGrati = incluirGrati && modalidad === 'Pago en Cuotas' && numCuotas > 1;
+  const regularCount = activarGrati ? numCuotas - 1 : numCuotas;
+
+  // Cuotas regulares (fin de mes)
+  for (let i = 0; i < regularCount; i++) {
+    let cuotaDate = new Date(`${fechaInicioPago}T00:00:00`);
+    if (i > 0) {
+      cuotaDate.setMonth(cuotaDate.getMonth() + i);
+      cuotaDate = new Date(cuotaDate.getFullYear(), cuotaDate.getMonth() + 1, 0);
+    }
+    const label = regularCount === 1 && mesDescuento && mesDescuento.trim() !== ''
+      ? mesDescuento
+      : `${monthNames[cuotaDate.getMonth()]} ${cuotaDate.getFullYear()}`;
+    slots.push({ date: new Date(cuotaDate), mesNombre: label, isGrati: false });
   }
+
+  // Cuota de gratificación (15 de julio o 15 de diciembre)
+  if (activarGrati) {
+    const gratiMonthIdx = tipoGrati === 'julio' ? 6 : 11; // 0-indexed
+    const startDate = new Date(`${fechaInicioPago}T00:00:00`);
+    let gratiYear = startDate.getFullYear();
+    // Si la grati de ese año ya pasó respecto a la fecha de inicio, usar el siguiente año
+    if (
+      startDate.getMonth() > gratiMonthIdx ||
+      (startDate.getMonth() === gratiMonthIdx && startDate.getDate() > 15)
+    ) {
+      gratiYear++;
+    }
+    const gratiDate = new Date(gratiYear, gratiMonthIdx, 15);
+    const gratiLabel = tipoGrati === 'julio'
+      ? `GRATIFICACIÓN JULIO ${gratiYear}`
+      : `GRATIFICACIÓN DICIEMBRE ${gratiYear}`;
+    slots.push({ date: gratiDate, mesNombre: gratiLabel, isGrati: true });
+  }
+
+  // Ordenar cronológicamente
+  slots.sort((a, b) => a.date - b.date);
+
+  // ── fechaFin = última fecha del cronograma ────────────────────────────────
+  const lastSlotDate = slots.length > 0 ? slots[slots.length - 1].date : new Date(`${fechaInicioPago}T00:00:00`);
+  const fechaFin = lastSlotDate.toISOString().split('T')[0];
 
   const prestamoPayload = {
     cr168_codigo: codigo,
@@ -339,39 +381,26 @@ export async function createLoan(loanData) {
     throw new Error(`[DataverseClient] No se pudo obtener el ID del préstamo creado. Respuesta recibida: ${JSON.stringify(createdPrestamo)}`);
   }
 
-  // Generar cuotas
-  const monthNames = [
-    'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
-    'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
-  ];
-
+  // ── Crear cuotas en Dataverse ────────────────────────────────────────────
   const cuotasCreadas = [];
   let sumaCuotasPrevias = 0;
 
-  for (let i = 1; i <= numCuotas; i++) {
-    const isLast = i === numCuotas;
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    const isLast = i === slots.length - 1;
     const montoCuota = isLast ? Number((totalMonto - sumaCuotasPrevias).toFixed(2)) : cuotaBase;
     sumaCuotasPrevias += cuotaBase;
 
-    let cuotaDate = new Date(`${fechaInicioPago}T00:00:00`);
-    if (i > 1) {
-      cuotaDate.setMonth(cuotaDate.getMonth() + (i - 1));
-      // Último día de ese mes
-      cuotaDate = new Date(cuotaDate.getFullYear(), cuotaDate.getMonth() + 1, 0);
-    }
-    const fechaProgStr = cuotaDate.toISOString().split('T')[0];
-    const mesNombre = mesDescuento && numCuotas === 1
-      ? mesDescuento
-      : `${monthNames[cuotaDate.getMonth()]} ${cuotaDate.getFullYear()}`;
-
     const cuotaPayload = {
-      cr168_codigocuota: `${codigo}-C${String(i).padStart(2, '0')}`,
-      cr168_numerocuota: i,
-      cr168_mes: mesNombre,
+      cr168_codigocuota: `${codigo}-C${String(i + 1).padStart(2, '0')}`,
+      cr168_numerocuota: i + 1,
+      cr168_mes: slot.mesNombre,
       cr168_monto: montoCuota,
-      cr168_fechaprogramada: fechaProgStr,
+      cr168_fechaprogramada: slot.date.toISOString().split('T')[0],
       cr168_estadocuota: 'Pendiente',
-      cr168_observacion: isLast && numCuotas > 1 && montoCuota !== cuotaBase ? 'Ajuste de céntimos en última cuota' : null,
+      cr168_observacion: isLast && numCuotas > 1 && montoCuota !== cuotaBase
+        ? 'Ajuste de céntimos en última cuota'
+        : null,
       'cr168_prestamoid@odata.bind': `/cr168_prestamos(${prestamoId})`
     };
 
