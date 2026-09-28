@@ -790,7 +790,36 @@ export default function AdminDashboard({ onLogout }) {
   }, [expenses]);
 
   const buzonExpenses = useMemo(() => {
-    return expenses.filter(e => (e.cr168_detalle || '').startsWith('[Factura Correo]'));
+    const raw = expenses.filter(e => (e.cr168_detalle || '').startsWith('[Factura Correo]'));
+
+    // Deduplicación defensiva en el cliente: si existen registros duplicados en Dataverse,
+    // consolidar priorizando el registro desembolsado/pagado o con comprobante asignado
+    const map = new Map();
+    for (const exp of raw) {
+      const ruc = (exp.cr168_rucdelcomercio || '').trim();
+      const num = (exp.cr168_numerodecomprobante || '').trim().toUpperCase();
+      const key = (ruc && num) ? `${ruc}::${num}` : exp.cr168_reportedegastosid;
+
+      if (!map.has(key)) {
+        map.set(key, exp);
+      } else {
+        const existing = map.get(key);
+        const isExpPaid = isExpensePaid(exp);
+        const isExistingPaid = isExpensePaid(existing);
+
+        if (isExpPaid && !isExistingPaid) {
+          map.set(key, exp);
+        } else if (isExpPaid && isExistingPaid) {
+          // Si ambos están pagados, conservar el más recientemente actualizado
+          const expDate = new Date(exp.modifiedon || exp.createdon || 0);
+          const existDate = new Date(existing.modifiedon || existing.createdon || 0);
+          if (expDate > existDate) {
+            map.set(key, exp);
+          }
+        }
+      }
+    }
+    return Array.from(map.values());
   }, [expenses]);
 
   // Lista única de equipos/áreas para el selector de filtros (basada en colaboradores de rendición)

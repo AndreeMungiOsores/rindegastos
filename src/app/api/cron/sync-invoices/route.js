@@ -55,18 +55,47 @@ async function handleInvoiceSync() {
     for (const item of invoiceEmails) {
       try {
         const itemPdfName = safeFileName(item.pdfFileName);
+        const itemXmlName = safeFileName(item.xmlFileName);
 
-        // Verificar si el comprobante PDF ya fue registrado previamente en Dataverse
-        const isDuplicatePdf = itemPdfName && registeredPdfs.has(itemPdfName);
+        // 1. Extraer identificadores fiscales SUNAT (RUC y Serie-Número) del PDF o XML
+        const sunatMatch = (item.pdfFileName || '').match(/([0-9]{11})-(?:01|03|07|08)-([a-z0-9]+-[0-9]+)/i) ||
+                           (item.xmlFileName || '').match(/([0-9]{11})-(?:01|03|07|08)-([a-z0-9]+-[0-9]+)/i);
+        const itemRuc = sunatMatch ? sunatMatch[1] : null;
+        const itemNumero = sunatMatch ? sunatMatch[2].toUpperCase().trim() : null;
 
-        if (isDuplicatePdf) {
-          const existingExpense = existingExpenses.find(e => {
-            const vName = e.cr168_voucher_desembolso_name ? safeFileName(e.cr168_voucher_desembolso_name) : null;
-            return (vName && vName === itemPdfName) || (e.cr168_detalle && e.cr168_detalle.includes(item.pdfFileName));
-          });
+        // 2. Búsqueda exhaustiva multicapa de la factura en Dataverse:
+        // Evita duplicaciones aun si cr168_voucher_desembolso fue reemplazado por un voucher de desembolso bancario
+        const existingExpense = existingExpenses.find(e => {
+          // A. Coincidencia por RUC y Número de Comprobante fiscal único
+          if (itemRuc && itemNumero && e.cr168_rucdelcomercio && e.cr168_numerodecomprobante) {
+            const eRuc = String(e.cr168_rucdelcomercio).replace(/[^0-9]/g, '');
+            const eNum = String(e.cr168_numerodecomprobante).replace(/\s+/g, '').toUpperCase();
+            if (eRuc === itemRuc && eNum === itemNumero) {
+              return true;
+            }
+          }
 
-          if (existingExpense) {
-            const existingId = existingExpense.cr168_reportedegastosid;
+          // B. Coincidencia por nombre de archivo original en el detalle (inmutable ante reemplazo de vouchers)
+          const detalle = (e.cr168_detalle || '').toLowerCase();
+          if (itemPdfName && detalle.includes(itemPdfName)) return true;
+          if (item.pdfFileName && detalle.includes(item.pdfFileName.toLowerCase())) return true;
+          if (item.xmlFileName && detalle.includes(item.xmlFileName.toLowerCase())) return true;
+
+          // C. Coincidencia por nombre de archivo XML adjunto
+          if (itemXmlName && e.cr168_archivo_xml_name && safeFileName(e.cr168_archivo_xml_name) === itemXmlName) {
+            return true;
+          }
+
+          // D. Coincidencia por nombre en voucher_desembolso (si aún conserva la factura original)
+          if (itemPdfName && e.cr168_voucher_desembolso_name && safeFileName(e.cr168_voucher_desembolso_name) === itemPdfName) {
+            return true;
+          }
+
+          return false;
+        });
+
+        if (existingExpense) {
+          const existingId = existingExpense.cr168_reportedegastosid;
             const hasXmlAttached = Boolean(existingExpense.cr168_archivo_xml && existingExpense.cr168_archivo_xml_name);
             const needsXmlUpload = Boolean((item.xmlContent || item.xmlBuffer) && !hasXmlAttached);
             const needsEnrichment = !existingExpense.cr168_numerodecomprobante || 
@@ -169,15 +198,14 @@ async function handleInvoiceSync() {
               });
               continue;
             }
-          }
 
-          console.log(`[InvoiceCronSync] Omitiendo factura duplicada en Dataverse: "${item.subject}" (PDF: ${item.pdfFileName})`);
-          skippedInvoices.push({
-            subject: item.subject,
-            reason: `PDF ya existe (${item.pdfFileName})`
-          });
-          continue;
-        }
+            console.log(`[InvoiceCronSync] Omitiendo factura duplicada en Dataverse: "${item.subject}" (PDF: ${item.pdfFileName})`);
+            skippedInvoices.push({
+              subject: item.subject,
+              reason: `Factura ya existe en Dataverse (${item.pdfFileName})`
+            });
+            continue;
+          }
 
         console.log(`[InvoiceCronSync] Procesando factura "${item.pdfFileName}" del correo "${item.subject}" de ${item.senderName}...`);
 
@@ -303,8 +331,16 @@ async function handleInvoiceSync() {
         // Marcar correo como leído en Microsoft Graph
         await markEmailAsRead(item.messageId);
 
-        // Agregar al set local para evitar duplicados en la misma iteración
+        // Agregar al set y lista local para evitar duplicados en la misma iteración
         registeredPdfs.add(itemPdfName);
+        existingExpenses.push({
+          cr168_reportedegastosid: expenseId,
+          cr168_voucher_desembolso_name: item.pdfFileName,
+          cr168_archivo_xml_name: item.xmlFileName || null,
+          cr168_numerodecomprobante: itemNumero,
+          cr168_rucdelcomercio: itemRuc,
+          cr168_detalle: newExpensePayload.cr168_detalle
+        });
 
         processedInvoices.push({
           expenseId,

@@ -461,3 +461,14 @@ export async function deleteLoan(prestamoId) {
   await request('DELETE', `cr168_prestamos(${prestamoId})`);
   return { success: true, prestamoId };
 }
+
+/**
+ * Elimina un registro de reporte de gastos por su ID en Dataverse.
+ * @param {string} id - El UUID del gasto
+ * @returns {Promise<Object>} Resultado de la eliminación
+ */
+export async function deleteExpense(id) {
+  console.log(`[DataverseClient] Eliminando gasto ${id} en Dataverse...`);
+  await request('DELETE', `cr168_reportedegastoses(${id})`);
+  return { success: true, id };
+}
