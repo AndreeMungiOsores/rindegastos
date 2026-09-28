@@ -296,7 +296,6 @@ export async function createLoan(loanData) {
     numeroCuotas,
     fechaDesembolso,
     fechaInicioPago,
-    mesDescuento,
     incluirGrati = false,
     tipoGrati = 'diciembre'
   } = loanData;
@@ -324,9 +323,7 @@ export async function createLoan(loanData) {
       cuotaDate.setMonth(cuotaDate.getMonth() + i);
       cuotaDate = new Date(cuotaDate.getFullYear(), cuotaDate.getMonth() + 1, 0);
     }
-    const label = regularCount === 1 && mesDescuento && mesDescuento.trim() !== ''
-      ? mesDescuento
-      : `${monthNames[cuotaDate.getMonth()]} ${cuotaDate.getFullYear()}`;
+    const label = `${monthNames[cuotaDate.getMonth()]} ${cuotaDate.getFullYear()}`;
     slots.push({ date: new Date(cuotaDate), mesNombre: label, isGrati: false });
   }
 

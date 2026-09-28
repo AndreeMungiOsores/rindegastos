@@ -242,7 +242,6 @@ export default function AdminDashboard({ onLogout }) {
   const [newLoanModalidad, setNewLoanModalidad] = useState('Pago Único');
   const [newLoanNumeroCuotas, setNewLoanNumeroCuotas] = useState(1);
   const [newLoanFechaInicioPago, setNewLoanFechaInicioPago] = useState('');
-  const [newLoanMesDescuento, setNewLoanMesDescuento] = useState('');
   const [newLoanIncluirGrati, setNewLoanIncluirGrati] = useState(false);
   const [newLoanTipoGrati, setNewLoanTipoGrati] = useState('diciembre');
   const [newLoanEstado, setNewLoanEstado] = useState('Pendiente');
@@ -2254,7 +2253,6 @@ export default function AdminDashboard({ onLogout }) {
         numeroCuotas: newLoanModalidad === 'Pago en Cuotas' ? Math.max(1, parseInt(newLoanNumeroCuotas, 10) || 1) : 1,
         fechaDesembolso: newLoanFechaDesembolso,
         fechaInicioPago: newLoanFechaInicioPago,
-        mesDescuento: newLoanMesDescuento,
         incluirGrati: newLoanModalidad === 'Pago en Cuotas' && newLoanIncluirGrati,
         tipoGrati: newLoanTipoGrati
       };
@@ -2278,7 +2276,6 @@ export default function AdminDashboard({ onLogout }) {
       setNewLoanModalidad('Pago Único');
       setNewLoanNumeroCuotas(1);
       setNewLoanFechaInicioPago('');
-      setNewLoanMesDescuento('');
       setNewLoanIncluirGrati(false);
       setNewLoanTipoGrati('diciembre');
       setIsAddLoanModalOpen(false);
@@ -6060,29 +6057,17 @@ export default function AdminDashboard({ onLogout }) {
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-                      <div className="loans-form-group">
-                        <label>Fecha de Inicio de Pago *</label>
-                        <input
-                          type="date"
-                          className="loans-input"
-                          value={newLoanFechaInicioPago}
-                          onChange={(e) => setNewLoanFechaInicioPago(e.target.value)}
-                          required
-                        />
-                      </div>
-
-                      <div className="loans-form-group">
-                        <label>Mes de Descuento (Si aplica)</label>
-                        <input
-                          type="text"
-                          className="loans-input"
-                          value={newLoanMesDescuento}
-                          onChange={(e) => setNewLoanMesDescuento(e.target.value)}
-                          placeholder="Ej. Gratificación Diciembre"
-                        />
-                      </div>
+                    <div className="loans-form-group">
+                      <label>Fecha de Inicio de Pago *</label>
+                      <input
+                        type="date"
+                        className="loans-input"
+                        value={newLoanFechaInicioPago}
+                        onChange={(e) => setNewLoanFechaInicioPago(e.target.value)}
+                        required
+                      />
                     </div>
+
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
                       <button
