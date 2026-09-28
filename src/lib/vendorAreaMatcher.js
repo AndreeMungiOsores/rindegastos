@@ -91,3 +91,56 @@ export function getVendorArea(vendorName) {
 
   return maxMatchedTokens >= 1 ? bestMatchArea : 'Sin Asignar';
 }
+
+/**
+ * Resuelve el nombre del colaborador según la dirección de correo remitente.
+ * @param {string} email - Correo del remitente (ej: ti@blisscorp.lat, andreemungi@gmail.com)
+ * @returns {string} Nombre del colaborador asignado
+ */
+export function resolveVendorFromEmail(email) {
+  if (!email) return 'Adrián Marcel Murakami Fung';
+  const cleanEmail = email.toLowerCase().trim();
+
+  // TI / Andree Mungi
+  if (
+    cleanEmail.includes('ti@blisscorp') ||
+    cleanEmail.includes('andreemungi') ||
+    cleanEmail.includes('andree.mungi') ||
+    cleanEmail.includes('andree@')
+  ) {
+    return 'Andree Mungi';
+  }
+
+  // Adrián Murakami
+  if (cleanEmail.includes('adrian') || cleanEmail.includes('murakami')) {
+    return 'Adrián Marcel Murakami Fung';
+  }
+
+  // Gonzalo Laqui
+  if (cleanEmail.includes('gonzalo') || cleanEmail.includes('laqui')) {
+    return 'Gonzalo Laqui';
+  }
+
+  // Carolina Araujo
+  if (cleanEmail.includes('carolina') || cleanEmail.includes('araujo')) {
+    return 'Carolina Araujo';
+  }
+
+  // María Alejandra Vilches
+  if (cleanEmail.includes('mariale') || cleanEmail.includes('vilches')) {
+    return 'María Alejandra Vilches';
+  }
+
+  // Andrés Chirinos
+  if (cleanEmail.includes('andres') || cleanEmail.includes('chirinos')) {
+    return 'Andrés Chirinos de Pablos';
+  }
+
+  // Jennifer Gasla
+  if (cleanEmail.includes('jennifer') || cleanEmail.includes('gasla')) {
+    return 'Jennifer Gasla';
+  }
+
+  // Fallback por defecto
+  return 'Adrián Marcel Murakami Fung';
+}

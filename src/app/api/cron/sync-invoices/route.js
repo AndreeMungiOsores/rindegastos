@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { fetchUnreadInvoiceEmails, markEmailAsRead } from '../../../../lib/graphMailReader.js';
 import { createExpense, getExpenses, uploadFileToExpense, updateExpense } from '../../../../lib/dataverseClient.js';
 import { extractInvoiceFromBuffer, extractInvoiceFromXml, formatProviderMetadataTag } from '../../../../lib/invoiceExtractor.js';
+import { resolveVendorFromEmail } from '../../../../lib/vendorAreaMatcher.js';
 
 export async function GET() {
   return await handleInvoiceSync();
@@ -101,62 +102,64 @@ async function handleInvoiceSync() {
                     console.warn(`[InvoiceCronSync] No se pudo adjuntar XML en Dataverse para ${existingId}:`, xmlUploadErr.message);
                   }
                 }
+              }
 
-                // 3. Enriquecer datos tributarios en Dataverse si están incompletos
-                if (needsEnrichment) {
-                  try {
-                    let invoiceData = null;
-                    if (item.xmlContent) {
-                      console.log(`[InvoiceCronSync] Parseando XML UBL SUNAT para actualizar existente "${existingId}"...`);
-                      invoiceData = extractInvoiceFromXml(item.xmlContent);
-                    }
-                    if (!invoiceData || !invoiceData.total_factura) {
-                      invoiceData = await extractInvoiceFromBuffer(item.pdfBuffer, item.pdfFileName);
-                    }
-
-                    if (invoiceData && invoiceData.total_factura) {
-                      const spotTag = formatProviderMetadataTag(invoiceData);
-                      const xmlSuffix = item.xmlFileName ? ` (XML: ${item.xmlFileName})` : '';
-                      const baseDetalle = `[Factura Correo] ${item.subject} (${item.pdfFileName}${xmlSuffix})`.trim();
-                      const maxBaseLen = Math.max(20, 390 - spotTag.length);
-                      const safeBaseDetalle = baseDetalle.length > maxBaseLen ? baseDetalle.substring(0, maxBaseLen) : baseDetalle;
-
-                      let cleanMerchant = item.senderName || 'Proveedor General';
-                      if (item.senderEmail && item.senderEmail.includes('cabify')) {
-                        cleanMerchant = 'Cabify / Facturación Logistics';
-                      } else if (cleanMerchant.toLowerCase().includes('facturacion logistics')) {
-                        cleanMerchant = 'Facturación Logistics';
-                      }
-
-                      const enrichPayload = {
-                        cr168_montototalincluyendoigv: invoiceData.total_factura,
-                        cr168_base_gravada: invoiceData.base_gravada,
-                        cr168_tasa_igv: invoiceData.tasa_igv,
-                        cr168_igv_monto: invoiceData.igv_monto,
-                        cr168_inafecto: invoiceData.inafecto,
-                        cr168_rucdelcomercio: invoiceData.ruc_emisor || undefined,
-                        cr168_nombredelcomercio: invoiceData.nombre_emisor || cleanMerchant,
-                        cr168_numerodecomprobante: invoiceData.numero_comprobante || undefined,
-                        cr168_tipodecomprobante: invoiceData.tipo_comprobante || undefined,
-                        cr168_empresa: invoiceData.cliente_empresa || 'BLISSCORP S.A.C',
-                        cr168_ia_procesado: true,
-                        cr168_ia_confianza: invoiceData.confianza,
-                        cr168_detalle: `${safeBaseDetalle}${spotTag}`
-                      };
-
-                      if (invoiceData.fecha_emision) {
-                        enrichPayload.cr168_fechadelgasto = `${invoiceData.fecha_emision}T05:00:00Z`;
-                      }
-                      if (invoiceData.fecha_vencimiento) {
-                        enrichPayload.cr168_fecha = `${invoiceData.fecha_vencimiento}T05:00:00Z`;
-                      }
-
-                      await updateExpense(existingId, enrichPayload);
-                      console.log(`[InvoiceCronSync] Factura existente ${existingId} enriquecida exitosamente con datos del XML.`);
-                    }
-                  } catch (enrichErr) {
-                    console.warn(`[InvoiceCronSync] Error enriqueciendo gasto existente ${existingId}:`, enrichErr.message);
+              // 3. Enriquecer datos tributarios y comerciales si están incompletos
+              if (needsEnrichment) {
+                try {
+                  let invoiceData = null;
+                  if (item.xmlContent) {
+                    console.log(`[InvoiceCronSync] Parseando XML UBL SUNAT para actualizar existente "${existingId}"...`);
+                    invoiceData = extractInvoiceFromXml(item.xmlContent);
                   }
+                  if (!invoiceData || !invoiceData.total_factura) {
+                    invoiceData = await extractInvoiceFromBuffer(item.pdfBuffer, item.pdfFileName);
+                  }
+
+                  if (invoiceData && (invoiceData.total_factura || invoiceData.nombre_emisor)) {
+                    const spotTag = formatProviderMetadataTag(invoiceData);
+                    const xmlSuffix = item.xmlFileName ? ` (XML: ${item.xmlFileName})` : '';
+                    const baseDetalle = `[Factura Correo] ${item.subject} (${item.pdfFileName}${xmlSuffix})`.trim();
+                    const maxBaseLen = Math.max(20, 390 - spotTag.length);
+                    const safeBaseDetalle = baseDetalle.length > maxBaseLen ? baseDetalle.substring(0, maxBaseLen) : baseDetalle;
+
+                    const assignedVendor = resolveVendorFromEmail(item.senderEmail);
+                    let cleanMerchant = invoiceData.nombre_emisor || item.senderName || 'Proveedor General';
+                    if (item.senderEmail && item.senderEmail.includes('cabify')) {
+                      cleanMerchant = 'Cabify / Facturación Logistics';
+                    } else if (cleanMerchant.toLowerCase().includes('facturacion logistics')) {
+                      cleanMerchant = 'Facturación Logistics';
+                    }
+
+                    const enrichPayload = {
+                      cr168_vendedor: assignedVendor,
+                      cr168_montototalincluyendoigv: invoiceData.total_factura != null ? invoiceData.total_factura : undefined,
+                      cr168_base_gravada: invoiceData.base_gravada != null ? invoiceData.base_gravada : undefined,
+                      cr168_tasa_igv: invoiceData.tasa_igv != null ? invoiceData.tasa_igv : undefined,
+                      cr168_igv_monto: invoiceData.igv_monto != null ? invoiceData.igv_monto : undefined,
+                      cr168_inafecto: invoiceData.inafecto != null ? invoiceData.inafecto : undefined,
+                      cr168_rucdelcomercio: invoiceData.ruc_emisor || undefined,
+                      cr168_nombredelcomercio: cleanMerchant,
+                      cr168_numerodecomprobante: invoiceData.numero_comprobante || undefined,
+                      cr168_tipodecomprobante: invoiceData.tipo_comprobante || undefined,
+                      cr168_empresa: invoiceData.cliente_empresa || 'BLISSCORP S.A.C',
+                      cr168_ia_procesado: true,
+                      cr168_ia_confianza: invoiceData.confianza,
+                      cr168_detalle: `${safeBaseDetalle}${spotTag}`
+                    };
+
+                    if (invoiceData.fecha_emision) {
+                      enrichPayload.cr168_fechadelgasto = `${invoiceData.fecha_emision}T05:00:00Z`;
+                    }
+                    if (invoiceData.fecha_vencimiento) {
+                      enrichPayload.cr168_fecha = `${invoiceData.fecha_vencimiento}T05:00:00Z`;
+                    }
+
+                    await updateExpense(existingId, enrichPayload);
+                    console.log(`[InvoiceCronSync] Factura existente ${existingId} enriquecida exitosamente con Kimi AI/XML.`);
+                  }
+                } catch (enrichErr) {
+                  console.warn(`[InvoiceCronSync] Error enriqueciendo gasto existente ${existingId}:`, enrichErr.message);
                 }
               }
 
@@ -186,8 +189,10 @@ async function handleInvoiceSync() {
           cleanMerchant = 'Facturación Logistics';
         }
 
+        const assignedVendor = resolveVendorFromEmail(item.senderEmail);
+
         const newExpensePayload = {
-          cr168_vendedor: 'Adrián Marcel Murakami Fung',
+          cr168_vendedor: assignedVendor,
           cr168_empresa: 'BLISSCORP S.A.C',
           cr168_nombredelcomercio: cleanMerchant,
           cr168_fechadelgasto: item.receivedDateTime,
@@ -204,7 +209,7 @@ async function handleInvoiceSync() {
           throw new Error('No se obtuvo el ID del registro creado en Dataverse.');
         }
 
-        console.log(`[InvoiceCronSync] Gasto registrado exitosamente en Dataverse con ID: ${expenseId}`);
+        console.log(`[InvoiceCronSync] Gasto registrado exitosamente en Dataverse con ID: ${expenseId} (Vendedor: ${assignedVendor})`);
 
         // Subir voucher PDF si existe buffer
         if (item.pdfBuffer && item.pdfBuffer.length > 0) {
@@ -212,7 +217,7 @@ async function handleInvoiceSync() {
           console.log(`[InvoiceCronSync] Archivo PDF "${item.pdfFileName}" adjuntado al gasto ${expenseId}.`);
         }
 
-        // Subir y almacenar archivo XML si existe (en Dataverse cr168_voucher_propina y caché local)
+        // Subir y almacenar archivo XML si existe (en Dataverse cr168_archivo_xml y caché local)
         if (item.xmlContent || item.xmlBuffer) {
           const xmlBuffer = item.xmlBuffer || Buffer.from(item.xmlContent, 'utf-8');
           const xmlName = item.xmlFileName || `${item.pdfFileName.replace(/\.pdf$/i, '')}.xml`;
@@ -237,8 +242,10 @@ async function handleInvoiceSync() {
           } catch (xmlUploadErr) {
             console.warn(`[InvoiceCronSync] No se pudo adjuntar XML en Dataverse:`, xmlUploadErr.message);
           }
+        }
 
-          // Enriquecimiento automático: primero XML si existe (100% exacto), luego Kimi AI
+        // Enriquecimiento automático: primero XML si existe (100% exacto), luego Kimi AI para PDF
+        if (item.xmlContent || (item.pdfBuffer && item.pdfBuffer.length > 0)) {
           try {
             let invoiceData = null;
             if (item.xmlContent) {
@@ -257,14 +264,20 @@ async function handleInvoiceSync() {
             const maxBaseLen = Math.max(20, 390 - spotTag.length);
             const safeBaseDetalle = baseDetalle.length > maxBaseLen ? baseDetalle.substring(0, maxBaseLen) : baseDetalle;
 
+            let finalMerchant = invoiceData.nombre_emisor || cleanMerchant;
+            if (invoiceData.nombre_emisor) {
+              finalMerchant = invoiceData.nombre_emisor;
+            }
+
             const enrichPayload = {
-              cr168_montototalincluyendoigv: invoiceData.total_factura,
-              cr168_base_gravada: invoiceData.base_gravada,
-              cr168_tasa_igv: invoiceData.tasa_igv,
-              cr168_igv_monto: invoiceData.igv_monto,
-              cr168_inafecto: invoiceData.inafecto,
+              cr168_vendedor: assignedVendor,
+              cr168_montototalincluyendoigv: invoiceData.total_factura != null ? invoiceData.total_factura : undefined,
+              cr168_base_gravada: invoiceData.base_gravada != null ? invoiceData.base_gravada : undefined,
+              cr168_tasa_igv: invoiceData.tasa_igv != null ? invoiceData.tasa_igv : undefined,
+              cr168_igv_monto: invoiceData.igv_monto != null ? invoiceData.igv_monto : undefined,
+              cr168_inafecto: invoiceData.inafecto != null ? invoiceData.inafecto : undefined,
               cr168_rucdelcomercio: invoiceData.ruc_emisor || undefined,
-              cr168_nombredelcomercio: invoiceData.nombre_emisor || cleanMerchant,
+              cr168_nombredelcomercio: finalMerchant,
               cr168_numerodecomprobante: invoiceData.numero_comprobante || undefined,
               cr168_tipodecomprobante: invoiceData.tipo_comprobante || undefined,
               cr168_empresa: invoiceData.cliente_empresa || 'BLISSCORP S.A.C',
@@ -281,7 +294,7 @@ async function handleInvoiceSync() {
             }
 
             await updateExpense(expenseId, enrichPayload);
-            console.log(`[InvoiceCronSync] Factura ${expenseId} enriquecida exitosamente con Kimi AI.`);
+            console.log(`[InvoiceCronSync] Factura ${expenseId} enriquecida exitosamente con Kimi AI/XML.`);
           } catch (aiErr) {
             console.warn(`[InvoiceCronSync] No se pudo auto-enriquecer con Kimi AI (se mantiene registro base):`, aiErr.message);
           }
