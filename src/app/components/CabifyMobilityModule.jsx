@@ -203,6 +203,7 @@ export default function CabifyMobilityModule() {
       } else if (forceRefresh && !isBackground) {
         setSyncNotice(`Sincronización en vivo completada: ${newJourneys.length} viajes.`);
         setTimeout(() => setSyncNotice(null), 4000);
+        setAllJourneys([]); // Invalida el caché de Insights para incorporar los viajes recién sincronizados
       }
 
       // Revalidación silenciosa en background para el mes activo si los datos en Supabase tienen > 15 min
