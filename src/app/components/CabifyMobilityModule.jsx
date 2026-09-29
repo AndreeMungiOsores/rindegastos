@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import CabifyInsightsTab from './CabifyInsightsTab';
 
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -23,7 +24,9 @@ export default function CabifyMobilityModule() {
   const [journeys, setJourneys] = useState([]);
   const [summary, setSummary] = useState(null);
 
-  const [activeSubTab, setActiveSubTab] = useState('viajes'); // 'viajes' | 'estadisticas'
+  const [activeSubTab, setActiveSubTab] = useState('viajes'); // 'viajes' | 'estadisticas' | 'insights'
+  const [allJourneys, setAllJourneys] = useState([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statsSearch, setStatsSearch] = useState('');
   const [filterPassenger, setFilterPassenger] = useState('ALL');
@@ -207,6 +210,33 @@ export default function CabifyMobilityModule() {
   useEffect(() => {
     loadData(false);
   }, [selectedMonth, selectedYear]);
+
+  // Carga lazy del histórico completo para la pestaña Insights
+  const loadInsights = async () => {
+    if (allJourneys.length > 0) return; // Ya cargado, no repetir
+    setInsightsLoading(true);
+    try {
+      const res = await fetch('/api/cabify/insights');
+      const data = await res.json();
+      if (data.success) {
+        setAllJourneys(data.journeys || []);
+      } else {
+        console.error('[CabifyModule/Insights] Error:', data.error);
+      }
+    } catch (err) {
+      console.error('[CabifyModule/Insights] Fetch error:', err.message);
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  // Cambio de subtab con lazy-load de insights
+  const handleSubTabChange = (/** @type {'viajes'|'estadisticas'|'insights'} */ tab) => {
+    setActiveSubTab(tab);
+    if (tab === 'insights') {
+      loadInsights();
+    }
+  };
 
   // Filtrado de viajes
   const filteredJourneys = useMemo(() => {
@@ -412,7 +442,7 @@ export default function CabifyMobilityModule() {
               role="tab"
               aria-selected={activeSubTab === 'viajes'}
               className={`subtab-btn ${activeSubTab === 'viajes' ? 'active' : ''}`}
-              onClick={() => setActiveSubTab('viajes')}
+              onClick={() => handleSubTabChange('viajes')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.5 2.8C2.1 11 2 11.5 2 12v4c0 .6.4 1 1 1h2"/>
@@ -428,7 +458,7 @@ export default function CabifyMobilityModule() {
               role="tab"
               aria-selected={activeSubTab === 'estadisticas'}
               className={`subtab-btn ${activeSubTab === 'estadisticas' ? 'active' : ''}`}
-              onClick={() => setActiveSubTab('estadisticas')}
+              onClick={() => handleSubTabChange('estadisticas')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="18" y1="20" x2="18" y2="10"/>
@@ -436,6 +466,21 @@ export default function CabifyMobilityModule() {
                 <line x1="6" y1="20" x2="6" y2="14"/>
               </svg>
               <span>Estadísticas</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSubTab === 'insights'}
+              className={`subtab-btn ${activeSubTab === 'insights' ? 'active' : ''}`}
+              onClick={() => handleSubTabChange('insights')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span>Insights</span>
             </button>
           </div>
 
@@ -1214,6 +1259,11 @@ export default function CabifyMobilityModule() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── SUBPESTAÑA 3: INSIGHTS ── */}
+      {activeSubTab === 'insights' && (
+        <CabifyInsightsTab allJourneys={allJourneys} loading={insightsLoading} />
       )}
 
       {/* ── Panel Lateral Derecho (Side Drawer) de Detalle de Viaje ── */}
