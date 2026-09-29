@@ -15,6 +15,37 @@ function normalizeAddr(/** @type {string|null} */ s) {
   return s.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/**
+ * Detecta si una dirección corresponde al marcador personal de "Casa" de un colaborador.
+ * Coincide con: "Casa", "Casa, Lima", "Casa, Surquillo", etc.,
+ * pero NO con nombres comerciales como "Centro de Convenciones Casa Prado", "Casa Andina", etc.
+ */
+function isCasaDestination(/** @type {string|null} */ s) {
+  if (!s) return false;
+  return /^casa(\s*,.*)?$/i.test(s.trim());
+}
+
+/**
+ * Resuelve la clave de agrupación y la etiqueta visible de un destino.
+ * Si el destino es "Casa", lo individualiza por colaborador (ej: "Casa - Adrián Murakami").
+ */
+function resolveDestination(/** @type {RawJourney} */ j) {
+  const rawDest = (j.destination || '(sin destino)').trim();
+  const rider = (j.rider_name || j.rider_email || 'Colaborador').trim();
+
+  if (isCasaDestination(rawDest)) {
+    const label = `Casa - ${rider}`;
+    const key = `casa_${rider.toLowerCase()}`;
+    return { key, label, isCasa: true };
+  }
+
+  return {
+    key: normalizeAddr(rawDest),
+    label: rawDest,
+    isCasa: false
+  };
+}
+
 /** Formatea número como moneda peruana */
 function fmtPEN(/** @type {number} */ n) {
   return n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -84,8 +115,7 @@ function TopDestinos({ journeys }) {
     /** @type {Map<string, {dest: string, count: number, total: number, riders: Set<string>}>} */
     const map = new Map();
     journeys.forEach((j) => {
-      const key = normalizeAddr(j.destination);
-      const label = (j.destination || '(sin destino)').trim();
+      const { key, label } = resolveDestination(j);
       const cur = map.get(key) ?? { dest: label, count: 0, total: 0, riders: new Set() };
       cur.count += 1;
       cur.total += Number(j.total_pen) || 0;
@@ -160,11 +190,15 @@ function Carpooling({ journeys }) {
   const opportunities = useMemo(() => {
     const withDate = journeys
       .filter((j) => j.start_at && j.destination)
-      .map((j) => ({
-        ...j,
-        _destKey: normalizeAddr(j.destination),
-        _ts: new Date(j.start_at).getTime(),
-      }))
+      .map((j) => {
+        const { key, label } = resolveDestination(j);
+        return {
+          ...j,
+          _destKey: key,
+          _destLabel: label,
+          _ts: new Date(j.start_at).getTime(),
+        };
+      })
       .sort((a, b) => a._ts - b._ts);
 
     const groups = [];
@@ -190,7 +224,7 @@ function Carpooling({ journeys }) {
           const avgSingle = totalCost / group.length;
           const savings = Math.round((avgSingle * (group.length - 1)) * 100) / 100;
           groups.push({
-            dest: (withDate[i].destination || '').trim(),
+            dest: withDate[i]._destLabel,
             count: group.length,
             totalCost: Math.round(totalCost * 100) / 100,
             savings,
@@ -386,8 +420,7 @@ function PuntoFijo({ journeys }) {
     /** @type {Map<string, {dest: string, count: number, total: number, riders: Set<string>}>} */
     const map = new Map();
     journeys.forEach((j) => {
-      const key = normalizeAddr(j.destination);
-      const label = (j.destination || '').trim();
+      const { key, label } = resolveDestination(j);
       const cur = map.get(key) ?? { dest: label, count: 0, total: 0, riders: new Set() };
       cur.count += 1;
       cur.total += Number(j.total_pen) || 0;
