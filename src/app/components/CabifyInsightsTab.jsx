@@ -221,7 +221,7 @@ function Carpooling({ journeys }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '480px', overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '640px', overflowY: 'auto', paddingRight: '0.25rem' }}>
       {opportunities.map((op, idx) => {
         const isOpen = expandedIdx === idx;
         return (
@@ -232,7 +232,7 @@ function Carpooling({ journeys }) {
               border: `1px solid ${isOpen ? '#93c5fd' : 'var(--border-default, #e2e8f0)'}`,
               borderRadius: '8px',
               overflow: 'hidden',
-              transition: 'border-color 0.15s',
+              transition: 'border-color 0.15s ease-in-out',
             }}
           >
             {/* ── Header clickeable ── */}
@@ -314,14 +314,12 @@ function Carpooling({ journeys }) {
               </div>
             </button>
 
-            {/* ── Detalle expandido ── */}
+            {/* ── Detalle expandido (tarjeta expandida a toda su altura) ── */}
             {isOpen && (
               <div
                 style={{
                   borderTop: '1px solid #e2e8f0',
-                  padding: '0.4rem 0.75rem 0.6rem',
-                  maxHeight: '195px',
-                  overflowY: 'auto',
+                  padding: '0.5rem 1rem 0.85rem',
                   overflowX: 'auto',
                 }}
               >
@@ -329,12 +327,12 @@ function Carpooling({ journeys }) {
                   style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}
                   aria-label={`Detalle de viajes simultáneos hacia ${op.dest}`}
                 >
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                  <thead>
                     <tr style={{ color: 'var(--text-tertiary)', fontWeight: 600, borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem 0.4rem 0', fontWeight: 600, background: 'var(--bg-secondary, #f8fafc)' }}>Colaborador</th>
-                      <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, background: 'var(--bg-secondary, #f8fafc)' }}>Ticket</th>
-                      <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, background: 'var(--bg-secondary, #f8fafc)' }}>Fecha y Hora</th>
-                      <th style={{ textAlign: 'right', padding: '0.4rem 0 0.4rem 0.5rem', fontWeight: 600, background: 'var(--bg-secondary, #f8fafc)' }}>Importe</th>
+                      <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem 0.4rem 0', fontWeight: 600 }}>Colaborador</th>
+                      <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600 }}>Ticket</th>
+                      <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600 }}>Fecha y Hora</th>
+                      <th style={{ textAlign: 'right', padding: '0.4rem 0 0.4rem 0.5rem', fontWeight: 600 }}>Importe</th>
                     </tr>
                   </thead>
                   <tbody>
