@@ -2500,6 +2500,21 @@ body {
   min-width: 55px;
 }
 
+.cabify-select[type="date"] {
+  width: 90px;
+  text-align: center;
+}
+
+.cabify-select[type="date"]::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+}
+
+.cabify-select[type="date"]::-webkit-inner-spin-button {
+  display: none;
+  -webkit-appearance: none;
+}
+
 .btn-icon {
   flex-shrink: 0;
 }

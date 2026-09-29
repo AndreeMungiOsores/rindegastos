@@ -568,7 +568,18 @@ export default function CabifyMobilityModule() {
             {activeSubTab === 'insights' ? (
               <>
                 <div className="cabify-period-group" style={{ padding: '0 0.55rem', height: '32px' }}>
-                  <span className="cabify-period-icon" aria-hidden="true" title="Período de análisis para Insights">
+                  <span
+                    className="cabify-period-icon"
+                    aria-hidden="true"
+                    title="Período de análisis para Insights"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      const el = document.getElementById('insights-date-from');
+                      if (el) {
+                        try { el.showPicker(); } catch { el.focus(); }
+                      }
+                    }}
+                  >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
                       <line x1="16" y1="2" x2="16" y2="6"/>
@@ -584,8 +595,9 @@ export default function CabifyMobilityModule() {
                     value={insightsFrom}
                     max={insightsTo || undefined}
                     onChange={(e) => setInsightsFrom(e.target.value)}
+                    onClick={(e) => { try { e.currentTarget.showPicker(); } catch {} }}
                     className="cabify-select"
-                    style={{ width: '118px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--navy-900)' }}
+                    style={{ width: '90px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--navy-900)' }}
                   />
                   <span className="cabify-period-divider" aria-hidden="true">a</span>
                   <label htmlFor="insights-date-to" className="sr-only">Fecha final</label>
@@ -596,8 +608,9 @@ export default function CabifyMobilityModule() {
                     value={insightsTo}
                     min={insightsFrom || undefined}
                     onChange={(e) => setInsightsTo(e.target.value)}
+                    onClick={(e) => { try { e.currentTarget.showPicker(); } catch {} }}
                     className="cabify-select"
-                    style={{ width: '118px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--navy-900)' }}
+                    style={{ width: '90px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--navy-900)' }}
                   />
                 </div>
 
