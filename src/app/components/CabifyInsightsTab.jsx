@@ -222,11 +222,23 @@ function Carpooling({ journeys }) {
             padding: '0.75rem 1rem',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--navy-800)', maxWidth: '65%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap', minWidth: 0 }}>
+            <span
+              style={{
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                color: 'var(--navy-800)',
+                flex: 1,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={op.dest}
+            >
               📍 {op.dest}
             </span>
-            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'nowrap' }}>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
               <span
                 style={{
                   background: '#dbeafe',
