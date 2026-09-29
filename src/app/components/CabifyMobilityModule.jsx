@@ -8,6 +8,22 @@ const MONTH_NAMES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
 
+// Helpers de fecha en hora local de Lima (UTC-5)
+function getLimaTodayStr() {
+  const d = new Date();
+  const lima = new Date(d.getTime() - 5 * 60 * 60 * 1000);
+  const y = lima.getUTCFullYear();
+  const m = String(lima.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(lima.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getLimaYearStartStr() {
+  const d = new Date();
+  const lima = new Date(d.getTime() - 5 * 60 * 60 * 1000);
+  return `${lima.getUTCFullYear()}-01-01`;
+}
+
 export default function CabifyMobilityModule() {
   // Bandera para herramientas de administración (ocultas en la interfaz principal)
   const SHOW_ADMIN_CABIFY_TOOLS = false;
@@ -27,6 +43,8 @@ export default function CabifyMobilityModule() {
   const [activeSubTab, setActiveSubTab] = useState('viajes'); // 'viajes' | 'estadisticas' | 'insights'
   const [allJourneys, setAllJourneys] = useState([]);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsFrom, setInsightsFrom] = useState(() => getLimaYearStartStr());
+  const [insightsTo, setInsightsTo] = useState(() => getLimaTodayStr());
   const [searchTerm, setSearchTerm] = useState('');
   const [statsSearch, setStatsSearch] = useState('');
   const [filterPassenger, setFilterPassenger] = useState('ALL');
@@ -260,9 +278,9 @@ export default function CabifyMobilityModule() {
     };
   }, [selectedMonth, selectedYear]);
 
-  // Carga lazy del histórico completo para la pestaña Insights
-  const loadInsights = async () => {
-    if (allJourneys.length > 0) return; // Ya cargado, no repetir
+  // Carga lazy del histórico completo para la pestaña Insights (con soporte para force refresh)
+  const loadInsights = async (force = false) => {
+    if (!force && allJourneys.length > 0) return;
     setInsightsLoading(true);
     try {
       const res = await fetch('/api/cabify/insights');
@@ -278,6 +296,19 @@ export default function CabifyMobilityModule() {
       setInsightsLoading(false);
     }
   };
+
+  // Filtrado reactivo en memoria de viajes para Insights según el rango de fechas seleccionado
+  const filteredInsightsJourneys = useMemo(() => {
+    if (!insightsFrom && !insightsTo) return allJourneys;
+    const fromMs = insightsFrom ? new Date(`${insightsFrom}T00:00:00-05:00`).getTime() : 0;
+    const toMs = insightsTo ? new Date(`${insightsTo}T23:59:59.999-05:00`).getTime() : Infinity;
+
+    return allJourneys.filter((j) => {
+      if (!j.start_at) return false;
+      const t = new Date(j.start_at).getTime();
+      return t >= fromMs && t <= toMs;
+    });
+  }, [allJourneys, insightsFrom, insightsTo]);
 
   // Cambio de subtab con lazy-load de insights
   const handleSubTabChange = (/** @type {'viajes'|'estadisticas'|'insights'} */ tab) => {
@@ -534,85 +565,153 @@ export default function CabifyMobilityModule() {
           </div>
 
           <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <div className="cabify-period-group">
-              <span className="cabify-period-icon" aria-hidden="true">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                  <line x1="16" y1="2" x2="16" y2="6"/>
-                  <line x1="8" y1="2" x2="8" y2="6"/>
-                  <line x1="3" y1="10" x2="21" y2="10"/>
-                </svg>
-              </span>
-              <label htmlFor="cabify-month-select" className="sr-only">Seleccionar Mes</label>
-              <select
-                id="cabify-month-select"
-                aria-label="Seleccionar mes"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="cabify-select cabify-select-month"
-                disabled={loading || refreshing}
-              >
-                {MONTH_NAMES.map((name, idx) => (
-                  <option key={idx + 1} value={idx + 1}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+            {activeSubTab === 'insights' ? (
+              <>
+                <div className="cabify-period-group" style={{ padding: '0 0.55rem', height: '32px' }}>
+                  <span className="cabify-period-icon" aria-hidden="true" title="Período de análisis para Insights">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                  </span>
+                  <label htmlFor="insights-date-from" className="sr-only">Fecha inicial</label>
+                  <input
+                    id="insights-date-from"
+                    type="date"
+                    aria-label="Fecha inicial de análisis"
+                    value={insightsFrom}
+                    max={insightsTo || undefined}
+                    onChange={(e) => setInsightsFrom(e.target.value)}
+                    className="cabify-select"
+                    style={{ width: '118px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--navy-900)' }}
+                  />
+                  <span className="cabify-period-divider" aria-hidden="true">a</span>
+                  <label htmlFor="insights-date-to" className="sr-only">Fecha final</label>
+                  <input
+                    id="insights-date-to"
+                    type="date"
+                    aria-label="Fecha final de análisis"
+                    value={insightsTo}
+                    min={insightsFrom || undefined}
+                    onChange={(e) => setInsightsTo(e.target.value)}
+                    className="cabify-select"
+                    style={{ width: '118px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--navy-900)' }}
+                  />
+                </div>
 
-              <span className="cabify-period-divider" aria-hidden="true">/</span>
+                <button
+                  type="button"
+                  className="sync-invoices-btn"
+                  onClick={() => loadInsights(true)}
+                  disabled={insightsLoading}
+                  aria-busy={insightsLoading}
+                  aria-label="Actualizar datos de Insights"
+                  title="Recargar datos históricos actualizados desde Supabase"
+                >
+                  <svg
+                    className={insightsLoading ? 'spin-icon' : ''}
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                  <span>{insightsLoading ? 'Actualizando...' : 'Actualizar'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="cabify-period-group">
+                  <span className="cabify-period-icon" aria-hidden="true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                  </span>
+                  <label htmlFor="cabify-month-select" className="sr-only">Seleccionar Mes</label>
+                  <select
+                    id="cabify-month-select"
+                    aria-label="Seleccionar mes"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="cabify-select cabify-select-month"
+                    disabled={loading || refreshing}
+                  >
+                    {MONTH_NAMES.map((name, idx) => (
+                      <option key={idx + 1} value={idx + 1}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
 
-              <label htmlFor="cabify-year-select" className="sr-only">Seleccionar Año</label>
-              <select
-                id="cabify-year-select"
-                aria-label="Seleccionar año"
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="cabify-select cabify-select-year"
-                disabled={loading || refreshing}
-              >
-                {[2024, 2025, 2026].map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
+                  <span className="cabify-period-divider" aria-hidden="true">/</span>
 
-            <button
-              type="button"
-              className="sync-invoices-btn"
-              onClick={() => loadData(true)}
-              disabled={loading || refreshing || isSyncingHistory || isBackgroundSyncing}
-              aria-busy={refreshing || isBackgroundSyncing}
-              aria-label="Sincronizar viajes de Cabify en vivo"
-              title={
-                lastSyncTimeFormatted
-                  ? `Última sincronización con Cabify: ${lastSyncTimeFormatted}. Clic para actualizar en vivo.`
-                  : 'Consultar la API oficial de Cabify en vivo para este mes'
-              }
-            >
-              <svg
-                className={refreshing || isBackgroundSyncing ? 'spin-icon' : ''}
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <polyline points="23 4 23 10 17 10"/>
-                <polyline points="1 20 1 14 7 14"/>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-              </svg>
-              <span>
-                {isBackgroundSyncing
-                  ? 'Actualizando...'
-                  : refreshing
-                  ? 'Sincronizando...'
-                  : 'Sincronizar en Vivo'}
-              </span>
-            </button>
+                  <label htmlFor="cabify-year-select" className="sr-only">Seleccionar Año</label>
+                  <select
+                    id="cabify-year-select"
+                    aria-label="Seleccionar año"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="cabify-select cabify-select-year"
+                    disabled={loading || refreshing}
+                  >
+                    {[2024, 2025, 2026].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  className="sync-invoices-btn"
+                  onClick={() => loadData(true)}
+                  disabled={loading || refreshing || isSyncingHistory || isBackgroundSyncing}
+                  aria-busy={refreshing || isBackgroundSyncing}
+                  aria-label="Sincronizar viajes de Cabify en vivo"
+                  title={
+                    lastSyncTimeFormatted
+                      ? `Última sincronización con Cabify: ${lastSyncTimeFormatted}. Clic para actualizar en vivo.`
+                      : 'Consultar la API oficial de Cabify en vivo para este mes'
+                  }
+                >
+                  <svg
+                    className={refreshing || isBackgroundSyncing ? 'spin-icon' : ''}
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                  <span>
+                    {isBackgroundSyncing
+                      ? 'Actualizando...'
+                      : refreshing
+                      ? 'Sincronizando...'
+                      : 'Sincronizar en Vivo'}
+                  </span>
+                </button>
+              </>
+            )}
 
             {/* Opciones avanzadas de administración (ocultas por defecto) */}
             {SHOW_ADMIN_CABIFY_TOOLS && (
@@ -1312,7 +1411,14 @@ export default function CabifyMobilityModule() {
 
       {/* ── SUBPESTAÑA 3: INSIGHTS ── */}
       {activeSubTab === 'insights' && (
-        <CabifyInsightsTab allJourneys={allJourneys} loading={insightsLoading} />
+        <CabifyInsightsTab
+          allJourneys={filteredInsightsJourneys}
+          loading={insightsLoading}
+          onResetDates={() => {
+            setInsightsFrom(getLimaYearStartStr());
+            setInsightsTo(getLimaTodayStr());
+          }}
+        />
       )}
 
       {/* ── Panel Lateral Derecho (Side Drawer) de Detalle de Viaje ── */}

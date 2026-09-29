@@ -9,13 +9,6 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
 
-    // Inicio del día de hoy en Lima (UTC-5) para incluir únicamente viajes completados hasta ayer
-    const now = new Date();
-    const limaNow = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-    const todayStartUTC = new Date(
-      Date.UTC(limaNow.getUTCFullYear(), limaNow.getUTCMonth(), limaNow.getUTCDate(), 5, 0, 0, 0)
-    ).toISOString();
-
     let allJourneys = [];
     let from = 0;
     const pageSize = 1000;
@@ -26,7 +19,6 @@ export async function GET() {
         .select(
           'id, ticket_code, start_at, end_at, rider_name, rider_email, origin, destination, charge_code, motivo, total_pen, currency'
         )
-        .lt('start_at', todayStartUTC)
         .order('start_at', { ascending: true })
         .range(from, from + pageSize - 1);
 
@@ -47,7 +39,6 @@ export async function GET() {
       success: true,
       journeys: allJourneys,
       total: allJourneys.length,
-      cutoffDate: todayStartUTC
     });
   } catch (err) {
     console.error('[Cabify/Insights] Excepción inesperada:', err.message);

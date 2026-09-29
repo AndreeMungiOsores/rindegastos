@@ -729,7 +729,11 @@ function ViajesOutlier({ journeys }) {
 /**
  * @param {{ allJourneys: RawJourney[], loading: boolean }} props
  */
-export default function CabifyInsightsTab({ allJourneys, loading }) {
+export default function CabifyInsightsTab({
+  allJourneys,
+  loading,
+  onResetDates,
+}) {
   const totalTrips = allJourneys.length;
 
   // Rango de fechas cubierto
@@ -754,7 +758,7 @@ export default function CabifyInsightsTab({ allJourneys, loading }) {
     return (
       <div className="cabify-loading-state">
         <div className="cabify-spinner" />
-        <p>Calculando insights históricos...</p>
+        <p>Calculando insights de movilidad...</p>
       </div>
     );
   }
@@ -762,7 +766,17 @@ export default function CabifyInsightsTab({ allJourneys, loading }) {
   if (totalTrips === 0) {
     return (
       <div className="cabify-empty-state">
-        <p>No hay datos históricos disponibles para generar insights.</p>
+        <p>No se encontraron viajes en el período de fechas seleccionado.</p>
+        {onResetDates && (
+          <button
+            type="button"
+            className="filter-reset-btn"
+            onClick={onResetDates}
+            style={{ marginTop: '0.75rem', cursor: 'pointer' }}
+          >
+            Restablecer período completo
+          </button>
+        )}
       </div>
     );
   }
@@ -788,11 +802,11 @@ export default function CabifyInsightsTab({ allJourneys, loading }) {
       >
         <div>
           <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '0.95rem' }}>
-            Análisis Histórico · {totalTrips.toLocaleString('es-PE')} viajes analizados
+            Análisis de Insights · {totalTrips.toLocaleString('es-PE')} viajes analizados
           </p>
           {dateRange && (
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#93c5fd' }}>
-              Período analizado: {dateRange} (hasta ayer)
+              Período analizado: {dateRange}
             </p>
           )}
         </div>
