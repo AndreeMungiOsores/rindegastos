@@ -40,7 +40,14 @@ export default function CabifyMobilityModule() {
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const fileInputRef = useRef(null);
+  const selectedMonthRef = useRef(selectedMonth);
+  const selectedYearRef = useRef(selectedYear);
+  selectedMonthRef.current = selectedMonth;
+  selectedYearRef.current = selectedYear;
 
+  const revalidationTimerRef = useRef(null);
+  const backgroundAbortControllerRef = useRef(null);
+  const abortControllerRef = useRef(null);
   const lastSyncTimeFormatted = useMemo(() => {
     if (!lastSyncAt) return null;
     try {
@@ -124,19 +131,33 @@ export default function CabifyMobilityModule() {
     }
   };
 
-  const abortControllerRef = useRef(null);
-
   // Función principal para cargar datos (con soporte para revalidación silenciosa en background)
   const loadData = async (forceRefresh = false, isBackground = false) => {
+    const targetMonth = selectedMonthRef.current;
+    const targetYear = selectedYearRef.current;
+
     // Si es una carga de usuario (cambio de mes o refresco manual), abortar peticiones previas en curso
     if (!isBackground) {
+      if (revalidationTimerRef.current) {
+        clearTimeout(revalidationTimerRef.current);
+        revalidationTimerRef.current = null;
+      }
+      if (backgroundAbortControllerRef.current) {
+        backgroundAbortControllerRef.current.abort();
+        backgroundAbortControllerRef.current = null;
+      }
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
       abortControllerRef.current = new AbortController();
+    } else {
+      if (backgroundAbortControllerRef.current) {
+        backgroundAbortControllerRef.current.abort();
+      }
+      backgroundAbortControllerRef.current = new AbortController();
     }
 
-    const currentController = !isBackground ? abortControllerRef.current : null;
+    const currentController = isBackground ? backgroundAbortControllerRef.current : abortControllerRef.current;
 
     if (isBackground) {
       setIsBackgroundSyncing(true);
@@ -149,11 +170,17 @@ export default function CabifyMobilityModule() {
     }
 
     try {
-      const url = `/api/cabify/journeys?month=${selectedMonth}&year=${selectedYear}${forceRefresh ? '&refresh=true' : ''}`;
+      const url = `/api/cabify/journeys?month=${targetMonth}&year=${targetYear}${forceRefresh ? '&refresh=true' : ''}`;
       const res = await fetch(url, {
         signal: currentController ? currentController.signal : undefined
       });
       const data = await res.json();
+
+      // Descarte de respuestas obsoletas (Stale Response Guard):
+      // Si el usuario ya cambió a otro mes/año mientras esta petición respondía, descartar de inmediato
+      if (selectedMonthRef.current !== targetMonth || selectedYearRef.current !== targetYear) {
+        return;
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Error al obtener datos de Cabify');
@@ -180,13 +207,21 @@ export default function CabifyMobilityModule() {
 
       // Revalidación silenciosa en background para el mes activo si los datos en Supabase tienen > 15 min
       if (!forceRefresh && !isBackground && data.needsBackgroundRevalidation) {
-        setTimeout(() => {
-          loadData(true, true);
+        if (revalidationTimerRef.current) {
+          clearTimeout(revalidationTimerRef.current);
+        }
+        revalidationTimerRef.current = setTimeout(() => {
+          if (selectedMonthRef.current === targetMonth && selectedYearRef.current === targetYear) {
+            loadData(true, true);
+          }
         }, 150);
       }
     } catch (err) {
       if (err.name === 'AbortError') {
         return; // Cancelación limpia por nueva selección de mes
+      }
+      if (selectedMonthRef.current !== targetMonth || selectedYearRef.current !== targetYear) {
+        return;
       }
       console.error('[CabifyModule] Error al cargar:', err);
       if (!isBackground) {
@@ -198,17 +233,30 @@ export default function CabifyMobilityModule() {
         }
       }
     } finally {
-      if (isBackground) {
-        setIsBackgroundSyncing(false);
-      } else {
-        setLoading(false);
-        setRefreshing(false);
+      if (selectedMonthRef.current === targetMonth && selectedYearRef.current === targetYear) {
+        if (isBackground) {
+          setIsBackgroundSyncing(false);
+        } else {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     }
   };
 
   useEffect(() => {
     loadData(false);
+    return () => {
+      if (revalidationTimerRef.current) {
+        clearTimeout(revalidationTimerRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (backgroundAbortControllerRef.current) {
+        backgroundAbortControllerRef.current.abort();
+      }
+    };
   }, [selectedMonth, selectedYear]);
 
   // Carga lazy del histórico completo para la pestaña Insights
