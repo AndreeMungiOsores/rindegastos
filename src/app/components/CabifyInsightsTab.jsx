@@ -792,7 +792,7 @@ export default function CabifyInsightsTab({ allJourneys, loading }) {
           </p>
           {dateRange && (
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#93c5fd' }}>
-              Período cubierto: {dateRange}
+              Período analizado: {dateRange} (hasta ayer)
             </p>
           )}
         </div>

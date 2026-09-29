@@ -9,25 +9,45 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
 
-    const { data, error } = await supabase
-      .from(CABIFY_TABLE)
-      .select(
-        'id, ticket_code, start_at, end_at, rider_name, rider_email, origin, destination, charge_code, motivo, total_pen, currency'
-      )
-      .order('start_at', { ascending: true });
+    // Inicio del día de hoy en Lima (UTC-5) para incluir únicamente viajes completados hasta ayer
+    const now = new Date();
+    const limaNow = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+    const todayStartUTC = new Date(
+      Date.UTC(limaNow.getUTCFullYear(), limaNow.getUTCMonth(), limaNow.getUTCDate(), 5, 0, 0, 0)
+    ).toISOString();
 
-    if (error) {
-      console.error('[Cabify/Insights] Error consultando Supabase:', error.message);
-      return Response.json(
-        { success: false, error: 'Error al consultar los datos históricos de Cabify' },
-        { status: 500 }
-      );
+    let allJourneys = [];
+    let from = 0;
+    const pageSize = 1000;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from(CABIFY_TABLE)
+        .select(
+          'id, ticket_code, start_at, end_at, rider_name, rider_email, origin, destination, charge_code, motivo, total_pen, currency'
+        )
+        .lt('start_at', todayStartUTC)
+        .order('start_at', { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        console.error('[Cabify/Insights] Error consultando Supabase:', error.message);
+        return Response.json(
+          { success: false, error: 'Error al consultar los datos históricos de Cabify' },
+          { status: 500 }
+        );
+      }
+
+      allJourneys = allJourneys.concat(data ?? []);
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
     }
 
     return Response.json({
       success: true,
-      journeys: data ?? [],
-      total: (data ?? []).length,
+      journeys: allJourneys,
+      total: allJourneys.length,
+      cutoffDate: todayStartUTC
     });
   } catch (err) {
     console.error('[Cabify/Insights] Excepción inesperada:', err.message);
