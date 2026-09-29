@@ -12,7 +12,11 @@ import React, { useMemo } from 'react';
 /** Normaliza una dirección para agrupar destinos similares */
 function normalizeAddr(/** @type {string|null} */ s) {
   if (!s) return '(sin destino)';
-  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/\.\s*,/g, ',')
+    .replace(/\s+/g, ' ');
 }
 
 /**
@@ -39,9 +43,11 @@ function resolveDestination(/** @type {RawJourney} */ j) {
     return { key, label, isCasa: true };
   }
 
+  const cleanLabel = rawDest.replace(/\.\s*,/g, ',');
+
   return {
-    key: normalizeAddr(rawDest),
-    label: rawDest,
+    key: normalizeAddr(cleanLabel),
+    label: cleanLabel,
     isCasa: false
   };
 }
@@ -468,9 +474,6 @@ function PuntoFijo({ journeys }) {
           </div>
           <div style={{ fontSize: '0.77rem', color: '#78350f' }}>
             {c.count} viajes · {c.ridersCount} colaboradores distintos
-          </div>
-          <div style={{ fontSize: '0.75rem', color: '#92400e', marginTop: '0.1rem', fontStyle: 'italic' }}>
-            💡 Evalúa si se justifica un espacio fijo en este punto para reducir costos de traslado.
           </div>
         </div>
       ))}
