@@ -223,25 +223,37 @@ function Carpooling({ journeys }) {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--navy-800)', maxWidth: '70%' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--navy-800)', maxWidth: '65%' }}>
               📍 {op.dest}
             </span>
-            <span
-              style={{
-                background: '#dcfce7',
-                color: '#166534',
-                borderRadius: '4px',
-                padding: '0.15rem 0.5rem',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Ahorro est. S/ {fmtPEN(op.savings)}
-            </span>
-          </div>
-          <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
-            {op.count} viajes simultáneos · S/ {fmtPEN(op.totalCost)} total
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'nowrap' }}>
+              <span
+                style={{
+                  background: '#dbeafe',
+                  color: '#1e40af',
+                  borderRadius: '4px',
+                  padding: '0.15rem 0.5rem',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {op.count} viajes simultáneos
+              </span>
+              <span
+                style={{
+                  background: '#e0f2fe',
+                  color: '#075985',
+                  borderRadius: '4px',
+                  padding: '0.15rem 0.5rem',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                S/ {fmtPEN(op.totalCost)}
+              </span>
+            </div>
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.2rem' }}>
             Colaboradores: {op.riders.join(', ')}
