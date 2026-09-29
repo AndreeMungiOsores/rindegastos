@@ -736,24 +736,6 @@ export default function CabifyInsightsTab({
 }) {
   const totalTrips = allJourneys.length;
 
-  // Rango de fechas cubierto
-  const dateRange = useMemo(() => {
-    if (allJourneys.length === 0) return null;
-    const sorted = allJourneys
-      .filter((j) => j.start_at)
-      .map((j) => new Date(j.start_at).getTime())
-      .sort((a, b) => a - b);
-    if (sorted.length === 0) return null;
-    const fmt = (ms) =>
-      new Date(ms).toLocaleDateString('es-PE', {
-        timeZone: 'America/Lima',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      });
-    return `${fmt(sorted[0])} — ${fmt(sorted[sorted.length - 1])}`;
-  }, [allJourneys]);
-
   if (loading) {
     return (
       <div className="cabify-loading-state">
@@ -783,46 +765,6 @@ export default function CabifyInsightsTab({
 
   return (
     <div className="analytics-dashboard-container">
-
-      {/* Header informativo */}
-      <div
-        style={{
-          background: 'linear-gradient(135deg, #0e2a43 0%, #1e4976 100%)',
-          borderRadius: '10px',
-          padding: '1rem 1.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '0.5rem',
-          marginBottom: '1.25rem',
-        }}
-        role="status"
-        aria-live="polite"
-      >
-        <div>
-          <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '0.95rem' }}>
-            Análisis de Insights · {totalTrips.toLocaleString('es-PE')} viajes analizados
-          </p>
-          {dateRange && (
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#93c5fd' }}>
-              Período analizado: {dateRange}
-            </p>
-          )}
-        </div>
-        <span
-          style={{
-            background: 'rgba(255,255,255,0.12)',
-            borderRadius: '6px',
-            padding: '0.3rem 0.75rem',
-            fontSize: '0.78rem',
-            color: '#e0f2fe',
-            fontWeight: 600,
-          }}
-        >
-          🔍 Insights automáticos
-        </span>
-      </div>
 
       {/* Grid 2 columnas — Destinos + Carpooling */}
       <div className="analytics-grid-two-columns">
