@@ -805,7 +805,7 @@ export default function CabifyInsightsTab({
               <rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
             </svg>
           }
-          title="Destinos que Sugieren Punto Fijo"
+          title="Hubs y Destinos Operativos Frecuentes"
           badge="≥5 viajes · ≥3 colaboradores"
         >
           <PuntoFijo journeys={allJourneys} />
