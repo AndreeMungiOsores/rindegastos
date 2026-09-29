@@ -155,6 +155,8 @@ function TopDestinos({ journeys }) {
 const WINDOW_MS = 45 * 60 * 1000; // 45 minutos
 
 function Carpooling({ journeys }) {
+  const [expandedIdx, setExpandedIdx] = React.useState(null);
+
   const opportunities = useMemo(() => {
     const withDate = journeys
       .filter((j) => j.start_at && j.destination)
@@ -189,11 +191,19 @@ function Carpooling({ journeys }) {
           const savings = Math.round((avgSingle * (group.length - 1)) * 100) / 100;
           groups.push({
             dest: (withDate[i].destination || '').trim(),
-            date: withDate[i].start_at,
-            riders: Array.from(uniqueRiders),
             count: group.length,
             totalCost: Math.round(totalCost * 100) / 100,
             savings,
+            // viajes individuales del grupo para el detalle expandido
+            trips: group
+              .sort((a, b) => a._ts - b._ts)
+              .map((g) => ({
+                ticketCode: g.ticket_code || g.id || '—',
+                riderName: g.rider_name || '—',
+                riderEmail: g.rider_email || '',
+                startAt: g.start_at,
+                totalPEN: Number(g.total_pen) || 0,
+              })),
           });
         }
       }
@@ -211,68 +221,158 @@ function Carpooling({ journeys }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '420px', overflowY: 'auto' }}>
-      {opportunities.map((op, idx) => (
-        <div
-          key={idx}
-          style={{
-            background: 'var(--bg-secondary, #f8fafc)',
-            border: '1px solid var(--border-default, #e2e8f0)',
-            borderRadius: '8px',
-            padding: '0.75rem 1rem',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap', minWidth: 0 }}>
-            <span
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '480px', overflowY: 'auto' }}>
+      {opportunities.map((op, idx) => {
+        const isOpen = expandedIdx === idx;
+        return (
+          <div
+            key={idx}
+            style={{
+              background: 'var(--bg-secondary, #f8fafc)',
+              border: `1px solid ${isOpen ? '#93c5fd' : 'var(--border-default, #e2e8f0)'}`,
+              borderRadius: '8px',
+              overflow: 'hidden',
+              transition: 'border-color 0.15s',
+            }}
+          >
+            {/* ── Header clickeable ── */}
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              onClick={() => setExpandedIdx(isOpen ? null : idx)}
               style={{
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                color: 'var(--navy-800)',
-                flex: 1,
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                flexWrap: 'nowrap',
                 minWidth: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                padding: '0.75rem 1rem',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
               }}
-              title={op.dest}
             >
-              📍 {op.dest}
-            </span>
-            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
               <span
                 style={{
-                  background: '#dbeafe',
-                  color: '#1e40af',
-                  borderRadius: '4px',
-                  padding: '0.15rem 0.5rem',
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  color: 'var(--navy-800)',
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}
+                title={op.dest}
               >
-                {op.count} viajes simultáneos
+                📍 {op.dest}
               </span>
-              <span
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
+                <span
+                  style={{
+                    background: '#dbeafe',
+                    color: '#1e40af',
+                    borderRadius: '4px',
+                    padding: '0.15rem 0.5rem',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {op.count} viajes simultáneos
+                </span>
+                <span
+                  style={{
+                    background: '#e0f2fe',
+                    color: '#075985',
+                    borderRadius: '4px',
+                    padding: '0.15rem 0.5rem',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  S/ {fmtPEN(op.totalCost)}
+                </span>
+                {/* Chevron */}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--text-tertiary)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  style={{ transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink: 0 }}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+            </button>
+
+            {/* ── Detalle expandido ── */}
+            {isOpen && (
+              <div
                 style={{
-                  background: '#e0f2fe',
-                  color: '#075985',
-                  borderRadius: '4px',
-                  padding: '0.15rem 0.5rem',
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  whiteSpace: 'nowrap',
+                  borderTop: '1px solid #e2e8f0',
+                  padding: '0.5rem 1rem 0.75rem',
                 }}
               >
-                S/ {fmtPEN(op.totalCost)}
-              </span>
-            </div>
+                <table
+                  style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}
+                  aria-label={`Detalle de viajes simultáneos hacia ${op.dest}`}
+                >
+                  <thead>
+                    <tr style={{ color: 'var(--text-tertiary)', fontWeight: 600, borderBottom: '1px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem 0.3rem 0', fontWeight: 600 }}>Colaborador</th>
+                      <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', fontWeight: 600 }}>Ticket</th>
+                      <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', fontWeight: 600 }}>Fecha y Hora</th>
+                      <th style={{ textAlign: 'right', padding: '0.3rem 0 0.3rem 0.5rem', fontWeight: 600 }}>Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {op.trips.map((t, tIdx) => (
+                      <tr key={tIdx} style={{ borderBottom: tIdx < op.trips.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                        <td style={{ padding: '0.4rem 0.5rem 0.4rem 0', color: 'var(--navy-900)', fontWeight: 600 }}>
+                          {t.riderName}
+                          {t.riderEmail && (
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 400 }}>{t.riderEmail}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.4rem 0.5rem', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                          {t.ticketCode}
+                        </td>
+                        <td style={{ padding: '0.4rem 0.5rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                          {t.startAt
+                            ? new Date(t.startAt).toLocaleString('es-PE', {
+                                timeZone: 'America/Lima',
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true,
+                              })
+                            : '—'}
+                        </td>
+                        <td style={{ padding: '0.4rem 0 0.4rem 0.5rem', textAlign: 'right', fontWeight: 700, color: 'var(--navy-800)', fontVariantNumeric: 'tabular-nums' }}>
+                          S/ {fmtPEN(t.totalPEN)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.2rem' }}>
-            Colaboradores: {op.riders.join(', ')}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
+
   );
 }
 
