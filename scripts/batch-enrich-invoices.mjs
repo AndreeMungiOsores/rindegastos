@@ -13,8 +13,8 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function downloadVoucher(expenseId, token) {
-  const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${expenseId})/cr168_voucher_desembolso/$value`;
+async function downloadVoucher(expenseId, fieldName, token) {
+  const url = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses(${expenseId})/${fieldName}/$value`;
   const res = await axios.get(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' },
     responseType: 'arraybuffer',
@@ -56,6 +56,7 @@ async function main() {
     'cr168_empresa',
     'cr168_montototalincluyendoigv',
     'cr168_voucher_desembolso_name',
+    'cr168_voucher_propina_name',
     'cr168_archivo_xml_name',
     'cr168_ia_procesado',
     'cr168_ia_confianza',
@@ -64,7 +65,7 @@ async function main() {
   ].join(',');
 
   const res = await axios.get(
-    `${DATAVERSE_BASE_URL}/cr168_reportedegastoses?$select=${campos}&$filter=cr168_voucher_desembolso_name ne null`,
+    `${DATAVERSE_BASE_URL}/cr168_reportedegastoses?$select=${campos}&$filter=cr168_voucher_desembolso_name ne null or cr168_voucher_propina_name ne null`,
     {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
     }
@@ -95,14 +96,15 @@ async function main() {
 
   for (let i = 0; i < toProcess.length; i++) {
     const item = toProcess[i];
-    const fileName = item.cr168_voucher_desembolso_name;
+    const fieldName = item.cr168_voucher_propina_name ? 'cr168_voucher_propina' : 'cr168_voucher_desembolso';
+    const fileName = item.cr168_voucher_propina_name || item.cr168_voucher_desembolso_name;
     console.log(`----------------------------------------------------------------------`);
     console.log(`[${i + 1}/${toProcess.length}] Factura: ${fileName} (${item.cr168_nombredelcomercio})`);
-    console.log(`ID Dataverse: ${item.cr168_reportedegastosid}`);
+    console.log(`ID Dataverse: ${item.cr168_reportedegastosid} (Campo: ${fieldName})`);
 
     try {
       // 1. Descargar documento PDF
-      const pdfBuffer = await downloadVoucher(item.cr168_reportedegastosid, token);
+      const pdfBuffer = await downloadVoucher(item.cr168_reportedegastosid, fieldName, token);
       console.log(`  ✓ PDF descargado (${(pdfBuffer.length / 1024).toFixed(1)} KB)`);
 
       // 2. Extraer metadatos con IA de Kimi
@@ -133,10 +135,10 @@ async function main() {
         cr168_tasa_igv: data.tasa_igv,
         cr168_igv_monto: data.igv_monto,
         cr168_inafecto: data.inafecto,
-        cr168_rucdelcomercio: data.ruc_emisor || item.cr168_rucdelcomercio,
+        cr168_rucdelcomercio: data.ruc_emisor || item.cr168_rucdelcomercio || undefined,
         cr168_nombredelcomercio: data.nombre_emisor || item.cr168_nombredelcomercio,
-        cr168_numerodecomprobante: data.numero_comprobante || item.cr168_numerodecomprobante,
-        cr168_tipodecomprobante: data.tipo_comprobante || item.cr168_tipodecomprobante,
+        cr168_numerodecomprobante: data.numero_comprobante || item.cr168_numerodecomprobante || undefined,
+        cr168_tipodecomprobante: data.tipo_comprobante || item.cr168_tipodecomprobante || undefined,
         cr168_empresa: data.cliente_empresa || item.cr168_empresa || 'BLISSCORP S.A.C',
         cr168_ia_procesado: true,
         cr168_ia_confianza: data.confianza,
