@@ -235,8 +235,8 @@ async function main() {
     if (!isBuzon) return true;
 
     // Para facturas del buzón de proveedores:
-    // Procesar si está marcado como Desembolsado (553050001) o tiene nombre de comprobante bancario
-    const isDesembolsado = parseInt(g.cr168_estado, 10) === 553050001;
+    // Procesar si está marcado como Desembolsado (553050002) o tiene nombre de comprobante bancario
+    const isDesembolsado = parseInt(g.cr168_estado, 10) === 553050002;
     const isBankFile = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(fn);
     const isStrictFacturaSunat = /^[0-9]{11}-[0-9]{2}-[a-z0-9]+-[0-9]+\.pdf$/i.test(fn) ||
                                  /^pdf-doc-[a-z0-9]+-[0-9]+/i.test(fn) ||
