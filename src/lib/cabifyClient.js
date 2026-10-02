@@ -224,6 +224,41 @@ function formatDateLima(dateStr) {
 }
 
 /**
+ * Detecta si un viaje presenta anomalías auditables:
+ * - Duración 0 minutos (start_at igual a end_at, o ambos nulos/vacíos)
+ * - Origen y destino ambos contienen "Casa" (case-insensitive) → viaje cancelado
+ *
+ * @param {{ startAt: string, endAt: string, origin: string, destination: string }} journey
+ * @returns {{ isAnomaly: boolean, reason: string | null }}
+ */
+export function detectJourneyAnomaly({ startAt, endAt, origin, destination }) {
+  const reasons = [];
+
+  // Criterio 1: Duración 0 minutos
+  if (startAt && endAt) {
+    const start = new Date(startAt).getTime();
+    const end = new Date(endAt).getTime();
+    if (!isNaN(start) && !isNaN(end) && end - start <= 0) {
+      reasons.push('Duración 0 min');
+    }
+  } else if (!startAt && !endAt) {
+    reasons.push('Sin timestamps de viaje');
+  }
+
+  // Criterio 2: Origen y destino ambos contienen "Casa"
+  const isCasaLike = (/** @type {string} */ addr) =>
+    /\bcasa\b/i.test(addr?.trim() ?? '');
+  if (isCasaLike(origin) && isCasaLike(destination)) {
+    reasons.push('Origen y destino: Casa');
+  }
+
+  return {
+    isAnomaly: reasons.length > 0,
+    reason: reasons.length > 0 ? reasons.join(' · ') : null
+  };
+}
+
+/**
  * Consulta viajes desde la tabla persistente de Supabase por rango de fechas
  */
 export async function getJourneysFromSupabase({ from, to }) {
@@ -247,26 +282,34 @@ export async function getJourneysFromSupabase({ from, to }) {
     // Ordenar en memoria por fecha y hora descendente (ultrarrápido y determinista)
     data.sort((a, b) => new Date(b.start_at || 0) - new Date(a.start_at || 0));
 
-    const journeys = data.map(row => ({
-      id: row.id,
-      ticketCode: row.ticket_code || 'S/N',
-      journeyId: row.journey_id || '',
-      invoiceDate: row.invoice_date || '',
-      startAt: row.start_at || '',
-      endAt: row.end_at || '',
-      dateFormatted: formatDateLima(row.start_at),
-      riderId: row.rider_id || '',
-      riderName: row.rider_name || 'Colaborador Cabify',
-      riderEmail: row.rider_email || '',
-      riderPhone: row.rider_phone || '',
-      origin: row.origin || '',
-      destination: row.destination || '',
-      chargeCode: row.charge_code || 'Movilidad General',
-      motivo: row.motivo || null,
-      description: row.description || '',
-      totalPEN: Number(row.total_pen) || 0,
-      currency: row.currency || 'PEN'
-    }));
+    const journeys = data.map(row => {
+      const startAt = row.start_at || '';
+      const endAt = row.end_at || '';
+      const origin = row.origin || '';
+      const destination = row.destination || '';
+      return {
+        id: row.id,
+        ticketCode: row.ticket_code || 'S/N',
+        journeyId: row.journey_id || '',
+        invoiceDate: row.invoice_date || '',
+        startAt,
+        endAt,
+        dateFormatted: formatDateLima(row.start_at),
+        riderId: row.rider_id || '',
+        riderName: row.rider_name || 'Colaborador Cabify',
+        riderEmail: row.rider_email || '',
+        riderPhone: row.rider_phone || '',
+        origin,
+        destination,
+        chargeCode: row.charge_code || 'Movilidad General',
+        motivo: row.motivo || null,
+        description: row.description || '',
+        totalPEN: Number(row.total_pen) || 0,
+        currency: row.currency || 'PEN',
+        anomaly: detectJourneyAnomaly({ startAt, endAt, origin, destination })
+      };
+    });
+
 
     let totalAmount = 0;
     const passengerTotals = new Map();
@@ -575,16 +618,16 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
     const rawTotal = sale.price_details?.total || 0;
     const totalPEN = Math.round((rawTotal / 100) * 100) / 100;
 
-    const startAt = typeObj.start_at || detail?.start_at;
-    const endAt = typeObj.end_at || detail?.end_at;
+    const startAt = typeObj.start_at || detail?.start_at || '';
+    const endAt = typeObj.end_at || detail?.end_at || '';
 
     return {
       id: sale.code || journeyId,
       ticketCode: sale.code || 'S/N',
       journeyId: journeyId || '',
       invoiceDate: sale.invoice_date || '',
-      startAt: startAt || '',
-      endAt: endAt || '',
+      startAt,
+      endAt,
       dateFormatted: formatDateLima(startAt),
       riderId: riderId || '',
       riderName,
@@ -596,9 +639,11 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
       motivo: detail?.reason || typeObj.reason || null,
       description: typeObj.description || '',
       totalPEN,
-      currency: sale.currency || 'PEN'
+      currency: sale.currency || 'PEN',
+      anomaly: detectJourneyAnomaly({ startAt, endAt, origin: originFull, destination: destFull })
     };
   });
+
 
   // 4. Calcular métricas consolidadas
   let totalAmount = 0;

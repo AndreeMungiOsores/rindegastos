@@ -1075,9 +1075,35 @@ export default function CabifyMobilityModule() {
                       </td>
 
                       <td className="cabify-td-ticket">
-                        <span className="cabify-ticket-chip" title="Código de comprobante Cabify">
-                          {j.ticketCode}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                          <span className="cabify-ticket-chip" title="Código de comprobante Cabify">
+                            {j.ticketCode}
+                          </span>
+                          {j.anomaly?.isAnomaly && (
+                            <span
+                              title={`⚠ Viaje sospechoso: ${j.anomaly.reason}`}
+                              aria-label={`Alerta: ${j.anomaly.reason}`}
+                              role="img"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                color: '#B45309',
+                                background: '#FEF3C7',
+                                border: '1px solid #FCD34D',
+                                borderRadius: '4px',
+                                padding: '0.1rem 0.35rem',
+                                whiteSpace: 'nowrap',
+                                cursor: 'default',
+                                letterSpacing: '0.01em'
+                              }}
+                            >
+                              ⚠ {j.anomaly.reason}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="cabify-td-amount" style={{ textAlign: 'right' }}>
