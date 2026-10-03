@@ -24,7 +24,17 @@ function getLimaYearStartStr() {
   return `${lima.getUTCFullYear()}-01-01`;
 }
 
-export default function CabifyMobilityModule() {
+/** Configuración por grupo de servicio (submódulos Taxis / Delivery). */
+const GROUP_CONFIG = {
+  taxi: { label: 'Taxis Cabify', filePrefix: 'Cabify_Taxis' },
+  delivery: { label: 'Delivery Cabify', filePrefix: 'Cabify_Delivery' }
+};
+
+/**
+ * @param {{ group?: 'taxi' | 'delivery' }} props
+ */
+export default function CabifyMobilityModule({ group = 'taxi' }) {
+  const groupConfig = GROUP_CONFIG[group] || GROUP_CONFIG.taxi;
   // Bandera para herramientas de administración (ocultas en la interfaz principal)
   const SHOW_ADMIN_CABIFY_TOOLS = false;
 
@@ -188,7 +198,7 @@ export default function CabifyMobilityModule() {
     }
 
     try {
-      const url = `/api/cabify/journeys?month=${targetMonth}&year=${targetYear}${forceRefresh ? '&refresh=true' : ''}`;
+      const url = `/api/cabify/journeys?month=${targetMonth}&year=${targetYear}&group=${group}${forceRefresh ? '&refresh=true' : ''}`;
       const res = await fetch(url, {
         signal: currentController ? currentController.signal : undefined
       });
@@ -283,7 +293,7 @@ export default function CabifyMobilityModule() {
     if (!force && allJourneys.length > 0) return;
     setInsightsLoading(true);
     try {
-      const res = await fetch('/api/cabify/insights');
+      const res = await fetch(`/api/cabify/insights?group=${group}`);
       const data = await res.json();
       if (data.success) {
         setAllJourneys(data.journeys || []);
@@ -498,7 +508,7 @@ export default function CabifyMobilityModule() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Cabify_Movilidad_${MONTH_NAMES[selectedMonth - 1]}_${selectedYear}.xlsx`;
+      a.download = `${groupConfig.filePrefix}_${MONTH_NAMES[selectedMonth - 1]}_${selectedYear}.xlsx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -512,9 +522,9 @@ export default function CabifyMobilityModule() {
   };
 
   return (
-    <div className="cabify-module-root" role="region" aria-label="Módulo de Movilidad Cabify">
+    <div className="cabify-module-root" role="region" aria-label={`Módulo de ${groupConfig.label}`}>
       {/* ── Barra de Navegación por Subpestañas (Estándar RindeGastos / Préstamos) ── */}
-      <nav className="subtabs-navigation" aria-label="Navegación de Movilidad">
+      <nav className="subtabs-navigation" aria-label={`Navegación de ${groupConfig.label}`}>
         <div className="subtabs-inner cabify-fullwidth-inner">
           <div className="subtabs-left-group">
             <button

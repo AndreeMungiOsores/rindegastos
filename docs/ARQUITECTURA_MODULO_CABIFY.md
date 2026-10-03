@@ -124,6 +124,7 @@ Cuando el usuario visualiza el **mes en curso**, el servidor:
 | `destination` | `TEXT` | Dirección o geolocalización de destino. |
 | `charge_code` | `VARCHAR` | Centro de costo / código de imputación contable. |
 | `motivo` | `TEXT` | Justificación del viaje ingresada por el colaborador (exportada de Cabify). |
+| `vehicle_type` | `TEXT` | Tipo de servicio (`Cabify Corp`, `Cabify Corp*`, `Cabify Extra Comfort Corp`, `Cabify Corp Aeropuerto`, `Envíos en motos Corp`, `Envíos en carro Corp`). Se resuelve por `product_id` del journey o por la columna "Tipo de vehículo" del Excel mensual. |
 | `description` | `TEXT` | Notas u observaciones del traslado. |
 | `total_pen` | `NUMERIC(10,2)` | Importe total del viaje en Soles peruanos (`PEN`). |
 | `currency` | `VARCHAR(3)` | Moneda de liquidación (`PEN`). |
@@ -162,6 +163,20 @@ Al sincronizar datos desde la API de Cabify hacia Supabase:
 ### 5. `GET / POST /api/cron/sync-cabify`
 - **Ubicación:** `src/app/api/cron/sync-cabify/route.js`
 - **Comportamiento:** Endpoint de automatización periódica. Sincroniza forzadamente el mes en curso contra la API de Cabify y persiste en Supabase. Diseñado para invocaciones programadas (Vercel Cron o schedulers externos).
+
+---
+
+## 5.1. Submódulos Taxis Cabify y Delivery Cabify
+
+El ítem "Movilidad Cabify" del panel lateral es un grupo desplegable con dos módulos (`cabify-taxi`, `cabify-delivery`). Ambos montan `CabifyMobilityModule` con la prop `group` (`taxi` | `delivery`), con las mismas pestañas (Viajes y Movilidad, Estadísticas, Insights).
+
+| Grupo | Tipos de vehículo |
+| :--- | :--- |
+| `taxi` | Cabify Corp, Cabify Corp*, Cabify Extra Comfort Corp, Cabify Corp Aeropuerto |
+| `delivery` | Envíos en motos Corp, Envíos en carro Corp |
+
+- **Origen del tipo:** el API `/journey/{id}` devuelve `product_id`, con correspondencia 1:1 al tipo (verificada contra los Excel). `cabifyClient.js` lo traduce con `vehicleTypeFromProductId` y lo persiste en `vehicle_type`. El import mensual de Excel también lo completa desde la columna "Tipo de vehículo".
+- **Filtrado:** `GET /api/cabify/journeys?group=` y `GET /api/cabify/insights?group=` filtran con `getServiceGroup`. Un viaje sin `vehicle_type` se trata como `taxi` hasta que se clasifique.
 
 ---
 

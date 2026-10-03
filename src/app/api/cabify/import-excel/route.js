@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getSupabaseAdmin, CABIFY_TABLE } from '../../../../lib/supabaseClient.js';
+import { isKnownVehicleType } from '../../../../lib/cabifyClient.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,6 +72,12 @@ export async function POST(req) {
       motivoColIdx = 42; // Columna AQ
     }
 
+    // Columna "Tipo de vehículo" (índice 28 en los Excel oficiales) para clasificar taxi vs delivery
+    let vehicleColIdx = headers.findIndex(h => /^tipo de veh[ií]culo$/i.test(h));
+    if (vehicleColIdx === -1 && headers.length > 28) {
+      vehicleColIdx = 28;
+    }
+
     // Si ticketColIdx no se identificó por regex, buscar primera columna con formato BX01-... o BXL1-...
     if (ticketColIdx === -1) {
       for (let c = 0; c < 15; c++) {
@@ -90,12 +97,17 @@ export async function POST(req) {
       const ticket = ticketColIdx !== -1 ? String(row[ticketColIdx] || '').trim() : '';
       const journeyId = journeyIdColIdx !== -1 ? String(row[journeyIdColIdx] || '').trim() : '';
       const rawMotivo = motivoColIdx !== -1 ? String(row[motivoColIdx] || '').trim() : '';
+      const rawVehicle = vehicleColIdx !== -1 ? String(row[vehicleColIdx] || '').trim() : '';
 
-      if ((ticket || journeyId) && rawMotivo && rawMotivo !== '-' && rawMotivo.toLowerCase() !== 'null') {
+      const motivo = rawMotivo && rawMotivo !== '-' && rawMotivo.toLowerCase() !== 'null' ? rawMotivo : null;
+      const vehicleType = isKnownVehicleType(rawVehicle) ? rawVehicle : null;
+
+      if ((ticket || journeyId) && (motivo || vehicleType)) {
         updates.push({
           ticket: ticket || null,
           journeyId: journeyId || null,
-          motivo: rawMotivo
+          motivo,
+          vehicleType
         });
       }
     }
@@ -105,7 +117,7 @@ export async function POST(req) {
         success: true,
         updatedCount: 0,
         totalRows: rawData.length - headerRowIndex - 1,
-        message: 'No se detectaron motivos de viaje con texto libre en las filas analizadas.'
+        message: 'No se detectaron motivos ni tipos de vehículo en las filas analizadas.'
       });
     }
 
@@ -118,10 +130,11 @@ export async function POST(req) {
       const chunk = updates.slice(i, i + chunkSize);
       await Promise.all(
         chunk.map(async (item) => {
-          let query = supabase.from(CABIFY_TABLE).update({
-            motivo: item.motivo,
-            updated_at: new Date().toISOString()
-          });
+          const payload = { updated_at: new Date().toISOString() };
+          if (item.motivo) payload.motivo = item.motivo;
+          if (item.vehicleType) payload.vehicle_type = item.vehicleType;
+
+          let query = supabase.from(CABIFY_TABLE).update(payload);
 
           if (item.ticket) {
             query = query.eq('ticket_code', item.ticket);
@@ -141,7 +154,7 @@ export async function POST(req) {
       success: true,
       updatedCount,
       totalDetected: updates.length,
-      message: `Se actualizaron exitosamente ${updatedCount} motivos de viaje en Supabase.`
+      message: `Se actualizaron exitosamente ${updatedCount} viajes (motivo y tipo de vehículo) en Supabase.`
     });
   } catch (error) {
     console.error('[Cabify/ImportExcel] Error procesando archivo:', error);

@@ -214,7 +214,8 @@ export default function AdminDashboard({ onLogout }) {
   const isAutoSyncingRef = useRef(false);
 
   // Módulos y Navegación del Panel Lateral
-  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'buzon' | 'prestamos' | 'cabify' | 'proveedores'
+  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'buzon' | 'prestamos' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
+  const [cabifyMenuOpen, setCabifyMenuOpen] = useState(false);
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const isBuzonView = activeModule === 'buzon';
@@ -2547,10 +2548,19 @@ export default function AdminDashboard({ onLogout }) {
 
           <button
             type="button"
-            className={`menu-item ${activeModule === 'cabify' ? 'active' : ''}`}
-            onClick={() => setActiveModule('cabify')}
-            title="Movilidad Cabify (Taxis Corporativos)"
-            aria-current={activeModule === 'cabify' ? 'page' : undefined}
+            className={`menu-item ${activeModule.startsWith('cabify') ? 'active' : ''}`}
+            onClick={() => {
+              if (sidebarCollapsed) {
+                setActiveModule('cabify-taxi');
+                return;
+              }
+              setCabifyMenuOpen(open => !open);
+              if (!activeModule.startsWith('cabify')) setActiveModule('cabify-taxi');
+            }}
+            title="Movilidad Cabify (Taxis y Delivery)"
+            aria-expanded={cabifyMenuOpen}
+            aria-controls="cabify-submenu"
+            aria-current={activeModule.startsWith('cabify') ? 'page' : undefined}
           >
             <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.5 2.8C2.1 11 2 11.5 2 12v4c0 .6.4 1 1 1h2"/>
@@ -2559,7 +2569,60 @@ export default function AdminDashboard({ onLogout }) {
               <circle cx="17" cy="17" r="2"/>
             </svg>
             {!sidebarCollapsed && <span className="menu-label">Movilidad Cabify</span>}
+            {!sidebarCollapsed && (
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                style={{ marginLeft: 'auto', transform: cabifyMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}
+              >
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            )}
           </button>
+
+          {!sidebarCollapsed && cabifyMenuOpen && (
+            <div id="cabify-submenu" role="group" aria-label="Submódulos de Movilidad Cabify">
+              <button
+                type="button"
+                className={`menu-item ${activeModule === 'cabify-taxi' ? 'active' : ''}`}
+                onClick={() => setActiveModule('cabify-taxi')}
+                title="Taxis Cabify"
+                aria-current={activeModule === 'cabify-taxi' ? 'page' : undefined}
+                style={{ paddingLeft: '2.1rem' }}
+              >
+                <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.5 2.8C2.1 11 2 11.5 2 12v4c0 .6.4 1 1 1h2"/>
+                  <circle cx="7" cy="17" r="2"/>
+                  <path d="M9 17h6"/>
+                  <circle cx="17" cy="17" r="2"/>
+                </svg>
+                <span className="menu-label">Taxis Cabify</span>
+              </button>
+
+              <button
+                type="button"
+                className={`menu-item ${activeModule === 'cabify-delivery' ? 'active' : ''}`}
+                onClick={() => setActiveModule('cabify-delivery')}
+                title="Delivery Cabify (motos y envíos)"
+                aria-current={activeModule === 'cabify-delivery' ? 'page' : undefined}
+                style={{ paddingLeft: '2.1rem' }}
+              >
+                <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                  <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+                <span className="menu-label">Delivery Cabify</span>
+              </button>
+            </div>
+          )}
 
           {!sidebarCollapsed && <span className="menu-group-label">Administración</span>}
 
@@ -6151,7 +6214,8 @@ export default function AdminDashboard({ onLogout }) {
           </div>
         )}
 
-        {activeModule === 'cabify' && <CabifyMobilityModule />}
+        {activeModule === 'cabify-taxi' && <CabifyMobilityModule key="cabify-taxi" group="taxi" />}
+        {activeModule === 'cabify-delivery' && <CabifyMobilityModule key="cabify-delivery" group="delivery" />}
       </main>
     </div>
   );

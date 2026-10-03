@@ -259,6 +259,90 @@ export function detectJourneyAnomaly({ startAt, endAt, origin, destination }) {
 }
 
 /**
+ * Catálogo product_id (API Cabify /journey) → tipo de vehículo.
+ * Correspondencia 1:1 verificada contra la columna "Tipo de vehículo" de los Excel oficiales.
+ */
+const PRODUCT_VEHICLE_TYPE = {
+  '96f9bf825a0fe645b56b27e40c8c3539': 'Cabify Corp',
+  '763bd189fde0feb7e4c0babb94dab010': 'Cabify Corp*',
+  '93a5350899e1666b19fcc9d27e902839': 'Cabify Corp Aeropuerto',
+  '9c396761d2dcd4f0cc01a6d17a33ef50': 'Cabify Extra Comfort Corp',
+  '18bb7ebcb2cfa552122fd00b562e58ca': 'Envíos en motos Corp',
+  'f410c5111505fae655698240dfd3a2e1': 'Envíos en carro Corp'
+};
+
+const DELIVERY_VEHICLE_TYPES = new Set(['Envíos en motos Corp', 'Envíos en carro Corp']);
+
+/**
+ * Resuelve el tipo de vehículo a partir del product_id del journey.
+ * @param {string | null | undefined} productId
+ * @returns {string | null}
+ */
+export function vehicleTypeFromProductId(productId) {
+  return (productId && PRODUCT_VEHICLE_TYPE[productId]) || null;
+}
+
+/**
+ * Grupo de servicio de un tipo de vehículo. Sin tipo conocido se considera taxi.
+ * @param {string | null | undefined} vehicleType
+ * @returns {'taxi' | 'delivery'}
+ */
+export function getServiceGroup(vehicleType) {
+  return vehicleType && DELIVERY_VEHICLE_TYPES.has(vehicleType) ? 'delivery' : 'taxi';
+}
+
+/**
+ * Indica si el texto corresponde a un tipo de vehículo del catálogo de Cabify.
+ * @param {string | null | undefined} vehicleType
+ * @returns {boolean}
+ */
+export function isKnownVehicleType(vehicleType) {
+  return !!vehicleType && Object.values(PRODUCT_VEHICLE_TYPE).includes(vehicleType);
+}
+
+/**
+ * Filtra un resultado de viajes por grupo ('taxi' | 'delivery') y recalcula el resumen.
+ * Sin grupo válido retorna el resultado sin cambios.
+ * @param {any} result
+ * @param {string | null | undefined} group
+ */
+function applyServiceGroup(result, group) {
+  if (!result || (group !== 'taxi' && group !== 'delivery')) return result;
+
+  const journeys = (result.journeys || []).filter(j => getServiceGroup(j.vehicleType) === group);
+  const passengerTotals = new Map();
+  let totalAmount = 0;
+
+  journeys.forEach(j => {
+    totalAmount += j.totalPEN;
+    const pName = j.riderName || 'Otros';
+    const current = passengerTotals.get(pName) || { name: pName, email: j.riderEmail, total: 0, trips: 0 };
+    current.total += j.totalPEN;
+    current.trips += 1;
+    passengerTotals.set(pName, current);
+  });
+
+  totalAmount = Math.round(totalAmount * 100) / 100;
+  const totalTrips = journeys.length;
+  const byPassenger = Array.from(passengerTotals.values())
+    .map(p => ({ ...p, total: Math.round(p.total * 100) / 100 }))
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    ...result,
+    journeys,
+    summary: {
+      ...result.summary,
+      totalAmount,
+      totalTrips,
+      avgAmount: totalTrips > 0 ? Math.round((totalAmount / totalTrips) * 100) / 100 : 0,
+      topPassenger: byPassenger.length > 0 ? byPassenger[0] : null,
+      byPassenger
+    }
+  };
+}
+
+/**
  * Consulta viajes desde la tabla persistente de Supabase por rango de fechas
  */
 export async function getJourneysFromSupabase({ from, to }) {
@@ -306,6 +390,8 @@ export async function getJourneysFromSupabase({ from, to }) {
         description: row.description || '',
         totalPEN: Number(row.total_pen) || 0,
         currency: row.currency || 'PEN',
+        vehicleType: row.vehicle_type || null,
+        serviceGroup: getServiceGroup(row.vehicle_type),
         anomaly: detectJourneyAnomaly({ startAt, endAt, origin, destination })
       };
     });
@@ -373,18 +459,21 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
   try {
     const supabase = getSupabaseAdmin();
 
-    // Preservar motivos preexistentes en Supabase para no sobreescribirlos con null
+    // Preservar motivos y tipo de vehículo preexistentes en Supabase para no sobreescribirlos con null
     const ids = enrichedJourneys.map(j => j.id || j.ticketCode || j.journeyId).filter(Boolean);
     const existingMotivosMap = new Map();
+    const existingVehicleMap = new Map();
     if (ids.length > 0) {
       const { data: existingRows } = await supabase
         .from(CABIFY_TABLE)
-        .select('id, motivo')
-        .in('id', ids.slice(0, 1000))
-        .not('motivo', 'is', null);
+        .select('id, motivo, vehicle_type')
+        .in('id', ids.slice(0, 1000));
 
       if (existingRows) {
-        existingRows.forEach(r => existingMotivosMap.set(r.id, r.motivo));
+        existingRows.forEach(r => {
+          if (r.motivo) existingMotivosMap.set(r.id, r.motivo);
+          if (r.vehicle_type) existingVehicleMap.set(r.id, r.vehicle_type);
+        });
       }
     }
 
@@ -408,6 +497,7 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
 
       const rowId = j.id || j.ticketCode || j.journeyId;
       const finalMotivo = j.motivo || existingMotivosMap.get(rowId) || null;
+      const finalVehicleType = j.vehicleType || existingVehicleMap.get(rowId) || null;
 
       return {
         id: rowId,
@@ -424,6 +514,7 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
         destination: j.destination || null,
         charge_code: j.chargeCode || 'Movilidad General',
         motivo: finalMotivo,
+        vehicle_type: finalVehicleType,
         description: j.description || null,
         total_pen: Number(j.totalPEN) || 0,
         currency: j.currency || 'PEN',
@@ -454,10 +545,19 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
 }
 
 /**
+ * Viajes corporativos con filtro opcional por grupo de servicio ('taxi' | 'delivery').
+ * Sin `group` retorna todos los viajes.
+ */
+export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false, group = null }) {
+  const result = await fetchCorporateJourneys({ from, to, currency, forceRefresh });
+  return applyServiceGroup(result, group);
+}
+
+/**
  * Obtiene todas las ventas/viajes corporativos en un rango de fechas,
  * enriquecidos con nombre del colaborador, ruta, fechas y costos.
  */
-export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false }) {
+async function fetchCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false }) {
   // 1. Si no es forzado, intentar leer primero desde la base de datos de Supabase (instantáneo)
   if (!forceRefresh) {
     const fromSupabase = await getJourneysFromSupabase({ from, to });
@@ -621,6 +721,8 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
     const startAt = typeObj.start_at || detail?.start_at || '';
     const endAt = typeObj.end_at || detail?.end_at || '';
 
+    const vehicleType = vehicleTypeFromProductId(detail?.product_id);
+
     return {
       id: sale.code || journeyId,
       ticketCode: sale.code || 'S/N',
@@ -640,6 +742,8 @@ export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRe
       description: typeObj.description || '',
       totalPEN,
       currency: sale.currency || 'PEN',
+      vehicleType,
+      serviceGroup: getServiceGroup(vehicleType),
       anomaly: detectJourneyAnomaly({ startAt, endAt, origin: originFull, destination: destFull })
     };
   });

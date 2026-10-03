@@ -33,7 +33,9 @@ export async function GET(request) {
       to = `${currentYear}-${currentMonth}-${String(lastDay).padStart(2, '0')}`;
     }
 
-    const result = await getCorporateJourneys({ from, to, currency: 'PEN', forceRefresh });
+    const groupParam = searchParams.get('group');
+    const group = groupParam === 'taxi' || groupParam === 'delivery' ? groupParam : null;
+    const result = await getCorporateJourneys({ from, to, currency: 'PEN', forceRefresh, group });
 
     const now = new Date();
     const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
