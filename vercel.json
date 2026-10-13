@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync-invoices",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/enrich-expenses",
+      "schedule": "*/3 * * * *"
+    },
+    {
+      "path": "/api/cron/enrich-vouchers",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
