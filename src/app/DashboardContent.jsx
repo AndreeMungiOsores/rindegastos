@@ -198,6 +198,7 @@ export default function AdminDashboard({ onLogout }) {
   const [showDisburseModal, setShowDisburseModal] = useState(false);
   const [disburseFile, setDisburseFile] = useState(null);
   const [isDisbursing, setIsDisbursing] = useState(false);
+  const [disburseStatus, setDisburseStatus] = useState('');
 
   // Control de Zoom de Imagen (Lupa)
   const [isZoomed, setIsZoomed] = useState(false);
@@ -1495,6 +1496,44 @@ export default function AdminDashboard({ onLogout }) {
     );
   };
 
+  // Compresión automática de imágenes en el cliente si superan 1.5 MB
+  const compressImageIfNeeded = async (file) => {
+    if (!file || !file.type.startsWith('image/')) return file;
+    if (file.size <= 1.5 * 1024 * 1024) return file;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 1920;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (blob && blob.size < file.size) {
+            resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+          } else {
+            resolve(file);
+          }
+        }, 'image/jpeg', 0.82);
+      };
+      img.onerror = () => resolve(file);
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   // Confirmar y generar el desembolso masivo / individual
   const handleConfirmDisburse = async () => {
     if (selectedIds.length === 0 || !disburseFile) return;
@@ -1503,19 +1542,67 @@ export default function AdminDashboard({ onLogout }) {
       return;
     }
     setIsDisbursing(true);
+    setDisburseStatus('Iniciando procesamiento...');
 
     try {
+      let finalVoucherStoragePath = null;
+      let finalVoucherName = disburseFile.name;
+
+      // Si el archivo supera 3.5 MB (límite perimetral Vercel 4.5 MB), transferir vía canal seguro Supabase
+      if (disburseFile.size > 3.5 * 1024 * 1024) {
+        setDisburseStatus('Preparando canal seguro para archivo pesado...');
+        
+        // 1. Obtener URL prefirmada
+        const urlRes = await fetch('/api/gastos/voucher/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: disburseFile.name })
+        });
+        const urlData = await urlRes.json().catch(() => null);
+        if (!urlRes.ok || !urlData?.signedUrl) {
+          throw new Error(urlData?.error || 'No se pudo inicializar la subida segura del archivo.');
+        }
+
+        // 2. Subida directa a Supabase Storage (bypassing Vercel 4.5MB wall)
+        setDisburseStatus('Subiendo comprobante a canal seguro...');
+        const uploadRes = await fetch(urlData.signedUrl, {
+          method: 'PUT',
+          body: disburseFile,
+          headers: {
+            'Content-Type': disburseFile.type || 'application/octet-stream'
+          }
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error('Error al subir el comprobante al canal de almacenamiento seguro.');
+        }
+
+        finalVoucherStoragePath = urlData.path;
+      }
+
+      setDisburseStatus('Guardando desembolso y optimizando documento...');
+
       const formData = new FormData();
       formData.append('ids', JSON.stringify(selectedIds));
       formData.append('cr168_estado', 553050001); // Desembolsado
-      formData.append('voucher', disburseFile);
+
+      if (finalVoucherStoragePath) {
+        formData.append('voucherStoragePath', finalVoucherStoragePath);
+        formData.append('voucherName', finalVoucherName);
+      } else {
+        formData.append('voucher', disburseFile);
+      }
 
       const res = await fetch('/api/gastos', {
         method: 'PATCH',
         body: formData
       });
 
-      if (!res.ok) throw new Error('Error al procesar el desembolso masivo en el servidor.');
+      const resData = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(resData?.error || resData?.details || 'Error al procesar el desembolso masivo en el servidor.');
+      }
 
       alert(`Se procesó el desembolso con éxito para ${selectedIds.length} gastos y se despachó la notificación de correo.`);
       setSelectedIds([]);
@@ -1527,6 +1614,7 @@ export default function AdminDashboard({ onLogout }) {
       alert(`Error al generar desembolso: ${err.message}`);
     } finally {
       setIsDisbursing(false);
+      setDisburseStatus('');
     }
   };
 
@@ -5468,10 +5556,16 @@ export default function AdminDashboard({ onLogout }) {
 
       {/* Modal de Desembolso */}
       {showDisburseModal && (
-        <div className="modal-overlay" onClick={() => !isDisbursing && setShowDisburseModal(false)}>
+        <div 
+          className="modal-overlay" 
+          onClick={() => !isDisbursing && setShowDisburseModal(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="disburse-modal-title"
+        >
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div>
-              <h2 className="modal-title">Generar Desembolso</h2>
+              <h2 id="disburse-modal-title" className="modal-title">Generar Desembolso</h2>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                 Se cambiará el estado de <strong>{selectedIds.length}</strong> {selectedIds.length === 1 ? 'gasto seleccionado' : 'gastos seleccionados'} a <strong>Desembolsado</strong>.
               </p>
@@ -5481,16 +5575,19 @@ export default function AdminDashboard({ onLogout }) {
               <input
                 type="file"
                 accept="image/*,application/pdf"
-                onChange={(e) => {
+                disabled={isDisbursing}
+                onChange={async (e) => {
                   if (e.target.files && e.target.files[0]) {
-                    const file = e.target.files[0];
-                    if (file.size > 50 * 1024 * 1024) {
+                    const rawFile = e.target.files[0];
+                    if (rawFile.size > 50 * 1024 * 1024) {
                       alert('El archivo del comprobante supera el límite permitido de 50 MB.');
                       e.target.value = '';
                       setDisburseFile(null);
-                    } else {
-                      setDisburseFile(file);
+                      return;
                     }
+                    // Optimizar imagen en el cliente si es fotográfica y pesada
+                    const processed = await compressImageIfNeeded(rawFile);
+                    setDisburseFile(processed);
                   }
                 }}
               />
@@ -5503,16 +5600,33 @@ export default function AdminDashboard({ onLogout }) {
                 {disburseFile ? 'Archivo seleccionado' : 'Adjuntar comprobante de desembolso'}
               </strong>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                {disburseFile ? 'Haz clic para cambiar el archivo' : 'Soporta imágenes y PDF (Máx. 50MB)'}
+                {disburseFile ? 'Haz clic para cambiar el archivo' : 'Soporta imágenes y PDF (Optimización automática > 4MB)'}
               </span>
               {disburseFile && (
-                <div className="file-name-text">
-                  {disburseFile.name} ({Math.round(disburseFile.size / 1024)} KB)
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', marginTop: '0.35rem' }}>
+                  <div className="file-name-text">
+                    {disburseFile.name} ({Math.round(disburseFile.size / 1024)} KB)
+                  </div>
+                  {disburseFile.size > 3.5 * 1024 * 1024 && (
+                    <span style={{ fontSize: '0.75rem', color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 }}>
+                      ⚡ Archivo pesado: Se transferirá y optimizará automáticamente sin límite de tamaño.
+                    </span>
+                  )}
                 </div>
               )}
             </label>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+            {isDisbursing && disburseStatus && (
+              <div 
+                role="status" 
+                aria-live="polite" 
+                style={{ fontSize: '0.85rem', color: 'var(--primary-color, #2563eb)', textAlign: 'center', marginTop: '0.5rem', fontWeight: 500 }}
+              >
+                ⏳ {disburseStatus}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.75rem' }}>
               <button
                 type="button"
                 className="btn btn-secondary"

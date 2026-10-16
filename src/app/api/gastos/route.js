@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getExpenses, updateExpense, getExpense, uploadFileToExpense, fetchExpenseBinary } from '../../../lib/dataverseClient.js';
 import { sendEmail } from '../../../lib/graphClient.js';
 import { extractVoucherMetadata } from '../../../lib/kimiClient.js';
+import { optimizePdfBuffer } from '../../../lib/pdfOptimizer.js';
+import { getSupabaseAdmin } from '../../../lib/supabaseClient.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,12 +86,14 @@ export async function PATCH(request) {
     const cr168_rucempresaRaw = formData.get('cr168_rucempresa');
     const cr168_id_desembolsoRaw = formData.get('cr168_id_desembolso');
     const voucherFile = formData.get('voucher'); // Archivo de tipo File o null
+    const voucherStoragePath = formData.get('voucherStoragePath');
+    const voucherNameParam = formData.get('voucherName');
 
     // Procesar campos comunes
     const cr168_estado = cr168_estadoRaw ? parseInt(cr168_estadoRaw, 10) : undefined;
     const cr168_aprobado = cr168_aprobadoRaw !== null ? (cr168_aprobadoRaw === 'true') : undefined;
 
-    // Procesar el voucher si viene adjunto
+    // Procesar el voucher si viene adjunto directamente o vía Supabase Storage
     let attachments = [];
     let voucherBuffer = null;
     let voucherName = '';
@@ -98,14 +102,45 @@ export async function PATCH(request) {
       voucherName = voucherFile.name;
       const arrayBuffer = await voucherFile.arrayBuffer();
       voucherBuffer = Buffer.from(arrayBuffer);
-      
-      const base64Content = voucherBuffer.toString('base64');
-      attachments.push({
-        '@odata.type': '#microsoft.graph.fileAttachment',
-        name: voucherName,
-        contentType: voucherFile.type || 'application/octet-stream',
-        contentBytes: base64Content
-      });
+    } else if (voucherStoragePath) {
+      voucherName = voucherNameParam || 'comprobante_desembolso.pdf';
+      try {
+        console.log(`[API PATCH] Descargando comprobante de gran tamaño desde Supabase (${voucherStoragePath})...`);
+        const supabase = getSupabaseAdmin();
+        const { data: fileData, error: downloadError } = await supabase.storage
+          .from('panel-rindegastos-vouchers')
+          .download(voucherStoragePath);
+
+        if (downloadError) throw downloadError;
+        const arrayBuffer = await fileData.arrayBuffer();
+        voucherBuffer = Buffer.from(arrayBuffer);
+        console.log(`[API PATCH] Voucher descargado exitosamente de Supabase (${(voucherBuffer.length / 1024 / 1024).toFixed(2)} MB).`);
+
+        // Limpieza asíncrona del archivo temporal en Supabase
+        supabase.storage.from('panel-rindegastos-vouchers').remove([voucherStoragePath]).catch(() => {});
+      } catch (sErr) {
+        console.error('[API PATCH] Error al descargar voucher de Supabase:', sErr.message);
+      }
+    }
+
+    // Si es un archivo PDF, optimizarlo automáticamente si contiene mapas de bits pesados
+    if (voucherBuffer && voucherName.toLowerCase().endsWith('.pdf')) {
+      voucherBuffer = await optimizePdfBuffer(voucherBuffer, voucherName);
+    }
+
+    // Adjuntar al correo solo si es <= 3 MB (límite de Microsoft Graph API para adjuntos simples)
+    if (voucherBuffer) {
+      if (voucherBuffer.length <= 3 * 1024 * 1024) {
+        const base64Content = voucherBuffer.toString('base64');
+        attachments.push({
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          name: voucherName,
+          contentType: voucherFile?.type || 'application/pdf',
+          contentBytes: base64Content
+        });
+      } else {
+        console.warn(`[API PATCH] Comprobante optimizado (${(voucherBuffer.length / 1024 / 1024).toFixed(2)} MB) supera 3 MB. Se omite como adjunto inline para evitar fallo en Graph API.`);
+      }
     }
 
     // --- CASO 1: ACTUALIZACIÓN MASIVA (DESEMBOLSO GRUPAL) ---
