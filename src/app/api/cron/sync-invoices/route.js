@@ -103,8 +103,8 @@ async function handleInvoiceSync() {
           const existingId = existingExpense.cr168_reportedegastosid;
             const hasXmlAttached = Boolean(existingExpense.cr168_archivo_xml && existingExpense.cr168_archivo_xml_name);
             const needsXmlUpload = Boolean((item.xmlContent || item.xmlBuffer) && !hasXmlAttached);
-            const needsEnrichment = !existingExpense.cr168_numerodecomprobante || 
-                                    !existingExpense.cr168_rucdelcomercio || 
+            const needsEnrichment = existingExpense.cr168_ia_procesado !== true || 
+                                    !existingExpense.cr168_numerodecomprobante || 
                                     Number(existingExpense.cr168_montototalincluyendoigv || 0) === 0;
 
             if (needsXmlUpload || needsEnrichment) {
@@ -224,12 +224,17 @@ async function handleInvoiceSync() {
 
         const assignedVendor = resolveVendorFromEmail(item.senderEmail);
 
+        const baseDetalleInicial = `[Factura Correo] ${item.subject}\nArchivo: ${item.pdfFileName}${item.xmlFileName ? ` (XML: ${item.xmlFileName})` : ''}\nRemitente: ${item.senderEmail}`.trim();
+        const safeDetalle = baseDetalleInicial.length > 380 
+          ? baseDetalleInicial.substring(0, 380) 
+          : baseDetalleInicial;
+
         const newExpensePayload = {
           cr168_vendedor: assignedVendor,
           cr168_empresa: 'BLISSCORP S.A.C',
           cr168_nombredelcomercio: cleanMerchant,
           cr168_fechadelgasto: item.receivedDateTime,
-          cr168_detalle: `[Factura Correo] ${item.subject}\nArchivo: ${item.pdfFileName}${item.xmlFileName ? ` (XML: ${item.xmlFileName})` : ''}\nRemitente: ${item.senderEmail}\n${item.bodyPreview || ''}`.substring(0, 2000),
+          cr168_detalle: safeDetalle,
           cr168_aprobado: false,
           cr168_estado: 553050000 // Pendiente
         };
