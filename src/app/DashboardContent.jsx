@@ -198,6 +198,7 @@ export default function AdminDashboard({ onLogout }) {
   // Modal de Desembolso
   const [showDisburseModal, setShowDisburseModal] = useState(false);
   const [disburseFile, setDisburseFile] = useState(null);
+  const [disburseIdManual, setDisburseIdManual] = useState('');
   const [isDisbursing, setIsDisbursing] = useState(false);
   const [disburseStatus, setDisburseStatus] = useState('');
 
@@ -1586,6 +1587,9 @@ export default function AdminDashboard({ onLogout }) {
       const formData = new FormData();
       formData.append('ids', JSON.stringify(selectedIds));
       formData.append('cr168_estado', 553050001); // Desembolsado
+      if (disburseIdManual && disburseIdManual.trim()) {
+        formData.append('cr168_id_desembolso', disburseIdManual.trim());
+      }
 
       if (finalVoucherStoragePath) {
         formData.append('voucherStoragePath', finalVoucherStoragePath);
@@ -1609,6 +1613,7 @@ export default function AdminDashboard({ onLogout }) {
       setSelectedIds([]);
       setShowDisburseModal(false);
       setDisburseFile(null);
+      setDisburseIdManual('');
       await fetchExpenses();
     } catch (err) {
       console.error('Error al generar desembolso masivo:', err);
@@ -1688,8 +1693,16 @@ export default function AdminDashboard({ onLogout }) {
     if (!isBuzon) {
       return Boolean(exp.cr168_voucher_desembolso || exp.cr168_voucher_desembolso_name);
     }
+    // Para buzón: si el gasto ya está desembolsado o tiene un archivo de desembolso asignado
+    if (parseInt(exp.cr168_estado, 10) === 553050001 && (exp.cr168_voucher_desembolso || exp.cr168_voucher_desembolso_name)) {
+      return true;
+    }
+    // Si la factura original ya está resguardada en voucher_propina, lo que esté en voucher_desembolso es el voucher bancario
+    if (exp.cr168_voucher_propina_name && (exp.cr168_voucher_desembolso || exp.cr168_voucher_desembolso_name)) {
+      return true;
+    }
     const fn = (exp.cr168_voucher_desembolso_name || '').toLowerCase();
-    const isBank = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(fn);
+    const isBank = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago|rend/i.test(fn);
     return Boolean(exp.cr168_voucher_desembolso && isBank);
   };
 
@@ -1743,6 +1756,9 @@ export default function AdminDashboard({ onLogout }) {
       if (activeExpense.cr168_rucempresa !== undefined) {
         formData.append('cr168_rucempresa', activeExpense.cr168_rucempresa || '');
       }
+      if (activeExpense.cr168_id_desembolso !== undefined) {
+        formData.append('cr168_id_desembolso', activeExpense.cr168_id_desembolso || '');
+      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -1786,6 +1802,9 @@ export default function AdminDashboard({ onLogout }) {
       const formData = new FormData();
       formData.append('cr168_aprobado', activeExpense.cr168_aprobado);
       formData.append('cr168_estado', parseInt(activeExpense.cr168_estado, 10));
+      if (activeExpense.cr168_id_desembolso !== undefined) {
+        formData.append('cr168_id_desembolso', activeExpense.cr168_id_desembolso || '');
+      }
       if (drawerVoucherFile && drawerVoucherFile !== 'replace_request') {
         formData.append('voucher', drawerVoucherFile);
       }
@@ -5066,7 +5085,7 @@ export default function AdminDashboard({ onLogout }) {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                         <span className="info-label" id="label-id-desembolso">ID Desembolso</span>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                          {!activeExpense.cr168_id_desembolso && hasPaymentVoucher && (
+                          {hasPaymentVoucher && (
                             <button
                               type="button"
                               className="btn btn-secondary"
@@ -5092,11 +5111,7 @@ export default function AdminDashboard({ onLogout }) {
                             </button>
                           )}
                           <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #64748b)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', userSelect: 'none' }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                            </svg>
-                            Solo lectura (IA)
+                            Manual o IA
                           </span>
                         </div>
                       </div>
@@ -5104,17 +5119,19 @@ export default function AdminDashboard({ onLogout }) {
                         type="text"
                         className="form-input"
                         aria-labelledby="label-id-desembolso"
-                        aria-readonly="true"
-                        readOnly
-                        placeholder="Sin ID asignado (procesado vía IA)"
+                        placeholder="Sin ID asignado (ingresar o extraer vía IA)"
                         value={activeExpense.cr168_id_desembolso || ''}
-                        title="Este campo es generado automáticamente mediante el análisis con IA del voucher y no se puede editar manualmente."
+                        onChange={(e) => setActiveExpense(prev => ({
+                          ...prev,
+                          cr168_id_desembolso: e.target.value
+                        }))}
+                        disabled={isUpdating}
+                        title="ID o Número de Operación de la transferencia/desembolso"
                         style={{
                           fontSize: '0.85rem',
-                          backgroundColor: '#f8fafc',
-                          color: activeExpense.cr168_id_desembolso ? '#0f172a' : '#94a3b8',
-                          cursor: 'not-allowed',
-                          borderColor: '#e2e8f0',
+                          backgroundColor: '#ffffff',
+                          color: activeExpense.cr168_id_desembolso ? '#0f172a' : '#64748b',
+                          borderColor: '#cbd5e1',
                           fontFamily: activeExpense.cr168_id_desembolso ? 'monospace, sans-serif' : 'inherit',
                           fontWeight: activeExpense.cr168_id_desembolso ? '600' : 'normal'
                         }}
@@ -5608,6 +5625,25 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
               )}
             </label>
+
+            <div style={{ margin: '0.85rem 0 0.5rem 0' }}>
+              <label htmlFor="disburse-id-input" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.3rem' }}>
+                ID de Desembolso / Operación (Opcional)
+              </label>
+              <input
+                id="disburse-id-input"
+                type="text"
+                className="form-input"
+                placeholder="Ej. 02001429 (si se omite, la IA intentará extraerlo)"
+                value={disburseIdManual}
+                onChange={(e) => setDisburseIdManual(e.target.value)}
+                disabled={isDisbursing}
+                style={{ fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+              />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                Se asignará a los {selectedIds.length} gastos seleccionados. Si se deja en blanco, la IA intentará extraerlo del comprobante.
+              </span>
+            </div>
 
             {isDisbursing && disburseStatus && (
               <div 

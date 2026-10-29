@@ -47,9 +47,10 @@ async function uploadVoucherSafely(expenseId, voucherBuffer, voucherName, knownE
     if (isBuzon && exp) {
       const prevVoucherName = (exp.cr168_voucher_desembolso_name || '').toLowerCase();
       const isBankVoucher = /bbva|bcp|interbank|scotiabank|operaci[oó]n|transferencia|voucher|constancia|consulta_de_operaciones|pago/i.test(prevVoucherName);
+      const isAlreadyDisbursed = parseInt(exp.cr168_estado, 10) === 553050001;
       
       // Si cr168_voucher_desembolso tiene la factura PDF y cr168_voucher_propina no tiene la factura aún:
-      if (exp.cr168_voucher_desembolso && !isBankVoucher && !exp.cr168_voucher_propina_name) {
+      if (exp.cr168_voucher_desembolso && !exp.cr168_voucher_propina_name && (!isBankVoucher || !isAlreadyDisbursed)) {
         console.log(`[uploadVoucherSafely] Resguardando factura previa ${exp.cr168_voucher_desembolso_name} en cr168_voucher_propina...`);
         const invoiceBuffer = await fetchExpenseBinary(expenseId, 'cr168_voucher_desembolso');
         if (invoiceBuffer && invoiceBuffer.length > 0) {
@@ -169,29 +170,30 @@ export async function PATCH(request) {
         }
       }
 
-      // 1. Actualizar el estado o campo aprobado de cada gasto en Dataverse y subir voucher si existe
-      await Promise.all(
-        ids.map(async (expenseId) => {
-          const updateData = {};
-          if (cr168_estado !== undefined) updateData.cr168_estado = cr168_estado;
-          if (cr168_aprobado !== undefined) updateData.cr168_aprobado = cr168_aprobado;
-          if (autoIdDesembolso) {
-            updateData.cr168_id_desembolso = autoIdDesembolso;
-          } else if (cr168_id_desembolsoRaw !== null) {
-            updateData.cr168_id_desembolso = cr168_id_desembolsoRaw || null;
-          }
+      // Resolver ID de Desembolso: prioridad al manual si el usuario lo ingresó, luego al auto-extraído por IA
+      const resolvedIdDesembolso = (cr168_id_desembolsoRaw && String(cr168_id_desembolsoRaw).trim())
+        || autoIdDesembolso
+        || null;
 
-          await updateExpense(expenseId, updateData);
-          
-          if (voucherBuffer) {
-            try {
-              await uploadVoucherSafely(expenseId, voucherBuffer, voucherName);
-            } catch (uploadErr) {
-              console.error(`Error al subir voucher para gasto ${expenseId}:`, uploadErr.message);
-            }
+      // 1. Actualizar secuencialmente cada gasto en Dataverse y subir voucher si existe
+      for (const expenseId of ids) {
+        const updateData = {};
+        if (cr168_estado !== undefined) updateData.cr168_estado = cr168_estado;
+        if (cr168_aprobado !== undefined) updateData.cr168_aprobado = cr168_aprobado;
+        if (resolvedIdDesembolso !== null) {
+          updateData.cr168_id_desembolso = resolvedIdDesembolso;
+        }
+
+        await updateExpense(expenseId, updateData);
+        
+        if (voucherBuffer) {
+          try {
+            await uploadVoucherSafely(expenseId, voucherBuffer, voucherName);
+          } catch (uploadErr) {
+            console.error(`Error al subir voucher para gasto ${expenseId}:`, uploadErr.message);
           }
-        })
-      );
+        }
+      }
 
       // 2. Si el nuevo estado es "Desembolsado" (553050001), enviar correo resumen con adjunto
       if (cr168_estado === 553050001) {
