@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getVendorArea } from '../lib/vendorAreaMatcher.js';
 import { parseProviderMetadataTag } from '../lib/providerMetadata.js';
+import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 
 /**
@@ -1924,8 +1925,8 @@ export default function AdminDashboard({ onLogout }) {
           item.cr168_numerodecomprobante || '',
           item.cr168_clinica || '',
           item.cr168_doctor || '',
-          item['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || item.cr168_tipodegasto || '',
-          item.cr168_marca || '',
+          formatTipoGasto(item) || '',
+          formatMarca(item) || '',
           total,
           propina,
           tasaIgv,
@@ -4988,9 +4989,9 @@ export default function AdminDashboard({ onLogout }) {
                   {/* Detalles adicionales (solo si alguno tiene dato) */}
                   {(activeExpense.cr168_clinica ||
                     activeExpense.cr168_doctor ||
-                    activeExpense.cr168_marca ||
+                    formatMarca(activeExpense) ||
                     activeExpense.cr168_detalle ||
-                    activeExpense.cr168_tipodegasto) && (
+                    formatTipoGasto(activeExpense)) && (
                     <div className="detail-section">
                       <h3>Detalles adicionales</h3>
                       {activeExpense.cr168_clinica && (
@@ -5005,18 +5006,18 @@ export default function AdminDashboard({ onLogout }) {
                           <span className="info-value">{activeExpense.cr168_doctor}</span>
                         </div>
                       )}
-                      {(activeExpense['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || activeExpense.cr168_tipodegasto) && (
+                      {Boolean(formatTipoGasto(activeExpense)) && (
                         <div className="info-row">
                           <span className="info-label">Tipo de Gasto</span>
                           <span className="info-value">
-                            {activeExpense['cr168_tipodegasto@OData.Community.Display.V1.FormattedValue'] || activeExpense.cr168_tipodegasto}
+                            {formatTipoGasto(activeExpense)}
                           </span>
                         </div>
                       )}
-                      {activeExpense.cr168_marca && (
+                      {Boolean(formatMarca(activeExpense)) && (
                         <div className="info-row">
                           <span className="info-label">Marca</span>
-                          <span className="info-value">{activeExpense.cr168_marca}</span>
+                          <span className="info-value">{formatMarca(activeExpense)}</span>
                         </div>
                       )}
                       {activeExpense.cr168_detalle && (

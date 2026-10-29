@@ -4,13 +4,15 @@ import { sendEmail } from '../../../lib/graphClient.js';
 import { extractVoucherMetadata } from '../../../lib/kimiClient.js';
 import { optimizePdfBuffer } from '../../../lib/pdfOptimizer.js';
 import { getSupabaseAdmin } from '../../../lib/supabaseClient.js';
+import { normalizeExpenseChoices } from '../../../lib/dataverseChoiceResolver.js';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
     const expenses = await getExpenses();
-    return NextResponse.json(expenses);
+    const normalizedExpenses = Array.isArray(expenses) ? expenses.map(normalizeExpenseChoices) : [];
+    return NextResponse.json(normalizedExpenses);
   } catch (error) {
     console.error('Error in GET /api/gastos:', error);
     return NextResponse.json(
