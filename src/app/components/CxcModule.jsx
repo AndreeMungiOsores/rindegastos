@@ -37,6 +37,9 @@ export default function CxcModule() {
   const [periodo, setPeriodo] = useState('');
   const [incluirB2C, setIncluirB2C] = useState(false);
   const [incluirIntercompany, setIncluirIntercompany] = useState(false);
+  const [base, setBase] = useState('efectivo');
+  const [zona, setZona] = useState('');
+  const [agrupacion, setAgrupacion] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -50,6 +53,7 @@ export default function CxcModule() {
     try {
       const params = new URLSearchParams({ modo });
       if (modo !== 'actual' && periodo) params.set('periodo', periodo);
+      if (base === 'rep') params.set('base', 'rep');
       if (incluirB2C) params.set('b2c', '1');
       if (incluirIntercompany) params.set('intercompany', '1');
       const res = await fetch(`/api/cxc?${params}`);
@@ -63,7 +67,7 @@ export default function CxcModule() {
     } finally {
       setLoading(false);
     }
-  }, [modo, periodo, incluirB2C, incluirIntercompany]);
+  }, [modo, periodo, incluirB2C, incluirIntercompany, base]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -73,14 +77,18 @@ export default function CxcModule() {
     const q = busqueda.trim().toLowerCase();
     return (data?.documentos || []).filter(d =>
       (!empresa || d.empresa === empresa) &&
-      (!rango || d.rango === rango) &&
+      (!zona || d.zona === zona) &&
+      (!agrupacion || d.agrupacion === agrupacion) &&
+      (!rango || (base === 'rep' ? d.rango_rep : d.rango) === rango) &&
       (!q || `${d.cliente} ${d.documento} ${d.vendedor || ''}`.toLowerCase().includes(q))
     );
-  }, [data, empresa, rango, busqueda]);
+  }, [data, empresa, zona, agrupacion, rango, busqueda, base]);
 
   const resumen = data?.resumen;
   const maxRange = resumen ? Math.max(1, ...AGING_RANGES.map(r => resumen.byRange[r] || 0)) : 1;
   const empresas = resumen ? Object.keys(resumen.byEmpresa) : [];
+  const zonas = resumen ? Object.keys(resumen.byZona).sort() : [];
+  const agrupaciones = useMemo(() => [...new Set((data?.documentos || []).map(d => d.agrupacion))].sort(), [data]);
 
   return (
     <div style={s.page}>
@@ -95,6 +103,10 @@ export default function CxcModule() {
               {data.periodos.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           )}
+          <select style={s.select} value={base} onChange={e => setBase(e.target.value)} aria-label="Base de vencimiento">
+            <option value="efectivo">Vencimiento efectivo</option>
+            <option value="rep">Vencimiento representante</option>
+          </select>
           <button type="button" style={s.seg(false)} onClick={load} disabled={loading}>{loading ? 'Cargando…' : 'Actualizar'}</button>
         </div>
       </div>
@@ -124,7 +136,9 @@ export default function CxcModule() {
             <section style={s.card} aria-label="Cartera por empresa y vendedor">
               <h3 style={s.h3}>Por empresa</h3>
               {empresas.map(e => <div key={e} style={s.barRow}><span style={{ gridColumn: '1 / 3' }}>{e}</span><span style={s.num}>{fmtMoney(resumen.byEmpresa[e])}</span></div>)}
-              <h3 style={{ ...s.h3, marginTop: '1rem' }}>Top vendedores</h3>
+              <h3 style={{ ...s.h3, marginTop: '1rem' }}>Por zona</h3>
+              {zonas.map(z => <div key={z} style={s.barRow}><span style={{ gridColumn: '1 / 3' }}>{z}</span><span style={s.num}>{fmtMoney(resumen.byZona[z])}</span></div>)}
+              <h3 style={{ ...s.h3, marginTop: '1rem' }}>Top comerciales</h3>
               {resumen.topVendedores.slice(0, 5).map(v => <div key={v.vendedor} style={s.barRow}><span style={{ gridColumn: '1 / 3', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.vendedor}</span><span style={s.num}>{fmtMoney(v.saldo)}</span></div>)}
             </section>
           </div>
@@ -134,6 +148,14 @@ export default function CxcModule() {
             <select style={s.select} value={empresa} onChange={e => setEmpresa(e.target.value)} aria-label="Filtrar por empresa">
               <option value="">Empresa (todas)</option>
               {empresas.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+            <select style={s.select} value={zona} onChange={e => setZona(e.target.value)} aria-label="Filtrar por zona">
+              <option value="">Zona (todas)</option>
+              {zonas.map(z => <option key={z} value={z}>{z}</option>)}
+            </select>
+            <select style={s.select} value={agrupacion} onChange={e => setAgrupacion(e.target.value)} aria-label="Filtrar por agrupación">
+              <option value="">Agrupación (todas)</option>
+              {agrupaciones.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <select style={s.select} value={rango} onChange={e => setRango(e.target.value)} aria-label="Filtrar por rango de atraso">
               <option value="">Rango (todos)</option>
@@ -152,7 +174,7 @@ export default function CxcModule() {
             <table style={s.table}>
               <thead>
                 <tr>
-                  {['Empresa', 'Cliente', 'Documento', 'Emisión', 'Vencimiento', 'Días atraso', 'Rango', 'Vendedor', 'Canal', 'Saldo S/'].map(h => <th key={h} style={s.th} scope="col">{h}</th>)}
+                  {['Empresa', 'Cliente', 'Documento', 'Emisión', base === 'rep' ? 'Venc. rep.' : 'Venc. efectivo', 'Días atraso', 'Rango', 'Zona', 'Comercial', 'Agrupación', 'Canal', 'Saldo S/'].map(h => <th key={h} style={s.th} scope="col">{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -162,15 +184,17 @@ export default function CxcModule() {
                     <td style={{ ...s.td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }} title={d.cliente}>{d.cliente}</td>
                     <td style={s.td}>{d.documento}</td>
                     <td style={s.td}>{fmtDate(d.fecha_emision)}</td>
-                    <td style={s.td}>{fmtDate(d.fecha_vencimiento)}</td>
-                    <td style={{ ...s.td, ...s.num }}>{d.dias_atraso ?? '—'}</td>
-                    <td style={s.td}><span style={s.badge(d.dias_atraso > 0)}>{d.rango || '—'}</span></td>
-                    <td style={s.td}>{d.vendedor || '—'}</td>
+                    <td style={s.td}>{fmtDate(base === 'rep' ? d.fecha_venc_rep : d.fecha_venc_efectivo)}</td>
+                    <td style={{ ...s.td, ...s.num }}>{(base === 'rep' ? d.dias_atraso_rep : d.dias_atraso) ?? '—'}</td>
+                    <td style={s.td}><span style={s.badge((base === 'rep' ? d.dias_atraso_rep : d.dias_atraso) > 0)}>{(base === 'rep' ? d.rango_rep : d.rango) || '—'}</span></td>
+                    <td style={s.td}>{d.zona}</td>
+                    <td style={s.td}>{d.comercial}</td>
+                    <td style={s.td}>{d.agrupacion}</td>
                     <td style={s.td}>{d.canal_venta || '—'}</td>
                     <td style={{ ...s.td, ...s.num }}>{fmtMoney(d.saldo_pen)}</td>
                   </tr>
                 ))}
-                {!docs.length && <tr><td style={s.td} colSpan={10}>Sin documentos para los filtros seleccionados.</td></tr>}
+                {!docs.length && <tr><td style={s.td} colSpan={12}>Sin documentos para los filtros seleccionados.</td></tr>}
               </tbody>
             </table>
           </div>
