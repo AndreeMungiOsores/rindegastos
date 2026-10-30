@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { detectDocumentKind } from './providerMetadata.js';
 
 const KIMI_BASE_URL = 'https://api.moonshot.ai/v1';
 const KIMI_MODEL = process.env.KIMI_MODEL || 'kimi-k3';
@@ -14,7 +15,9 @@ Reglas estrictas:
 3. cliente_ruc: RUC de la empresa destinataria (ej. 20609292785 BLISSCORP o 20615051561 BLISSFARMA).
 4. cliente_empresa: "BLISSCORP S.A.C" o "BLISSFARMA S.A.C" o la razón social destinataria indicada.
 5. numero_comprobante: serie y número (ej. "FE01-00000079", "F001-1234", "E08010D7ZC").
-6. tipo_comprobante: "Factura Electrónica", "Factura", "Invoice".
+6. tipo_comprobante: "Factura Electrónica", "Factura", "Invoice", "Nota de Crédito Electrónica" o "Nota de Débito Electrónica".
+   - tipo_documento: "FACTURA", "BOLETA", "NOTA_CREDITO" o "NOTA_DEBITO". Es NOTA_CREDITO si el documento se titula "NOTA DE CRÉDITO" / "Credit Note" o indica que rectifica/anula/modifica otro comprobante (la serie suele iniciar con FC o BC, ej. "FCL1-0000064"). Es NOTA_DEBITO si se titula "NOTA DE DÉBITO" (serie FD/BD).
+   - documento_referencia: solo para notas de crédito/débito, serie y número del comprobante que modifica o rectifica (ej. "FFL1-0003067"); null en los demás casos.
 7. fecha_emision: formato "YYYY-MM-DD".
 8. fecha_vencimiento: formato "YYYY-MM-DD".
    - Si el comprobante especifica fecha de vencimiento, cuotas a crédito o días de crédito, extrae esa fecha exacta.
@@ -43,6 +46,8 @@ Estructura JSON exacta:
   "cliente_empresa": "BLISSCORP S.A.C",
   "numero_comprobante": "FE01-00000079",
   "tipo_comprobante": "Factura Electrónica",
+  "tipo_documento": "FACTURA",
+  "documento_referencia": null,
   "fecha_emision": "2026-08-24",
   "fecha_vencimiento": "2026-09-23",
   "condicion_pago": "CREDITO",
@@ -109,6 +114,8 @@ export function normalizeInvoiceData(raw) {
       cliente_empresa: null,
       numero_comprobante: null,
       tipo_comprobante: 'Factura',
+      tipo_documento: 'FACTURA',
+      documento_referencia: null,
       fecha_emision: null,
       fecha_vencimiento: null,
       condicion_pago: 'CONTADO',
@@ -168,13 +175,25 @@ export function normalizeInvoiceData(raw) {
     fechaVenc = fechaEmision;
   }
 
+  const numeroComprobante = raw.numero_comprobante ? String(raw.numero_comprobante).trim() : null;
+  const docKind = detectDocumentKind({
+    tipo_documento: raw.tipo_documento,
+    tipo_comprobante: raw.tipo_comprobante,
+    numero_comprobante: numeroComprobante
+  });
+  const tipoComprobante = docKind === 'NC' ? 'Nota de Crédito Electrónica'
+    : docKind === 'ND' ? 'Nota de Débito Electrónica'
+    : (raw.tipo_comprobante ? String(raw.tipo_comprobante).trim() : 'Factura Electrónica');
+
   return {
     ruc_emisor: raw.ruc_emisor ? String(raw.ruc_emisor).replace(/[^0-9]/g, '') : null,
     nombre_emisor: raw.nombre_emisor ? String(raw.nombre_emisor).trim() : null,
     cliente_ruc: raw.cliente_ruc ? String(raw.cliente_ruc).replace(/[^0-9]/g, '') : null,
     cliente_empresa: raw.cliente_empresa ? String(raw.cliente_empresa).trim() : null,
-    numero_comprobante: raw.numero_comprobante ? String(raw.numero_comprobante).trim() : null,
-    tipo_comprobante: raw.tipo_comprobante ? String(raw.tipo_comprobante).trim() : 'Factura Electrónica',
+    numero_comprobante: numeroComprobante,
+    tipo_comprobante: tipoComprobante,
+    tipo_documento: docKind === 'NC' ? 'NOTA_CREDITO' : docKind === 'ND' ? 'NOTA_DEBITO' : (String(raw.tipo_documento || '').toUpperCase() === 'BOLETA' ? 'BOLETA' : 'FACTURA'),
+    documento_referencia: docKind && raw.documento_referencia ? String(raw.documento_referencia).trim() : null,
     fecha_emision: fechaEmision,
     fecha_vencimiento: fechaVenc,
     condicion_pago: raw.condicion_pago ? String(raw.condicion_pago).toUpperCase().trim() : 'CONTADO',
@@ -296,6 +315,9 @@ export function extractInvoiceFromXml(xmlStr) {
     };
 
     const id = extractTag('ID');
+    const xmlDocKind = /<(?:[a-zA-Z0-9]+:)?CreditNote[\s>]/i.test(xmlStr) ? 'NOTA_CREDITO'
+      : /<(?:[a-zA-Z0-9]+:)?DebitNote[\s>]/i.test(xmlStr) ? 'NOTA_DEBITO' : null;
+    const refBlock = xmlStr.match(/<(?:[a-zA-Z0-9]+:)?(?:BillingReference|InvoiceDocumentReference)[^>]*>[\s\S]*?<(?:[a-zA-Z0-9]+:)?ID[^>]*>([^<]+)<\//i);
     const issueDate = extractTag('IssueDate');
     const currency = extractTag('DocumentCurrencyCode') || 'PEN';
 
@@ -388,7 +410,9 @@ export function extractInvoiceFromXml(xmlStr) {
       cliente_ruc: clienteRuc,
       cliente_empresa: clienteEmpresa,
       numero_comprobante: id,
-      tipo_comprobante: 'Factura Electrónica',
+      tipo_comprobante: xmlDocKind === 'NOTA_CREDITO' ? 'Nota de Crédito Electrónica' : xmlDocKind === 'NOTA_DEBITO' ? 'Nota de Débito Electrónica' : 'Factura Electrónica',
+      tipo_documento: xmlDocKind || 'FACTURA',
+      documento_referencia: xmlDocKind && refBlock ? refBlock[1].trim() : null,
       fecha_emision: issueDate,
       fecha_vencimiento: dueDate,
       condicion_pago: (xmlStr.includes('CREDITO') || xmlStr.includes('Crédito') || xmlStr.includes('Credito')) ? 'CREDITO' : 'CONTADO',

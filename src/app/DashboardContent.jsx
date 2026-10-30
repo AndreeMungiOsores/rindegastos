@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getVendorArea } from '../lib/vendorAreaMatcher.js';
-import { parseProviderMetadataTag } from '../lib/providerMetadata.js';
+import { parseProviderMetadataTag, getExpenseDocumentKind, getDocumentKindLabel } from '../lib/providerMetadata.js';
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 import CxcModule from './components/CxcModule';
@@ -76,6 +76,54 @@ function getVencimientoStatus(vencimientoDateStr, isPaid = false) {
     return { status: 'por_vencer', label: `Vence en ${diffDays}d`, color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
   }
   return { status: 'al_dia', label: `Vence en ${diffDays}d`, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
+}
+
+/**
+ * Importes de una factura de buzón con signo contable: las notas de crédito restan (-1), el resto suma.
+ */
+function getSignedInvoiceFinancials(item) {
+  const fin = getProviderInvoiceFinancials(item);
+  const docKind = getExpenseDocumentKind(item);
+  const sign = docKind === 'NC' ? -1 : 1;
+  return {
+    ...fin,
+    docKind,
+    sign,
+    monto: Math.abs(Number(item.cr168_montototalincluyendoigv || 0)) * sign,
+    montoNeto: Math.abs(fin.montoNeto || 0) * sign,
+    montoDetraccion: Math.abs(fin.montoDetraccion || 0) * sign
+  };
+}
+
+const DOCUMENT_KIND_STYLES = {
+  NC: { color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  ND: { color: '#0369a1', bg: '#f0f9ff', border: '#7dd3fc' }
+};
+
+/** Píldora informativa para notas de crédito / débito del buzón de proveedores */
+function DocumentKindPill({ kind, fontSize = '0.68rem' }) {
+  const label = getDocumentKindLabel(kind);
+  if (!label) return null;
+  const style = DOCUMENT_KIND_STYLES[kind];
+  return (
+    <span
+      title={`${label}: este comprobante rectifica o ajusta otro documento`}
+      style={{
+        display: 'inline-block',
+        fontSize,
+        padding: '0.1rem 0.45rem',
+        borderRadius: '9999px',
+        fontWeight: '600',
+        width: 'fit-content',
+        whiteSpace: 'nowrap',
+        backgroundColor: style.bg,
+        color: style.color,
+        border: `1px solid ${style.border}`
+      }}
+    >
+      {label}
+    </span>
+  );
 }
 
 /**
@@ -944,11 +992,19 @@ export default function AdminDashboard({ onLogout }) {
     let totalDetracciones = 0;
     let totalNetoPEN = 0;
     let totalNetoUSD = 0;
+    let notasCreditoCount = 0;
+    let notasCreditoPEN = 0;
+    let notasCreditoUSD = 0;
 
     if (isBuzonView) {
       currentList.forEach(item => {
-        const fin = getProviderInvoiceFinancials(item);
-        const monto = item.cr168_montototalincluyendoigv || 0;
+        const fin = getSignedInvoiceFinancials(item);
+        const monto = fin.monto;
+        if (fin.docKind === 'NC') {
+          notasCreditoCount += 1;
+          if (fin.moneda === 'USD') notasCreditoUSD += Math.abs(monto);
+          else notasCreditoPEN += Math.abs(monto);
+        }
         if (fin.moneda === 'USD') {
           totalAmountUSD += monto;
           totalNetoUSD += fin.montoNeto || 0;
@@ -970,6 +1026,9 @@ export default function AdminDashboard({ onLogout }) {
       totalDetracciones,
       totalNetoPEN,
       totalNetoUSD,
+      notasCreditoCount,
+      notasCreditoPEN,
+      notasCreditoUSD,
       approvedCount,
       pendingApprovalCount,
       pendingDisbursementCount,
@@ -1185,6 +1244,9 @@ export default function AdminDashboard({ onLogout }) {
     let alDiaCount = 0;
     let countContado = 0;
     let countCredito = 0;
+    let notasCreditoCount = 0;
+    let notasCreditoPEN = 0;
+    let notasCreditoUSD = 0;
 
     // Paso 1: Mapeo de nombres normalizados a RUCs oficiales conocidos
     const normNameToRuc = new Map();
@@ -1200,10 +1262,16 @@ export default function AdminDashboard({ onLogout }) {
     const providerGroups = new Map();
 
     for (const item of list) {
-      const fin = getProviderInvoiceFinancials(item);
+      const fin = getSignedInvoiceFinancials(item);
       const isPaid = isExpensePaid(item);
-      const monto = Number(item.cr168_montototalincluyendoigv || 0);
-      const vencStatus = getVencimientoStatus(fin.fechaVencimiento, isPaid);
+      const monto = fin.monto;
+      const vencStatus = fin.docKind ? null : getVencimientoStatus(fin.fechaVencimiento, isPaid);
+
+      if (fin.docKind === 'NC') {
+        notasCreditoCount += 1;
+        if (fin.moneda === 'USD') notasCreditoUSD += Math.abs(monto);
+        else notasCreditoPEN += Math.abs(monto);
+      }
 
       if (fin.moneda === 'USD') {
         totalAmountUSD += monto;
@@ -1214,7 +1282,7 @@ export default function AdminDashboard({ onLogout }) {
         totalDetraccionPEN += fin.montoDetraccion || 0;
       }
 
-      if (fin.aplicaDetraccion || fin.montoDetraccion > 0) {
+      if (fin.aplicaDetraccion || fin.montoDetraccion !== 0) {
         spotCount += 1;
       }
 
@@ -1334,8 +1402,8 @@ export default function AdminDashboard({ onLogout }) {
       }
 
       const mData = monthMap.get(key);
-      const fin = getProviderInvoiceFinancials(item);
-      const monto = Number(item.cr168_montototalincluyendoigv || 0);
+      const fin = getSignedInvoiceFinancials(item);
+      const monto = fin.monto;
       mData.count += 1;
       if (fin.moneda === 'USD') {
         mData.totalUSD += monto;
@@ -1360,8 +1428,8 @@ export default function AdminDashboard({ onLogout }) {
         empresaMap.set(emp, { empresa: emp, count: 0, totalPEN: 0, totalUSD: 0, detraccionPEN: 0 });
       }
       const eData = empresaMap.get(emp);
-      const fin = getProviderInvoiceFinancials(item);
-      const monto = Number(item.cr168_montototalincluyendoigv || 0);
+      const fin = getSignedInvoiceFinancials(item);
+      const monto = fin.monto;
       eData.count += 1;
       if (fin.moneda === 'USD') {
         eData.totalUSD += monto;
@@ -1387,6 +1455,9 @@ export default function AdminDashboard({ onLogout }) {
       totalNetoPEN,
       totalNetoUSD,
       totalDetraccionPEN,
+      notasCreditoCount,
+      notasCreditoPEN,
+      notasCreditoUSD,
       spotCount,
       pagadasCount,
       pagadasAmountPEN,
@@ -3324,6 +3395,7 @@ export default function AdminDashboard({ onLogout }) {
                     </div>
                     <span className="analytics-kpi-sub">
                       {buzonAnalyticsData.totalCount} comprobantes ({buzonAnalyticsData.byProvider.length} proveedores registrados)
+                      {buzonAnalyticsData.notasCreditoCount > 0 && ` · neto de ${buzonAnalyticsData.notasCreditoCount} ${buzonAnalyticsData.notasCreditoCount === 1 ? 'nota de crédito' : 'notas de crédito'} (- S/ ${buzonAnalyticsData.notasCreditoPEN.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`}
                     </span>
                   </div>
 
@@ -3970,6 +4042,31 @@ export default function AdminDashboard({ onLogout }) {
                         : `Total de ${stats.totalCount} comprobantes`}
                     </span>
                   </div>
+                  {isBuzonView && (
+                    <div className="kpi-card">
+                      <div className="kpi-header">
+                        <span className="kpi-icon">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                          </svg>
+                        </span>
+                        <span className="kpi-label">Notas de Crédito</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <span className="kpi-value" style={{ margin: 0, color: stats.notasCreditoCount > 0 ? '#7c3aed' : undefined }}>
+                          - S/ {(stats.notasCreditoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        {stats.notasCreditoUSD > 0 && (
+                          <span style={{ fontSize: '1.05rem', fontWeight: '700', color: '#7c3aed' }}>
+                            - $ {stats.notasCreditoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+                      <span className="kpi-sub">
+                        {stats.notasCreditoCount} {stats.notasCreditoCount === 1 ? 'nota' : 'notas'} · ya restadas del total
+                      </span>
+                    </div>
+                  )}
                   <div className="kpi-card approved">
                     <div className="kpi-header">
                       <span className="kpi-icon">
@@ -4467,9 +4564,11 @@ export default function AdminDashboard({ onLogout }) {
                               const isSelected = selectedIds.includes(item.cr168_reportedegastosid);
 
                               if (isBuzonView) {
-                                const fin = getProviderInvoiceFinancials(item);
+                                const fin = getSignedInvoiceFinancials(item);
                                 const isPaid = isExpensePaid(item);
-                                const vencStatus = getVencimientoStatus(fin.fechaVencimiento, isPaid);
+                                const docKind = fin.docKind;
+                                // Una nota de crédito/débito no se vence como una factura por pagar
+                                const vencStatus = docKind ? null : getVencimientoStatus(fin.fechaVencimiento, isPaid);
                                 const emisionDate = formatDisplayDate(item.cr168_fechadelgasto);
                                 const vencDate = formatDisplayDate(fin.fechaVencimiento);
 
@@ -4526,12 +4625,15 @@ export default function AdminDashboard({ onLogout }) {
                                       </div>
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
-                                      <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155', fontWeight: '600', fontSize: '0.8rem' }}>
-                                        {item.cr168_numerodecomprobante || 'S/N'}
-                                      </code>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
+                                        <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155', fontWeight: '600', fontSize: '0.8rem' }}>
+                                          {item.cr168_numerodecomprobante || 'S/N'}
+                                        </code>
+                                        <DocumentKindPill kind={docKind} />
+                                      </div>
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
-                                      {fin.moneda === 'USD' ? '$' : 'S/'} {(item.cr168_montototalincluyendoigv || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {fin.moneda === 'USD' ? '$' : 'S/'} {fin.monto.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
                                       {(() => {
@@ -4867,7 +4969,10 @@ export default function AdminDashboard({ onLogout }) {
                         </div>
                         <div className="info-row">
                           <span className="info-label">Número de Comprobante</span>
-                          <span className="info-value">{activeExpense.cr168_numerodecomprobante || 'S/D'}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span className="info-value">{activeExpense.cr168_numerodecomprobante || 'S/D'}</span>
+                            <DocumentKindPill kind={getExpenseDocumentKind(activeExpense)} fontSize="0.72rem" />
+                          </div>
                         </div>
                         <div className="info-row">
                           <span className="info-label">Monto Total (IGV Inc.)</span>
@@ -4943,17 +5048,29 @@ export default function AdminDashboard({ onLogout }) {
                     activeExpense.cr168_fecha) && (() => {
                     const fin = getProviderInvoiceFinancials(activeExpense);
                     const isPaid = isExpensePaid(activeExpense);
-                    const vencStatus = getVencimientoStatus(fin.fechaVencimiento, isPaid);
+                    const docKind = getExpenseDocumentKind(activeExpense);
+                    const docRef = (parseProviderMetadataTag(activeExpense.cr168_detalle) || {}).documento_referencia;
+                    const vencStatus = docKind ? null : getVencimientoStatus(fin.fechaVencimiento, isPaid);
                     return (
                       <div className="detail-section" style={{ borderLeft: '3px solid var(--accent-color, #2563eb)', background: '#f8fafc', borderRadius: '0 8px 8px 0', padding: '1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>
                           <h3 style={{ margin: 0, paddingBottom: 0, borderBottom: 'none', color: '#1e293b' }}>
                             Cuentas por Pagar & Detracción (SPOT)
                           </h3>
-                          <span style={{ fontSize: '0.75rem', background: '#e0e7ff', color: '#3730a3', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: '600' }}>
-                            {fin.condicionPago || 'CONTADO'}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <DocumentKindPill kind={docKind} fontSize="0.75rem" />
+                            <span style={{ fontSize: '0.75rem', background: '#e0e7ff', color: '#3730a3', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: '600' }}>
+                              {fin.condicionPago || 'CONTADO'}
+                            </span>
+                          </div>
                         </div>
+
+                        {docKind && docRef && (
+                          <div className="info-row">
+                            <span className="info-label">Documento que rectifica</span>
+                            <span className="info-value" style={{ fontWeight: '600' }}>{docRef}</span>
+                          </div>
+                        )}
 
                         <div className="info-row">
                           <span className="info-label">Fecha de Vencimiento</span>

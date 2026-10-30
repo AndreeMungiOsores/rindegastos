@@ -3,6 +3,43 @@
  * Apto tanto para el cliente (navegador/React) como para el servidor (Node.js/Next.js API).
  */
 
+const DOC_KIND_LABELS = { NC: 'Nota de crédito', ND: 'Nota de débito' };
+
+export function getDocumentKindLabel(kind) {
+  return DOC_KIND_LABELS[kind] || null;
+}
+
+/**
+ * Detecta si un comprobante es nota de crédito (NC) o nota de débito (ND).
+ * Prioridad: tipo explícito (texto o código) > etiqueta guardada > serie del comprobante (FC../BC.. y FD../BD..).
+ * @param {{ tipo_comprobante?: string, tipo_documento?: string, numero_comprobante?: string }} data
+ * @returns {'NC'|'ND'|null}
+ */
+export function detectDocumentKind(data) {
+  if (!data) return null;
+  const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const explicit = `${norm(data.tipo_documento)} ${norm(data.tipo_comprobante)}`;
+  if (/NOTA[ _]+(DE[ _]+)?CREDITO|CREDIT[ _]?NOTE|\bNC\b/.test(explicit)) return 'NC';
+  if (/NOTA[ _]+(DE[ _]+)?DEBITO|DEBIT[ _]?NOTE|\bND\b/.test(explicit)) return 'ND';
+  const serie = norm(data.numero_comprobante).trim();
+  if (/^[FB]C[A-Z0-9]{2}-\d+/.test(serie)) return 'NC';
+  if (/^[FB]D[A-Z0-9]{2}-\d+/.test(serie)) return 'ND';
+  return null;
+}
+
+/**
+ * Tipo de documento (NC/ND) de un registro de Dataverse del buzón de proveedores.
+ */
+export function getExpenseDocumentKind(item) {
+  if (!item) return null;
+  const tag = parseProviderMetadataTag(item.cr168_detalle) || {};
+  return detectDocumentKind({
+    tipo_documento: tag.tipo_documento,
+    tipo_comprobante: item.cr168_tipodecomprobante,
+    numero_comprobante: item.cr168_numerodecomprobante
+  });
+}
+
 /**
  * Genera el string estructurado de metadatos del proveedor para cr168_detalle
  * Manteniéndose compacto para no superar el límite estricto de 400 caracteres de Dataverse.
@@ -12,6 +49,11 @@
 export function formatProviderMetadataTag(data) {
   if (!data) return '';
   const parts = [];
+  const kind = detectDocumentKind(data);
+  if (kind) parts.push(`Doc:${kind}`);
+  if (kind && data.documento_referencia) {
+    parts.push(`Ref:${String(data.documento_referencia).replace(/[|\]]/g, '').trim().substring(0, 30)}`);
+  }
   if (data.fecha_vencimiento) parts.push(`Venc:${data.fecha_vencimiento}`);
   if (data.condicion_pago) parts.push(`Cond:${data.condicion_pago}`);
   if (data.aplica_detraccion && data.monto_detraccion > 0) {
@@ -51,6 +93,12 @@ export function parseProviderMetadataTag(detalle) {
   const spotBlock = detalle.match(/\[SPOT:\s*([^\]]+)\]/i);
   if (spotBlock) {
     const content = spotBlock[1];
+    const doc = content.match(/Doc:\s*(NC|ND)/i);
+    if (doc) result.tipo_documento = doc[1].toUpperCase();
+
+    const ref = content.match(/Ref:\s*([^|\]]+)/i);
+    if (ref) result.documento_referencia = ref[1].trim();
+
     const venc = content.match(/Venc:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
     if (venc) result.fecha_vencimiento = venc[1];
 
