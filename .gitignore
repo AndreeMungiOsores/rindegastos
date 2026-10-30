@@ -35,3 +35,6 @@ next-env.d.ts
 # reports
 batch_enrich_report_*.json
 .cache/
+
+# Archivo temporal con credenciales para subir a Vercel
+vercel-seafacil.env

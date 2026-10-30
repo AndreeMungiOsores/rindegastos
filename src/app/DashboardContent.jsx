@@ -5,6 +5,7 @@ import { getVendorArea } from '../lib/vendorAreaMatcher.js';
 import { parseProviderMetadataTag } from '../lib/providerMetadata.js';
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
+import CxcModule from './components/CxcModule';
 
 /**
  * Formatea una fecha YYYY-MM-DD o ISO a formato DD/MM/YYYY sin desfasajes de zona horaria local.
@@ -217,7 +218,7 @@ export default function AdminDashboard({ onLogout }) {
   const isAutoSyncingRef = useRef(false);
 
   // Módulos y Navegación del Panel Lateral
-  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'buzon' | 'prestamos' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
+  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'buzon' | 'prestamos' | 'cxc' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
   const [cabifyMenuOpen, setCabifyMenuOpen] = useState(false);
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
@@ -2652,6 +2653,20 @@ export default function AdminDashboard({ onLogout }) {
               <path d="M12 6v6l4 2"/>
             </svg>
             {!sidebarCollapsed && <span className="menu-label">Préstamos</span>}
+          </button>
+
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'cxc' ? 'active' : ''}`}
+            onClick={() => setActiveModule('cxc')}
+            title="Cuentas por cobrar"
+            aria-current={activeModule === 'cxc' ? 'page' : undefined}
+          >
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <line x1="12" y1="1" x2="12" y2="23"/>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Cuentas por cobrar</span>}
           </button>
 
           <button
@@ -6356,6 +6371,8 @@ export default function AdminDashboard({ onLogout }) {
             </div>
           </div>
         )}
+
+        {activeModule === 'cxc' && <CxcModule />}
 
         {activeModule === 'cabify-taxi' && <CabifyMobilityModule key="cabify-taxi" group="taxi" />}
         {activeModule === 'cabify-delivery' && <CabifyMobilityModule key="cabify-delivery" group="delivery" />}
