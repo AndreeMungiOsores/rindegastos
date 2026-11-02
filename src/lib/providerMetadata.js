@@ -11,32 +11,33 @@ export function getDocumentKindLabel(kind) {
 
 /**
  * Detecta si un comprobante es nota de crédito (NC) o nota de débito (ND).
- * Prioridad: tipo explícito (texto o código) > etiqueta guardada > serie del comprobante (FC../BC.. y FD../BD..).
- * @param {{ tipo_comprobante?: string, tipo_documento?: string, numero_comprobante?: string }} data
+ * Solo se acepta evidencia explícita: el tipo declarado por la extracción (código NC/ND o NOTA_CREDITO/NOTA_DEBITO)
+ * o un tipo de comprobante que diga "Nota de crédito/débito". La serie del número NO es un criterio válido:
+ * series como FC02 o FC01 también las usan facturas normales (ej. restaurantes, Blissfarma).
+ * @param {{ tipo_comprobante?: string, tipo_documento?: string }} data
  * @returns {'NC'|'ND'|null}
  */
 export function detectDocumentKind(data) {
   if (!data) return null;
-  const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
-  const explicit = `${norm(data.tipo_documento)} ${norm(data.tipo_comprobante)}`;
-  if (/NOTA[ _]+(DE[ _]+)?CREDITO|CREDIT[ _]?NOTE|\bNC\b/.test(explicit)) return 'NC';
-  if (/NOTA[ _]+(DE[ _]+)?DEBITO|DEBIT[ _]?NOTE|\bND\b/.test(explicit)) return 'ND';
-  const serie = norm(data.numero_comprobante).trim();
-  if (/^[FB]C[A-Z0-9]{2}-\d+/.test(serie)) return 'NC';
-  if (/^[FB]D[A-Z0-9]{2}-\d+/.test(serie)) return 'ND';
+  const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+  const tipoDoc = norm(data.tipo_documento);
+  const texto = `${tipoDoc} ${norm(data.tipo_comprobante)}`;
+  if (tipoDoc === 'NC' || /NOTA[ _]+(DE[ _]+)?CREDITO|CREDIT[ _]?NOTE/.test(texto)) return 'NC';
+  if (tipoDoc === 'ND' || /NOTA[ _]+(DE[ _]+)?DEBITO|DEBIT[ _]?NOTE/.test(texto)) return 'ND';
   return null;
 }
 
 /**
- * Tipo de documento (NC/ND) de un registro de Dataverse del buzón de proveedores.
+ * Tipo de documento (NC/ND) de un registro de Dataverse. Solo aplica a facturas del buzón de proveedores:
+ * los gastos de rendición (RindeGastos) nunca son notas de crédito/débito.
  */
 export function getExpenseDocumentKind(item) {
   if (!item) return null;
+  if (!String(item.cr168_detalle || '').startsWith('[Factura Correo]')) return null;
   const tag = parseProviderMetadataTag(item.cr168_detalle) || {};
   return detectDocumentKind({
     tipo_documento: tag.tipo_documento,
-    tipo_comprobante: item.cr168_tipodecomprobante,
-    numero_comprobante: item.cr168_numerodecomprobante
+    tipo_comprobante: item.cr168_tipodecomprobante
   });
 }
 

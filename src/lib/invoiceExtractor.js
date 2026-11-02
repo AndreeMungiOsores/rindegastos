@@ -16,7 +16,7 @@ Reglas estrictas:
 4. cliente_empresa: "BLISSCORP S.A.C" o "BLISSFARMA S.A.C" o la razón social destinataria indicada.
 5. numero_comprobante: serie y número (ej. "FE01-00000079", "F001-1234", "E08010D7ZC").
 6. tipo_comprobante: "Factura Electrónica", "Factura", "Invoice", "Nota de Crédito Electrónica" o "Nota de Débito Electrónica".
-   - tipo_documento: "FACTURA", "BOLETA", "NOTA_CREDITO" o "NOTA_DEBITO". Es NOTA_CREDITO si el documento se titula "NOTA DE CRÉDITO" / "Credit Note" o indica que rectifica/anula/modifica otro comprobante (la serie suele iniciar con FC o BC, ej. "FCL1-0000064"). Es NOTA_DEBITO si se titula "NOTA DE DÉBITO" (serie FD/BD).
+   - tipo_documento: "FACTURA", "BOLETA", "NOTA_CREDITO" o "NOTA_DEBITO". Es NOTA_CREDITO si el documento se titula "NOTA DE CRÉDITO" / "Credit Note" o indica que rectifica/anula/modifica otro comprobante (ej. "Rectifica: FFL1-0003067"). Es NOTA_DEBITO si se titula "NOTA DE DÉBITO". NO deduzcas el tipo por la serie o el prefijo del número (series como FC01 o FC02 también son facturas normales): solo por el título del documento o su referencia a otro comprobante. Ante la duda, "FACTURA".
    - documento_referencia: solo para notas de crédito/débito, serie y número del comprobante que modifica o rectifica (ej. "FFL1-0003067"); null en los demás casos.
 7. fecha_emision: formato "YYYY-MM-DD".
 8. fecha_vencimiento: formato "YYYY-MM-DD".
