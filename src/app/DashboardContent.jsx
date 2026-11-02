@@ -932,12 +932,9 @@ export default function AdminDashboard({ onLogout }) {
       const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
       const matchesEquipo = equipoFilter ? vendorArea === equipoFilter : true;
       const matchesVendedor = vendedorFilter ? item.cr168_vendedor === vendedorFilter : true;
-      const isNote = isBuzonView && getExpenseDocumentKind(item) === 'NC';
-      const matchesEstado = estadoFilter
-        ? !isNote && String(item.cr168_estado) === String(estadoFilter)
-          && !(isBuzonView && String(estadoFilter) === '553050000' && isCreditSettled(item))
-        : true;
-      const matchesAprobado = aprobadoFilter ? !isNote && String(item.cr168_aprobado) === String(aprobadoFilter) : true;
+      const isSettled = isBuzonView && isCreditSettled(item);
+      const matchesEstado = estadoFilter ? !isSettled && String(item.cr168_estado) === String(estadoFilter) : true;
+      const matchesAprobado = aprobadoFilter ? !isSettled && String(item.cr168_aprobado) === String(aprobadoFilter) : true;
       
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = searchTerm ? (
@@ -996,11 +993,11 @@ export default function AdminDashboard({ onLogout }) {
     const currentList = isBuzonView ? buzonExpenses : rendicionExpenses;
     const totalCount = currentList.length;
     const totalAmount = currentList.reduce((sum, e) => sum + (e.cr168_montototalincluyendoigv || 0), 0);
-    // Las notas de crédito no se aprueban ni se desembolsan; las facturas neteadas no quedan pendientes de pago
-    const flowList = isBuzonView ? currentList.filter(e => getExpenseDocumentKind(e) !== 'NC') : currentList;
+    // Las notas de crédito y las facturas neteadas con ellas no se aprueban ni se desembolsan: quedan fuera de estos conteos
+    const flowList = isBuzonView ? currentList.filter(e => !isCreditSettled(e)) : currentList;
     const approvedCount = flowList.filter(e => e.cr168_aprobado).length;
     const pendingApprovalCount = flowList.filter(e => !e.cr168_aprobado).length;
-    const pendingDisbursementCount = flowList.filter(e => parseInt(e.cr168_estado, 10) !== 553050001 && !(isBuzonView && isCreditSettled(e))).length;
+    const pendingDisbursementCount = flowList.filter(e => parseInt(e.cr168_estado, 10) !== 553050001).length;
     const disbursedCount = flowList.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
 
     let totalAmountPEN = 0;
@@ -1212,13 +1209,10 @@ export default function AdminDashboard({ onLogout }) {
   // Cálculos de Analítica Financiera para Buzón de Proveedores (Cuentas por Pagar & Concentración de Proveedores)
   const buzonAnalyticsData = useMemo(() => {
     const list = buzonExpenses.filter(item => {
-      const isNote = getExpenseDocumentKind(item) === 'NC';
+      const isSettled = isCreditSettled(item);
       const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
-      const matchesEstado = estadoFilter
-        ? !isNote && String(item.cr168_estado) === String(estadoFilter)
-          && !(String(estadoFilter) === '553050000' && isCreditSettled(item))
-        : true;
-      const matchesAprobado = aprobadoFilter ? !isNote && String(item.cr168_aprobado) === String(aprobadoFilter) : true;
+      const matchesEstado = estadoFilter ? !isSettled && String(item.cr168_estado) === String(estadoFilter) : true;
+      const matchesAprobado = aprobadoFilter ? !isSettled && String(item.cr168_aprobado) === String(aprobadoFilter) : true;
       
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = searchTerm ? (
@@ -4701,8 +4695,8 @@ export default function AdminDashboard({ onLogout }) {
                                       {fin.moneda === 'USD' ? '$' : 'S/'} {(fin.montoNeto || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
-                                      {docKind === 'NC' ? (
-                                        <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }} title="Las notas de crédito no requieren aprobación">—</span>
+                                      {(docKind === 'NC' || nettedBy) ? (
+                                        <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }} title={docKind === 'NC' ? 'Las notas de crédito no requieren aprobación' : 'Factura neteada con una nota de crédito: no requiere aprobación'}>—</span>
                                       ) : (
                                         <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
                                           {item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False')}
