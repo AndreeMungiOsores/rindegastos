@@ -15,7 +15,6 @@ const fmtDate = v => (v ? String(v).slice(0, 10).split('-').reverse().join('/') 
 const s = {
   page: { padding: '1.5rem 2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' },
   head: { display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' },
-  title: { margin: 0, fontSize: '1.4rem', color: 'var(--navy-900)' },
   controls: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' },
   select: { padding: '0.45rem 0.6rem', border: '1px solid var(--border-default)', borderRadius: 8, background: 'var(--bg-surface)', color: 'var(--text-primary)', font: 'inherit' },
   seg: active => ({ padding: '0.45rem 0.85rem', border: '1px solid var(--border-default)', borderRadius: 8, cursor: 'pointer', font: 'inherit', background: active ? 'var(--accent-500)' : 'var(--bg-surface)', color: active ? 'var(--accent-contrast)' : 'var(--text-primary)' }),
@@ -91,9 +90,48 @@ export default function CxcModule() {
   const agrupaciones = useMemo(() => [...new Set((data?.documentos || []).map(d => d.agrupacion))].sort(), [data]);
 
   return (
+    <div className="cxc-module-root" role="region" aria-label="Módulo de Cuentas por Cobrar">
+      {/* ── Barra de Navegación por Subpestañas (Estándar RindeGastos / Préstamos / Cabify) ── */}
+      <nav className="subtabs-navigation" aria-label="Navegación de Cuentas por Cobrar">
+        <div className="subtabs-inner">
+          <div className="subtabs-left-group" role="tablist">
+            <button type="button" role="tab" aria-selected="true" className="subtab-btn active">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="3" y1="15" x2="21" y2="15"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+              <span>Cuentas por Cobrar</span>
+            </button>
+          </div>
+
+          <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <button
+              type="button"
+              className="sync-invoices-btn"
+              onClick={load}
+              disabled={loading}
+              title="Actualizar la cartera desde SeaFacil"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span>{loading ? 'Actualizando…' : 'Sincronizar SeaFacil'}</span>
+            </button>
+
+            <div className="token-status-badge">
+              <span className="status-dot" style={{ backgroundColor: error ? '#ef4444' : '#10b981' }}></span>
+              <span>{error ? 'SeaFacil sin conexión' : 'SeaFacil Activo'}</span>
+            </div>
+          </div>
+        </div>
+      </nav>
+
     <div style={s.page}>
       <div style={s.head}>
-        <h2 style={s.title}>Cuentas por Cobrar</h2>
         <div style={s.controls}>
           {MODES.map(m => (
             <button key={m.id} type="button" style={s.seg(modo === m.id)} onClick={() => changeModo(m.id)} aria-pressed={modo === m.id}>{m.label}</button>
@@ -107,7 +145,6 @@ export default function CxcModule() {
             <option value="efectivo">Vencimiento efectivo</option>
             <option value="rep">Vencimiento representante</option>
           </select>
-          <button type="button" style={s.seg(false)} onClick={load} disabled={loading}>{loading ? 'Cargando…' : 'Actualizar'}</button>
         </div>
       </div>
 
@@ -202,6 +239,7 @@ export default function CxcModule() {
       )}
 
       {!resumen && !error && loading && <div style={s.card}>Cargando cartera desde SeaFacil…</div>}
+    </div>
     </div>
   );
 }
