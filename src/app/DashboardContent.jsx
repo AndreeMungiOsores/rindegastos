@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getVendorArea } from '../lib/vendorAreaMatcher.js';
-import { parseProviderMetadataTag, getExpenseDocumentKind, getDocumentKindLabel } from '../lib/providerMetadata.js';
+import { parseProviderMetadataTag, getExpenseDocumentKind, getDocumentKindLabel, buildCreditNoteLinks } from '../lib/providerMetadata.js';
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 import CxcModule from './components/CxcModule';
@@ -875,6 +875,16 @@ export default function AdminDashboard({ onLogout }) {
     return Array.from(map.values());
   }, [expenses]);
 
+  // Notas de crédito emparejadas con la factura que rectifican (neteo)
+  const creditLinks = useMemo(() => buildCreditNoteLinks(buzonExpenses), [buzonExpenses]);
+
+  // Una factura "neteada" ya no es una cuenta por pagar; la nota de crédito no se aprueba ni se desembolsa
+  const isCreditSettled = useCallback((item) => {
+    if (!item) return false;
+    if (getExpenseDocumentKind(item) === 'NC') return true;
+    return Boolean(creditLinks.byInvoice.get(item.cr168_reportedegastosid)?.netted);
+  }, [creditLinks]);
+
   // Lista única de equipos/áreas para el selector de filtros (basada en colaboradores de rendición)
   const equiposList = useMemo(() => {
     const list = rendicionExpenses.map(e => getVendorArea(e.cr168_vendedor)).filter(Boolean);
@@ -922,8 +932,12 @@ export default function AdminDashboard({ onLogout }) {
       const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
       const matchesEquipo = equipoFilter ? vendorArea === equipoFilter : true;
       const matchesVendedor = vendedorFilter ? item.cr168_vendedor === vendedorFilter : true;
-      const matchesEstado = estadoFilter ? String(item.cr168_estado) === String(estadoFilter) : true;
-      const matchesAprobado = aprobadoFilter ? String(item.cr168_aprobado) === String(aprobadoFilter) : true;
+      const isNote = isBuzonView && getExpenseDocumentKind(item) === 'NC';
+      const matchesEstado = estadoFilter
+        ? !isNote && String(item.cr168_estado) === String(estadoFilter)
+          && !(isBuzonView && String(estadoFilter) === '553050000' && isCreditSettled(item))
+        : true;
+      const matchesAprobado = aprobadoFilter ? !isNote && String(item.cr168_aprobado) === String(aprobadoFilter) : true;
       
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = searchTerm ? (
@@ -951,7 +965,7 @@ export default function AdminDashboard({ onLogout }) {
 
       return matchesEmpresa && matchesEquipo && matchesVendedor && matchesEstado && matchesAprobado && matchesSearch && matchesDateRange;
     });
-  }, [isBuzonView, buzonExpenses, rendicionExpenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
+  }, [isBuzonView, buzonExpenses, rendicionExpenses, empresaFilter, equipoFilter, vendedorFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate, isCreditSettled]);
 
   // Ordenamiento de gastos basado en la columna de fecha activa (Gasto, Vencimiento o Creación)
   const sortedExpenses = useMemo(() => {
@@ -982,10 +996,12 @@ export default function AdminDashboard({ onLogout }) {
     const currentList = isBuzonView ? buzonExpenses : rendicionExpenses;
     const totalCount = currentList.length;
     const totalAmount = currentList.reduce((sum, e) => sum + (e.cr168_montototalincluyendoigv || 0), 0);
-    const approvedCount = currentList.filter(e => e.cr168_aprobado).length;
-    const pendingApprovalCount = currentList.filter(e => !e.cr168_aprobado).length;
-    const pendingDisbursementCount = currentList.filter(e => parseInt(e.cr168_estado, 10) !== 553050001).length;
-    const disbursedCount = currentList.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
+    // Las notas de crédito no se aprueban ni se desembolsan; las facturas neteadas no quedan pendientes de pago
+    const flowList = isBuzonView ? currentList.filter(e => getExpenseDocumentKind(e) !== 'NC') : currentList;
+    const approvedCount = flowList.filter(e => e.cr168_aprobado).length;
+    const pendingApprovalCount = flowList.filter(e => !e.cr168_aprobado).length;
+    const pendingDisbursementCount = flowList.filter(e => parseInt(e.cr168_estado, 10) !== 553050001 && !(isBuzonView && isCreditSettled(e))).length;
+    const disbursedCount = flowList.filter(e => parseInt(e.cr168_estado, 10) === 553050001).length;
 
     let totalAmountPEN = 0;
     let totalAmountUSD = 0;
@@ -1034,7 +1050,7 @@ export default function AdminDashboard({ onLogout }) {
       pendingDisbursementCount,
       disbursedCount
     };
-  }, [isBuzonView, buzonExpenses, rendicionExpenses]);
+  }, [isBuzonView, buzonExpenses, rendicionExpenses, isCreditSettled]);
 
   // Cálculos de Analítica Financiera (AISLAMIENTO ESTADÍSTICO: estrictamente sobre gastos de colaboradores de campo)
   const analyticsData = useMemo(() => {
@@ -1196,9 +1212,13 @@ export default function AdminDashboard({ onLogout }) {
   // Cálculos de Analítica Financiera para Buzón de Proveedores (Cuentas por Pagar & Concentración de Proveedores)
   const buzonAnalyticsData = useMemo(() => {
     const list = buzonExpenses.filter(item => {
+      const isNote = getExpenseDocumentKind(item) === 'NC';
       const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
-      const matchesEstado = estadoFilter ? String(item.cr168_estado) === String(estadoFilter) : true;
-      const matchesAprobado = aprobadoFilter ? String(item.cr168_aprobado) === String(aprobadoFilter) : true;
+      const matchesEstado = estadoFilter
+        ? !isNote && String(item.cr168_estado) === String(estadoFilter)
+          && !(String(estadoFilter) === '553050000' && isCreditSettled(item))
+        : true;
+      const matchesAprobado = aprobadoFilter ? !isNote && String(item.cr168_aprobado) === String(aprobadoFilter) : true;
       
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = searchTerm ? (
@@ -1286,10 +1306,14 @@ export default function AdminDashboard({ onLogout }) {
         spotCount += 1;
       }
 
+      const settledByCredit = isCreditSettled(item);
+
       if (isPaid) {
         pagadasCount += 1;
         if (fin.moneda === 'USD') pagadasAmountUSD += monto;
         else pagadasAmountPEN += monto;
+      } else if (settledByCredit) {
+        // Factura neteada por nota de crédito (o la propia nota): no es cuenta por pagar
       } else {
         pendientesCount += 1;
         if (fin.moneda === 'USD') pendientesAmountUSD += monto;
@@ -1354,7 +1378,7 @@ export default function AdminDashboard({ onLogout }) {
 
       if (isPaid) {
         pGroup.pagadasCount += 1;
-      } else {
+      } else if (!settledByCredit) {
         pGroup.pendientesCount += 1;
         if (vencStatus && vencStatus.status === 'vencido') {
           pGroup.vencidasCount += 1;
@@ -1477,7 +1501,7 @@ export default function AdminDashboard({ onLogout }) {
       byMonth,
       byEmpresa
     };
-  }, [buzonExpenses, empresaFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate]);
+  }, [buzonExpenses, empresaFilter, estadoFilter, aprobadoFilter, searchTerm, filterStartDate, filterEndDate, isCreditSettled]);
 
   // Lista ordenada interactivamente para el ranking de proveedores en estadísticas de buzón
   const sortedBuzonProviders = useMemo(() => {
@@ -1608,9 +1632,20 @@ export default function AdminDashboard({ onLogout }) {
     });
   };
 
+  // Selección accionable: excluye notas de crédito y facturas neteadas con ellas
+  const getActionableIds = () => selectedIds.filter(id => {
+    const item = expenses.find(e => e.cr168_reportedegastosid === id);
+    return !(item && isCreditSettled(item));
+  });
+
   // Confirmar y generar el desembolso masivo / individual
   const handleConfirmDisburse = async () => {
     if (selectedIds.length === 0 || !disburseFile) return;
+    const actionableIds = getActionableIds();
+    if (actionableIds.length === 0) {
+      alert('Las notas de crédito y las facturas neteadas con ellas no requieren desembolso.');
+      return;
+    }
     if (disburseFile.size > 50 * 1024 * 1024) {
       alert('El archivo del comprobante supera el límite permitido de 50 MB.');
       return;
@@ -1657,7 +1692,7 @@ export default function AdminDashboard({ onLogout }) {
       setDisburseStatus('Guardando desembolso y optimizando documento...');
 
       const formData = new FormData();
-      formData.append('ids', JSON.stringify(selectedIds));
+      formData.append('ids', JSON.stringify(actionableIds));
       formData.append('cr168_estado', 553050001); // Desembolsado
       if (disburseIdManual && disburseIdManual.trim()) {
         formData.append('cr168_id_desembolso', disburseIdManual.trim());
@@ -1681,7 +1716,7 @@ export default function AdminDashboard({ onLogout }) {
         throw new Error(resData?.error || resData?.details || 'Error al procesar el desembolso masivo en el servidor.');
       }
 
-      alert(`Se procesó el desembolso con éxito para ${selectedIds.length} gastos y se despachó la notificación de correo.`);
+      alert(`Se procesó el desembolso con éxito para ${actionableIds.length} gastos y se despachó la notificación de correo.`);
       setSelectedIds([]);
       setShowDisburseModal(false);
       setDisburseFile(null);
@@ -1700,13 +1735,18 @@ export default function AdminDashboard({ onLogout }) {
   const handleApproveSelected = async () => {
     if (selectedIds.length === 0) return;
     
-    const confirmApprove = window.confirm(`¿Estás seguro de que deseas aprobar los ${selectedIds.length} gastos seleccionados?`);
+    const actionableIds = getActionableIds();
+    if (actionableIds.length === 0) {
+      alert('Las notas de crédito y las facturas neteadas con ellas no requieren aprobación.');
+      return;
+    }
+    const confirmApprove = window.confirm(`¿Estás seguro de que deseas aprobar los ${actionableIds.length} gastos seleccionados?`);
     if (!confirmApprove) return;
 
     setIsUpdating(true);
     try {
       const formData = new FormData();
-      formData.append('ids', JSON.stringify(selectedIds));
+      formData.append('ids', JSON.stringify(actionableIds));
       formData.append('cr168_aprobado', 'true');
 
       const res = await fetch('/api/gastos', {
@@ -1716,7 +1756,7 @@ export default function AdminDashboard({ onLogout }) {
 
       if (!res.ok) throw new Error('Error al aprobar registros en Dataverse.');
       
-      alert(`Se aprobaron con éxito ${selectedIds.length} registros.`);
+      alert(`Se aprobaron con éxito ${actionableIds.length} registros.`);
       setSelectedIds([]);
       await fetchExpenses();
     } catch (err) {
@@ -4567,8 +4607,10 @@ export default function AdminDashboard({ onLogout }) {
                                 const fin = getSignedInvoiceFinancials(item);
                                 const isPaid = isExpensePaid(item);
                                 const docKind = fin.docKind;
+                                const linkEntry = creditLinks.byInvoice.get(item.cr168_reportedegastosid);
+                                const nettedBy = linkEntry && linkEntry.netted ? linkEntry : null;
                                 // Una nota de crédito/débito no se vence como una factura por pagar
-                                const vencStatus = docKind ? null : getVencimientoStatus(fin.fechaVencimiento, isPaid);
+                                const vencStatus = (docKind || nettedBy) ? null : getVencimientoStatus(fin.fechaVencimiento, isPaid);
                                 const emisionDate = formatDisplayDate(item.cr168_fechadelgasto);
                                 const vencDate = formatDisplayDate(fin.fechaVencimiento);
 
@@ -4659,14 +4701,29 @@ export default function AdminDashboard({ onLogout }) {
                                       {fin.moneda === 'USD' ? '$' : 'S/'} {(fin.montoNeto || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
-                                      <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
-                                        {item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False')}
-                                      </span>
+                                      {docKind === 'NC' ? (
+                                        <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }} title="Las notas de crédito no requieren aprobación">—</span>
+                                      ) : (
+                                        <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
+                                          {item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'True' : 'False')}
+                                        </span>
+                                      )}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
-                                      <span className={`badge ${item.cr168_estado === 553050001 ? 'badge-reimbursed' : 'badge-pending'}`}>
-                                        {item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'}
-                                      </span>
+                                      {docKind === 'NC' ? (
+                                        <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }} title="Las notas de crédito no se desembolsan">—</span>
+                                      ) : nettedBy ? (
+                                        <span
+                                          title={`Neteada con ${nettedBy.notes.map(n => n.cr168_numerodecomprobante).join(', ')}`}
+                                          style={{ display: 'inline-block', fontSize: '0.75rem', fontWeight: '600', padding: '0.15rem 0.55rem', borderRadius: '9999px', whiteSpace: 'nowrap', backgroundColor: '#f5f3ff', color: '#7c3aed', border: '1px solid #c4b5fd' }}
+                                        >
+                                          Neteada con NC
+                                        </span>
+                                      ) : (
+                                        <span className={`badge ${item.cr168_estado === 553050001 ? 'badge-reimbursed' : 'badge-pending'}`}>
+                                          {item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente'}
+                                        </span>
+                                      )}
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
                                       {item.cr168_id_desembolso ? (
@@ -5183,6 +5240,26 @@ export default function AdminDashboard({ onLogout }) {
                   {/* Formulario de Modificaciones */}
                   <div className="detail-section" style={{ borderLeft: '3px solid var(--accent-color)' }}>
                     <h3>Control de Finanzas</h3>
+                    {getExpenseDocumentKind(activeExpense) === 'NC' && (
+                      <div className="info-row" style={{ marginBottom: '1rem', background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: '8px', padding: '0.6rem 0.8rem', color: '#5b21b6', fontSize: '0.85rem' }}>
+                        <span>
+                          Nota de crédito: no requiere aprobación ni desembolso.
+                          {creditLinks.byNote.get(activeExpense.cr168_reportedegastosid) && (
+                            <> Aplicada a la factura <strong>{creditLinks.byNote.get(activeExpense.cr168_reportedegastosid).cr168_numerodecomprobante}</strong>.</>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                    {creditLinks.byInvoice.get(activeExpense.cr168_reportedegastosid)?.netted && (
+                      <div className="info-row" style={{ marginBottom: '1rem', background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: '8px', padding: '0.6rem 0.8rem', color: '#5b21b6', fontSize: '0.85rem' }}>
+                        <span>
+                          Factura neteada con la nota de crédito{' '}
+                          <strong>{creditLinks.byInvoice.get(activeExpense.cr168_reportedegastosid).notes.map(n => n.cr168_numerodecomprobante).join(', ')}</strong>
+                          {' '}(el saldo por pagar es 0).
+                        </span>
+                      </div>
+                    )}
+                    {getExpenseDocumentKind(activeExpense) !== 'NC' && (<>
                     <div className="info-row form-group" style={{ marginBottom: '1rem' }}>
                       <span className="info-label">Aprobación</span>
                       <select
@@ -5343,6 +5420,7 @@ export default function AdminDashboard({ onLogout }) {
                         )}
                       </div>
                     )}
+                    </>)}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
                       <button
                         type="button"

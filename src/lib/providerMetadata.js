@@ -165,3 +165,59 @@ export function parseProviderMetadataTag(detalle) {
 
   return null;
 }
+
+/**
+ * Empareja cada nota de crédito (NC) del buzón con la factura que rectifica.
+ * 1) por el comprobante de referencia guardado en la etiqueta (Ref:);
+ * 2) si no hay referencia, por mismo RUC y mismo monto (la factura más cercana anterior a la nota).
+ * Una factura queda "neteada" cuando las notas aplicadas cubren todo su monto.
+ * @param {Array<Object>} expenses registros del buzón de proveedores
+ * @returns {{ byInvoice: Map<string, { notes: Object[], applied: number, netted: boolean }>, byNote: Map<string, Object|null> }}
+ */
+export function buildCreditNoteLinks(expenses) {
+  const normNum = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  const amountOf = (e) => Math.abs(Number(e.cr168_montototalincluyendoigv || 0));
+  const rucOf = (e) => String(e.cr168_rucdelcomercio || '').trim();
+  const dateOf = (e) => new Date(e.cr168_fechadelgasto || e.createdon || 0).getTime();
+
+  const invoices = [];
+  const notes = [];
+  for (const e of expenses || []) {
+    const kind = getExpenseDocumentKind(e);
+    if (kind === 'NC') notes.push(e);
+    else if (!kind) invoices.push(e);
+  }
+
+  const byInvoice = new Map();
+  const byNote = new Map();
+
+  for (const nc of notes) {
+    const ref = normNum((parseProviderMetadataTag(nc.cr168_detalle) || {}).documento_referencia);
+    const ruc = rucOf(nc);
+    const amount = amountOf(nc);
+    const sameSupplier = (inv) => !ruc || !rucOf(inv) || rucOf(inv) === ruc;
+
+    let target = null;
+    if (ref) {
+      target = invoices.find(inv => normNum(inv.cr168_numerodecomprobante).endsWith(ref) && sameSupplier(inv)) || null;
+    }
+    if (!target && ruc) {
+      const candidates = invoices
+        .filter(inv => rucOf(inv) === ruc && Math.abs(amountOf(inv) - amount) < 0.01 && !byInvoice.has(inv.cr168_reportedegastosid))
+        .sort((a, b) => Math.abs(dateOf(nc) - dateOf(a)) - Math.abs(dateOf(nc) - dateOf(b)));
+      target = candidates[0] || null;
+    }
+
+    byNote.set(nc.cr168_reportedegastosid, target);
+    if (target) {
+      const id = target.cr168_reportedegastosid;
+      const entry = byInvoice.get(id) || { notes: [], applied: 0, netted: false };
+      entry.notes.push(nc);
+      entry.applied += amount;
+      entry.netted = entry.applied >= amountOf(target) - 0.01;
+      byInvoice.set(id, entry);
+    }
+  }
+
+  return { byInvoice, byNote };
+}
