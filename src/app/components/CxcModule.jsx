@@ -150,6 +150,19 @@ export default function CxcModule() {
 
       {error && <div role="alert" style={{ ...s.card, color: 'var(--status-error-fg)', background: 'var(--status-error-bg)' }}>{error}</div>}
 
+      {modo === 'actual' && data?.blisscorp && (
+        <div role={data.blisscorp.error ? 'alert' : 'status'} style={{ fontSize: '0.8rem', color: data.blisscorp.error ? 'var(--status-error-fg)' : 'var(--text-muted, #6b7280)' }}>
+          {data.blisscorp.error
+            ? `Blisscorp no se pudo leer de SharePoint: ${data.blisscorp.error}`
+            : `Blisscorp: ${data.blisscorp.documentos} documentos del Excel de SharePoint (actualizado ${new Date(data.blisscorp.modificado).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short' })})`}
+        </div>
+      )}
+      {modo !== 'actual' && (
+        <div role="status" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #6b7280)' }}>
+          Blisscorp no tiene histórico de cortes: solo aparece en la cartera actual.
+        </div>
+      )}
+
       {resumen && (
         <>
           <div className="kpis-grid">

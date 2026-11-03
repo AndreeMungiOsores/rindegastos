@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { CXC_VIEWS, queryReadOnly } from '../../../lib/seafacilClient.js';
 import { AGING_RANGES, aplicarReglas, hoyLima } from '../../../lib/cxcRules.js';
+import { loadBlisscorpRows } from '../../../lib/cxcBlisscorp.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,8 +64,20 @@ async function loadLive({ incluirB2C, incluirIntercompany }) {
      WHERE estado_saldo <> 'CANCELADO'`
   );
   const hoy = hoyLima();
+
+  // Blisscorp no está en SeaFacil: se lee del Excel de SharePoint. Si falla, el resto de la cartera se sigue mostrando.
+  let blisscorp = null;
+  try {
+    const bc = await loadBlisscorpRows();
+    blisscorp = { archivo: bc.archivo, modificado: bc.modificado, documentos: bc.rows.length };
+    rows.push(...bc.rows);
+  } catch (e) {
+    blisscorp = { error: e.message };
+  }
+
   return {
     corte: hoy.toISOString().slice(0, 10),
+    blisscorp,
     rows: rows
       .filter(r => incluirIntercompany || r.es_intercompany !== 'S')
       .map(r => buildRow(r, Number(r.saldo), Number(r.saldo_sol), { hoy, incluirB2C }))
@@ -119,7 +132,7 @@ export async function GET(request) {
     }
 
     const live = await loadLive(opts);
-    return NextResponse.json({ modo: 'actual', corte: live.corte, resumen: summarize(live.rows, baseRep), documentos: live.rows });
+    return NextResponse.json({ modo: 'actual', corte: live.corte, blisscorp: live.blisscorp, resumen: summarize(live.rows, baseRep), documentos: live.rows });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
