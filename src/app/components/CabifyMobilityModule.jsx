@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import CabifyInsightsTab from './CabifyInsightsTab';
 import CabifyDeliveryStatsTab from './CabifyDeliveryStatsTab';
+import { describeServiceType } from '../../lib/cabifyServiceTypes';
 
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -426,6 +427,7 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
         { header: 'Teléfono',               key: 'phone', width: 16 },
         { header: 'Ruta Origen',            key: 'origin', width: 34 },
         { header: 'Ruta Destino',           key: 'destination', width: 34 },
+        { header: 'Tipo de Servicio',       key: 'service', width: 24 },
         { header: 'Centro de Costos',       key: 'charge_code', width: 20 },
         { header: 'Motivo del Viaje',       key: 'motivo', width: 30 },
         { header: 'Moneda',                 key: 'currency', width: 10 },
@@ -453,6 +455,7 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
           phone: j.riderPhone,
           origin: j.origin,
           destination: j.destination,
+          service: describeServiceType(j.vehicleType).full,
           charge_code: j.chargeCode,
           motivo: j.motivo || 'No especificado',
           currency: j.currency,
@@ -1034,6 +1037,7 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
                     <th scope="col" style={{ width: '150px' }}>Fecha y Hora</th>
                     <th scope="col" style={{ width: '220px' }}>Colaborador</th>
                     <th scope="col" style={{ minWidth: '320px' }}>Ruta (Origen ➔ Destino)</th>
+                    <th scope="col" style={{ width: '150px', textAlign: 'center' }}>Tipo de servicio</th>
                     <th scope="col" style={{ width: '135px', textAlign: 'center' }}>Ticket Cabify</th>
                     <th scope="col" style={{ width: '130px', textAlign: 'right' }}>Importe (S/)</th>
                   </tr>
@@ -1087,6 +1091,12 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
                             <span>{j.motivo}</span>
                           </div>
                         )}
+                      </td>
+
+                      <td className="cabify-td-service" style={{ textAlign: 'center' }}>
+                        <span className={`cabify-service-chip tone-${describeServiceType(j.vehicleType).tone}`} title={describeServiceType(j.vehicleType).full}>
+                          {describeServiceType(j.vehicleType).label}
+                        </span>
                       </td>
 
                       <td className="cabify-td-ticket">
@@ -1550,6 +1560,15 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
                     <span className="cabify-route-dot dest"></span>
                     <span>{selectedJourney.destination}</span>
                   </div>
+                </div>
+
+                <div className="cabify-detail-field">
+                  <span className="detail-label">Tipo de Servicio</span>
+                  <span>
+                    <span className={`cabify-service-chip tone-${describeServiceType(selectedJourney.vehicleType).tone}`}>
+                      {describeServiceType(selectedJourney.vehicleType).full}
+                    </span>
+                  </span>
                 </div>
 
                 <div className="cabify-detail-field">

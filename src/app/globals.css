@@ -2957,6 +2957,23 @@ body {
   border-radius: 4px;
 }
 
+.cabify-service-chip {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.cabify-service-chip.tone-corp { background: #F1F5F9; color: #334155; border-color: #CBD5E1; }
+.cabify-service-chip.tone-corp-star { background: #EFF6FF; color: #1D4ED8; border-color: #BFDBFE; }
+.cabify-service-chip.tone-comfort { background: #F5F3FF; color: #6D28D9; border-color: #DDD6FE; }
+.cabify-service-chip.tone-airport { background: #FEF3C7; color: #92400E; border-color: #FCD34D; }
+.cabify-service-chip.tone-delivery { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
+.cabify-service-chip.tone-unknown { background: #F8FAFC; color: #64748B; border-color: #E2E8F0; }
+
 .cabify-amount-val {
   font-size: 0.92rem;
   font-weight: 700;
