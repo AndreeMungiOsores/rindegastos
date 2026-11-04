@@ -103,6 +103,9 @@ export function aplicarReglas(row, { hoy, incluirB2C = false } = {}) {
   const comercialNombre = comercial ? comercial.nombre : (row.vendedor ? row.vendedor : 'Sin asignar');
   const zona = comercial ? comercial.zona : 'Sin Zona';
 
+  // Compra del propio comercial (el cliente lleva el nombre del comercial): no es cartera comercial. Verificado contra el Power BI.
+  if (comercial && COMERCIAL_POR_CLAVE.get(normalizarTexto(row.cliente)) === comercial) return null;
+
   let fechaVencEfectivo = null;
   let fechaVencRep = null;
   let diasEfectivo = null;

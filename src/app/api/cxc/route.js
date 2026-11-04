@@ -5,6 +5,10 @@ import { loadBlisscorpRows } from '../../../lib/cxcBlisscorp.js';
 
 export const dynamic = 'force-dynamic';
 
+// Solo la cuenta de facturas, boletas y otros comprobantes por cobrar (la misma que traen los Excel de CPC y el Power BI).
+// SeaFacil tiene además cuentas como 1691001 (anticipos/diversas) y 1820000 (reclamos a seguros) que no son cartera comercial.
+const CUENTA_COMERCIAL = '1212001';
+
 function summarize(rows, baseRep) {
   const byRange = Object.fromEntries(AGING_RANGES.map(r => [r, 0]));
   const byEmpresa = {};
@@ -61,7 +65,8 @@ async function loadLive({ incluirB2C, incluirIntercompany }) {
     `SELECT empresa, cliente, es_intercompany, documento, fecha_emision, fecha_vencimiento,
             moneda, saldo, saldo_sol, estado_saldo, vendedor, canal_venta
      FROM ${CXC_VIEWS.doc}
-     WHERE estado_saldo <> 'CANCELADO'`
+     WHERE estado_saldo <> 'CANCELADO' AND cuenta = $1`,
+    [CUENTA_COMERCIAL]
   );
   const hoy = hoyLima();
 
@@ -101,8 +106,8 @@ async function loadSnapshot(kind, periodo, { incluirB2C, incluirIntercompany }) 
             s.saldo, s.saldo_pen, s.${corteCol} AS corte, d.vendedor, d.canal_venta, d.es_intercompany
      FROM ${view} s
      LEFT JOIN ${CXC_VIEWS.doc} d ON d.documento_id = s.documento_id AND d.esquema = s.esquema
-     WHERE s.${col} = $1`,
-    [selected]
+     WHERE s.${col} = $1 AND (d.cuenta IS NULL OR d.cuenta = $2)`,
+    [selected, CUENTA_COMERCIAL]
   );
   const corte = rows[0]?.corte ? new Date(rows[0].corte) : hoyLima();
   return {
