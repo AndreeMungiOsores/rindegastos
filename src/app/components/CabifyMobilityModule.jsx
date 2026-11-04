@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import CabifyInsightsTab from './CabifyInsightsTab';
+import CabifyDeliveryStatsTab from './CabifyDeliveryStatsTab';
 
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -35,6 +36,8 @@ const GROUP_CONFIG = {
  */
 export default function CabifyMobilityModule({ group = 'taxi' }) {
   const groupConfig = GROUP_CONFIG[group] || GROUP_CONFIG.taxi;
+  // Insights (histórico de pasajeros y rutas) solo aplica a taxis; los deliveries tienen su propia pestaña de estadísticas.
+  const showInsights = group !== 'delivery';
   // Bandera para herramientas de administración (ocultas en la interfaz principal)
   const SHOW_ADMIN_CABIFY_TOOLS = false;
 
@@ -558,20 +561,22 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
               <span>Estadísticas</span>
             </button>
 
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSubTab === 'insights'}
-              className={`subtab-btn ${activeSubTab === 'insights' ? 'active' : ''}`}
-              onClick={() => handleSubTabChange('insights')}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              <span>Insights</span>
-            </button>
+            {showInsights && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSubTab === 'insights'}
+                className={`subtab-btn ${activeSubTab === 'insights' ? 'active' : ''}`}
+                onClick={() => handleSubTabChange('insights')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span>Insights</span>
+              </button>
+            )}
           </div>
 
           <div className="subtabs-right-group" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -1163,8 +1168,21 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
         </>
       )}
 
-      {/* ── SUBPESTAÑA 2: ESTADÍSTICAS ── */}
-      {activeSubTab === 'estadisticas' && (
+      {/* ── SUBPESTAÑA 2: ESTADÍSTICAS (deliveries) ── */}
+      {activeSubTab === 'estadisticas' && group === 'delivery' && (
+        <CabifyDeliveryStatsTab
+          journeys={journeys}
+          monthLabel={`${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`}
+          onViewRequester={(name) => {
+            setFilterPassenger(name);
+            setActiveSubTab('viajes');
+            setCurrentPage(1);
+          }}
+        />
+      )}
+
+      {/* ── SUBPESTAÑA 2: ESTADÍSTICAS (taxis) ── */}
+      {activeSubTab === 'estadisticas' && group !== 'delivery' && (
         <div className="analytics-dashboard-container">
           {/* Resumen Ejecutivo KPI Cards */}
           <section className="analytics-kpis-grid">
@@ -1459,7 +1477,7 @@ export default function CabifyMobilityModule({ group = 'taxi' }) {
       )}
 
       {/* ── SUBPESTAÑA 3: INSIGHTS ── */}
-      {activeSubTab === 'insights' && (
+      {showInsights && activeSubTab === 'insights' && (
         <CabifyInsightsTab
           allJourneys={filteredInsightsJourneys}
           loading={insightsLoading}
