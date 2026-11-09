@@ -38,6 +38,7 @@ batch_enrich_report_*.json
 
 # Archivo temporal con credenciales para subir a Vercel
 vercel-seafacil.env
+vercel-sunat.env
 
 # respaldos de correcciones masivas en Dataverse
 backups/

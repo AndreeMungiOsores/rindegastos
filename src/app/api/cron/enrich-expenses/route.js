@@ -5,6 +5,8 @@ import axios from 'axios';
 import { getAccessToken } from '../../../../lib/tokenManager.js';
 import { updateExpense } from '../../../../lib/dataverseClient.js';
 import { extractFromComprobante, evaluarCambioBrusco, tasaIgvValida } from '../../../../lib/kimiClient.js';
+import { resolverComercio } from '../../../../lib/sunatRucClient.js';
+import { estandarizarRazonSocialReciente } from '../../../../lib/razonSocialSweep.js';
 
 const DATAVERSE_BASE_URL = 'https://org1123c726.api.crm2.dynamics.com/api/data/v9.2';
 
@@ -44,6 +46,13 @@ async function handleEnrichExpenses() {
   try {
     const token = await getAccessToken();
 
+    // Razón social estandarizada con el padrón de SUNAT (registros de RindeGastos y de buzón de los últimos días).
+    // Va primero porque es rápido y acotado; si falla, el enriquecimiento con IA sigue igual.
+    const razonSocial = await estandarizarRazonSocialReciente().catch(err => {
+      console.error('[EnrichCron] No se pudo estandarizar la razón social:', err.message);
+      return { error: err.message };
+    });
+
     // 1. Consultar únicamente los gastos con imagen que NO tienen el flag ia_procesado = true
     const campos = [
       'cr168_reportedegastosid',
@@ -82,6 +91,7 @@ async function handleEnrichExpenses() {
         success: true,
         message: 'No hay nuevos gastos pendientes de enriquecer.',
         processedCount: 0,
+        razonSocial,
         executionTimeMs: Date.now() - startTime
       });
     }
@@ -167,6 +177,20 @@ async function handleEnrichExpenses() {
             patch.cr168_rucdelcomercio = comp.ruc_comercio;
           }
 
+          // Razón social de SUNAT en el mismo momento en que la IA completa el comercio y el RUC.
+          const rucFinal = patch.cr168_rucdelcomercio || g.cr168_rucdelcomercio;
+          if (rucFinal) {
+            try {
+              const r = await resolverComercio({ ruc: rucFinal, nombre: patch.cr168_nombredelcomercio || g.cr168_nombredelcomercio });
+              if (r.action === 'update') {
+                patch.cr168_nombredelcomercio = r.nombre;
+                if (r.rucCorregido) patch.cr168_rucdelcomercio = r.ruc;
+              }
+            } catch (rucErr) {
+              console.warn(`[EnrichCron] Razón social no estandarizada para ${id}:`, rucErr.message);
+            }
+          }
+
           await updateExpense(id, patch);
           console.log(`[EnrichCron] ✅ Gasto ${id} enriquecido y actualizado con éxito en Dataverse.`);
           exitosos.push({ id, vendedor: g.cr168_vendedor, patch });
@@ -184,6 +208,7 @@ async function handleEnrichExpenses() {
       errorCount: errores.length,
       hasMore: pendingExpenses.length > batchToProcess.length,
       remainingCount: Math.max(0, pendingExpenses.length - batchToProcess.length),
+      razonSocial,
       exitosos,
       alertas,
       errores,
