@@ -3459,3 +3459,96 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* ── Pantalla de código de acceso (módulos protegidos) ── */
+.access-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  padding: 1.5rem;
+}
+
+.access-gate-card {
+  width: 100%;
+  max-width: 380px;
+  background: #fff;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(14, 42, 67, 0.08);
+  padding: 2rem 1.75rem 1.5rem;
+  text-align: center;
+}
+
+.access-gate-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 0.9rem;
+  border-radius: 12px;
+  background: var(--navy-900);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.access-gate-title {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--navy-900);
+}
+
+.access-gate-subtitle {
+  margin: 0.3rem 0 1.4rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.access-gate-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.access-gate-box {
+  width: 52px;
+  height: 58px;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--navy-900);
+  background: #FAF8F5;
+  border: 1.5px solid var(--border-default);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.access-gate-box:focus {
+  border-color: var(--navy-700);
+  box-shadow: 0 0 0 3px rgba(14, 42, 67, 0.12);
+}
+
+.access-gate-box.error {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.access-gate-boxes.shake {
+  animation: access-gate-shake 0.45s ease;
+}
+
+.access-gate-error {
+  margin: 1rem 0 0;
+  min-height: 1.1rem;
+  font-size: 0.8rem;
+  color: #dc2626;
+}
+
+@keyframes access-gate-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}

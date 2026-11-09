@@ -6,6 +6,10 @@ import { parseProviderMetadataTag, getExpenseDocumentKind, getDocumentKindLabel,
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 import CxcModule from './components/CxcModule';
+import AccessCodeGate from './components/AccessCodeGate';
+
+// Código de acceso a Préstamos. Es un bloqueo visual en el navegador, no una protección de datos.
+const PRESTAMOS_ACCESS_CODE = '7777';
 
 /**
  * Formatea una fecha YYYY-MM-DD o ISO a formato DD/MM/YYYY sin desfasajes de zona horaria local.
@@ -267,6 +271,8 @@ export default function AdminDashboard({ onLogout }) {
 
   // Módulos y Navegación del Panel Lateral
   const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'buzon' | 'prestamos' | 'cxc' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
+  // Solo en memoria: se mantiene al cambiar de módulo, pero se pide de nuevo al recargar la página o abrir otra pestaña.
+  const [prestamosDesbloqueado, setPrestamosDesbloqueado] = useState(false);
   const [cabifyMenuOpen, setCabifyMenuOpen] = useState(false);
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
@@ -5884,7 +5890,16 @@ export default function AdminDashboard({ onLogout }) {
         </>
       )}
 
-        {activeModule === 'prestamos' && (
+        {activeModule === 'prestamos' && !prestamosDesbloqueado && (
+          <AccessCodeGate
+            title="Ingresar código"
+            subtitle="Préstamos es una sección protegida"
+            expectedCode={PRESTAMOS_ACCESS_CODE}
+            onUnlock={() => setPrestamosDesbloqueado(true)}
+          />
+        )}
+
+        {activeModule === 'prestamos' && prestamosDesbloqueado && (
           <>
             {/* Barra de Subpestañas */}
             <nav className="subtabs-navigation">
