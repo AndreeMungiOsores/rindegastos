@@ -314,7 +314,11 @@ export function extractInvoiceFromXml(xmlStr) {
       return m ? m[1].trim() : null;
     };
 
-    const id = extractTag('ID');
+    // El primer <cbc:ID> del archivo no siempre es el del comprobante: en los XML UBL 2.0 de SUNAT la extensión
+    // (UBLExtensions) trae antes los totales adicionales con ID "1001", "1002"... Se busca el ID fuera de esa extensión.
+    const xmlSinExtensiones = xmlStr.replace(/<(?:[a-zA-Z0-9]+:)?UBLExtensions[\s\S]*?<\/(?:[a-zA-Z0-9]+:)?UBLExtensions>/gi, '');
+    const idMatch = xmlSinExtensiones.match(/<(?:[a-zA-Z0-9]+:)?ID[^>]*>([^<]+)<\/(?:[a-zA-Z0-9]+:)?ID>/i);
+    const id = idMatch ? idMatch[1].trim() : extractTag('ID');
     const xmlDocKind = /<(?:[a-zA-Z0-9]+:)?CreditNote[\s>]/i.test(xmlStr) ? 'NOTA_CREDITO'
       : /<(?:[a-zA-Z0-9]+:)?DebitNote[\s>]/i.test(xmlStr) ? 'NOTA_DEBITO' : null;
     const refBlock = xmlStr.match(/<(?:[a-zA-Z0-9]+:)?(?:BillingReference|InvoiceDocumentReference)[^>]*>[\s\S]*?<(?:[a-zA-Z0-9]+:)?ID[^>]*>([^<]+)<\//i);
