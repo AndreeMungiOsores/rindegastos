@@ -275,7 +275,7 @@ export default function AdminDashboard({ onLogout }) {
   const [prestamosDesbloqueado, setPrestamosDesbloqueado] = useState(false);
   const [cabifyMenuOpen, setCabifyMenuOpen] = useState(false);
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
-  const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
+  const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'notas' | 'estadisticas'
   const isBuzonView = activeModule === 'buzon';
   const [prestamosSubTab, setPrestamosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const sidebarCollapsed = false;
@@ -894,6 +894,28 @@ export default function AdminDashboard({ onLogout }) {
     return Boolean(creditLinks.byInvoice.get(item.cr168_reportedegastosid)?.netted);
   }, [creditLinks]);
 
+  // Pestaña "Notas de Crédito": una fila por nota con la factura que rectifica y el estado del neteo
+  const creditNoteRows = useMemo(() => {
+    return buzonExpenses
+      .filter(e => getExpenseDocumentKind(e) === 'NC')
+      .map(nc => {
+        const target = creditLinks.byNote.get(nc.cr168_reportedegastosid) || null;
+        const entry = target ? creditLinks.byInvoice.get(target.cr168_reportedegastosid) : null;
+        const ncFin = getSignedInvoiceFinancials(nc);
+        const ncMonto = Math.abs(ncFin.monto);
+        let estado = 'sin_factura';
+        let facMonto = null;
+        let saldo = null;
+        if (target) {
+          facMonto = Math.abs(Number(target.cr168_montototalincluyendoigv || 0));
+          saldo = Math.max(0, facMonto - (entry?.applied || ncMonto));
+          estado = entry?.netted ? 'total' : 'parcial';
+        }
+        const ref = (parseProviderMetadataTag(nc.cr168_detalle) || {}).documento_referencia || null;
+        return { nc, target, moneda: ncFin.moneda === 'USD' ? 'USD' : 'PEN', ncMonto, facMonto, saldo, estado, ref };
+      });
+  }, [buzonExpenses, creditLinks]);
+
   // Lista única de equipos/áreas para el selector de filtros (basada en colaboradores de rendición)
   const equiposList = useMemo(() => {
     const list = rendicionExpenses.map(e => getVendorArea(e.cr168_vendedor)).filter(Boolean);
@@ -937,6 +959,8 @@ export default function AdminDashboard({ onLogout }) {
     const baseList = isBuzonView ? buzonExpenses : rendicionExpenses;
 
     return baseList.filter(item => {
+      // Las notas de crédito tienen su propia pestaña: no se mezclan con las facturas del buzón
+      if (isBuzonView && getExpenseDocumentKind(item) === 'NC') return false;
       const vendorArea = getVendorArea(item.cr168_vendedor);
       const matchesEmpresa = empresaFilter ? item.cr168_empresa === empresaFilter : true;
       const matchesEquipo = equipoFilter ? vendorArea === equipoFilter : true;
@@ -997,6 +1021,46 @@ export default function AdminDashboard({ onLogout }) {
     return sorted;
   }, [filteredExpenses, sortField, dateOrder]);
 
+  // Notas de crédito filtradas (búsqueda, empresa y rango de fechas) para la pestaña "Notas de Crédito"
+  const filteredCreditNotes = useMemo(() => {
+    const searchLower = searchTerm.toLowerCase();
+    return creditNoteRows
+      .filter(row => {
+        const { nc, target, ref } = row;
+        if (empresaFilter && nc.cr168_empresa !== empresaFilter) return false;
+        if (searchTerm) {
+          const haystack = [
+            nc.cr168_nombredelcomercio, nc.cr168_rucdelcomercio, nc.cr168_numerodecomprobante, nc.cr168_empresa,
+            target?.cr168_numerodecomprobante, ref
+          ].filter(Boolean).join(' ').toLowerCase();
+          if (!haystack.includes(searchLower)) return false;
+        }
+        if (filterStartDate || filterEndDate) {
+          if (!nc.cr168_fechadelgasto) return false;
+          const d = nc.cr168_fechadelgasto.split('T')[0];
+          if (filterStartDate && d < filterStartDate) return false;
+          if (filterEndDate && d > filterEndDate) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => String(b.nc.cr168_fechadelgasto || '').localeCompare(String(a.nc.cr168_fechadelgasto || '')));
+  }, [creditNoteRows, searchTerm, empresaFilter, filterStartDate, filterEndDate]);
+
+  // KPIs de la pestaña "Notas de Crédito" (sobre todas las notas, igual que los KPIs del buzón)
+  const creditNoteStats = useMemo(() => {
+    const empty = () => ({ count: 0, pen: 0, usd: 0 });
+    const s = { total: empty(), completo: empty(), parcial: empty(), sinFactura: empty() };
+    for (const row of creditNoteRows) {
+      const bucket = row.estado === 'total' ? s.completo : row.estado === 'parcial' ? s.parcial : s.sinFactura;
+      for (const b of [s.total, bucket]) {
+        b.count += 1;
+        if (row.moneda === 'USD') b.usd += row.ncMonto;
+        else b.pen += row.ncMonto;
+      }
+    }
+    return s;
+  }, [creditNoteRows]);
+
   // Calcular totales para los KPIs generales de la pestaña activa
   const stats = useMemo(() => {
     const currentList = isBuzonView ? buzonExpenses : rendicionExpenses;
@@ -1023,9 +1087,11 @@ export default function AdminDashboard({ onLogout }) {
         const fin = getSignedInvoiceFinancials(item);
         const monto = fin.monto;
         if (fin.docKind === 'NC') {
+          // Las notas de crédito no entran en el total del buzón (bruto): van en su propia pestaña
           notasCreditoCount += 1;
           if (fin.moneda === 'USD') notasCreditoUSD += Math.abs(monto);
           else notasCreditoPEN += Math.abs(monto);
+          return;
         }
         if (fin.moneda === 'USD') {
           totalAmountUSD += monto;
@@ -1040,23 +1106,31 @@ export default function AdminDashboard({ onLogout }) {
       totalAmountPEN = totalAmount;
     }
 
+    const facturasNeteadas = isBuzonView
+      ? Array.from(creditLinks.byInvoice.values()).filter(entry => entry.netted).length
+      : 0;
+
     return {
       totalCount,
       totalAmount,
       totalAmountPEN,
       totalAmountUSD,
+      // Total del buzón después de restar las notas de crédito
+      totalTrasNcPEN: totalAmountPEN - notasCreditoPEN,
+      totalTrasNcUSD: totalAmountUSD - notasCreditoUSD,
       totalDetracciones,
       totalNetoPEN,
       totalNetoUSD,
       notasCreditoCount,
       notasCreditoPEN,
       notasCreditoUSD,
+      facturasNeteadas,
       approvedCount,
       pendingApprovalCount,
       pendingDisbursementCount,
       disbursedCount
     };
-  }, [isBuzonView, buzonExpenses, rendicionExpenses, isCreditSettled]);
+  }, [isBuzonView, buzonExpenses, rendicionExpenses, isCreditSettled, creditLinks]);
 
   // Cálculos de Analítica Financiera (AISLAMIENTO ESTADÍSTICO: estrictamente sobre gastos de colaboradores de campo)
   const analyticsData = useMemo(() => {
@@ -1981,7 +2055,8 @@ export default function AdminDashboard({ onLogout }) {
           fin.cuentaBancoNacion || '',
           item['cr168_aprobado@OData.Community.Display.V1.FormattedValue'] || (item.cr168_aprobado ? 'Sí' : 'No'),
           item['cr168_estado@OData.Community.Display.V1.FormattedValue'] || 'Pendiente',
-          item.cr168_id_desembolso || ''
+          item.cr168_id_desembolso || '',
+          (creditLinks.byInvoice.get(item.cr168_reportedegastosid)?.notes || []).map(n => n.cr168_numerodecomprobante).filter(Boolean).join(', ')
         ];
       });
 
@@ -2006,7 +2081,8 @@ export default function AdminDashboard({ onLogout }) {
         { name: 'Cta Banco de la Nación',    filterButton: true },
         { name: 'Aprobado',                  filterButton: true },
         { name: 'Estado',                    filterButton: true },
-        { name: 'ID Desembolso',             filterButton: true }
+        { name: 'ID Desembolso',             filterButton: true },
+        { name: 'Neteada con NC',            filterButton: true }
       ];
 
       // Formato numérico para importes: Total (10), Base (12), IGV (13), Inafecto (14), Detracción (16), Neto (17)
@@ -2140,6 +2216,84 @@ export default function AdminDashboard({ onLogout }) {
     return await workbook.xlsx.writeBuffer();
   };
 
+
+  // Exportar la tabla de notas de crédito con la factura que rectifica
+  const handleExportCreditNotes = async () => {
+    if (filteredCreditNotes.length === 0) {
+      alert('No hay notas de crédito filtradas para exportar.');
+      return;
+    }
+    setIsExporting(true);
+    setExportStatus('Generando Excel...');
+    try {
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Notas de Crédito');
+      const estadoTxt = { total: 'Neteo total', parcial: 'Neteo parcial', sin_factura: 'Sin factura emparejada' };
+      const rows = filteredCreditNotes.map(r => [
+        r.nc.cr168_nombredelcomercio || '',
+        r.nc.cr168_rucdelcomercio || '',
+        r.nc.cr168_empresa || '',
+        r.nc.cr168_fechadelgasto ? formatDisplayDate(r.nc.cr168_fechadelgasto) : '',
+        r.nc.cr168_numerodecomprobante || '',
+        r.target?.cr168_numerodecomprobante || r.ref || '',
+        r.target?.cr168_fechadelgasto ? formatDisplayDate(r.target.cr168_fechadelgasto) : '',
+        r.moneda,
+        -r.ncMonto,
+        r.facMonto != null ? r.facMonto : '',
+        r.saldo != null ? r.saldo : '',
+        estadoTxt[r.estado]
+      ]);
+      worksheet.addTable({
+        name: 'NotasCreditoTabla',
+        ref: 'A1',
+        headerRow: true,
+        totalsRow: false,
+        style: { theme: 'TableStyleMedium2', showRowStripes: true },
+        columns: [
+          { name: 'Proveedor', filterButton: true },
+          { name: 'RUC Proveedor', filterButton: true },
+          { name: 'Empresa', filterButton: true },
+          { name: 'Fecha Nota de Crédito', filterButton: true },
+          { name: 'N° Nota de Crédito', filterButton: true },
+          { name: 'Factura que rectifica', filterButton: true },
+          { name: 'Fecha Factura', filterButton: true },
+          { name: 'Moneda', filterButton: true },
+          { name: 'Monto Nota de Crédito', filterButton: true },
+          { name: 'Monto Factura', filterButton: true },
+          { name: 'Saldo de la Factura', filterButton: true },
+          { name: 'Estado del Neteo', filterButton: true }
+        ],
+        rows
+      });
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        [9, 10, 11].forEach(idx => { row.getCell(idx).numFmt = '#,##0.00'; });
+      });
+      worksheet.columns.forEach(column => {
+        let maxLen = 0;
+        column.eachCell({ includeEmpty: true }, (cell) => {
+          const val = cell.value ? cell.value.toString() : '';
+          if (val.length > maxLen) maxLen = val.length;
+        });
+        column.width = Math.max(maxLen + 4, 12);
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'Notas_de_Credito.xlsx';
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error al exportar notas de crédito:', err);
+      alert(`Error al exportar notas de crédito: ${err.message}`);
+    } finally {
+      setIsExporting(false);
+      setExportStatus('');
+    }
+  };
 
   // Exportar solo el archivo Excel
   const handleExportExcelOnly = async () => {
@@ -3025,6 +3179,27 @@ export default function AdminDashboard({ onLogout }) {
                         <polyline points="22,6 12,13 2,6"/>
                       </svg>
                       <span>Buzón Proveedores</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={buzonSubTab === 'notas'}
+                      className={`subtab-btn ${buzonSubTab === 'notas' ? 'active' : ''}`}
+                      onClick={() => {
+                        setBuzonSubTab('notas');
+                        setSelectedIds([]);
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="1 4 1 10 7 10"/>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                      </svg>
+                      <span>Notas de Crédito</span>
+                      {creditNoteRows.length > 0 && (
+                        <span style={{ marginLeft: '0.35rem', fontSize: '0.7rem', fontWeight: 700, padding: '0.05rem 0.45rem', borderRadius: '9999px', background: '#f5f3ff', color: '#7c3aed', border: '1px solid #c4b5fd' }}>
+                          {creditNoteRows.length}
+                        </span>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -4048,6 +4223,194 @@ export default function AdminDashboard({ onLogout }) {
                   </div>
                 </div>
               </div>
+            ) : activeModule === 'buzon' && buzonSubTab === 'notas' ? (
+              (() => {
+                const fmt = (n) => (n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const montoKpi = (b) => (
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <span className="kpi-value" style={{ margin: 0, color: b.count > 0 ? '#7c3aed' : undefined }}>- S/ {fmt(b.pen)}</span>
+                    {b.usd > 0 && <span style={{ fontSize: '1.05rem', fontWeight: '700', color: '#7c3aed' }}>- $ {fmt(b.usd)}</span>}
+                  </div>
+                );
+                const ESTADO_NETEO = {
+                  total: { label: 'Neteo total', color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd', hint: 'La nota cubre todo el monto de la factura: ya no es una cuenta por pagar' },
+                  parcial: { label: 'Neteo parcial', color: '#b45309', bg: '#fffbeb', border: '#fde68a', hint: 'La nota cubre solo una parte de la factura: queda un saldo por pagar' },
+                  sin_factura: { label: 'Sin factura emparejada', color: '#b91c1c', bg: '#fef2f2', border: '#fecaca', hint: 'No se encontró la factura que rectifica esta nota: conviene revisarla' }
+                };
+                const nStats = creditNoteStats;
+                return (
+                  <>
+                    <section className="kpis-grid">
+                      <div className="kpi-card">
+                        <div className="kpi-header"><span className="kpi-label">Total Notas de Crédito</span></div>
+                        {montoKpi(nStats.total)}
+                        <span className="kpi-sub">{nStats.total.count} {nStats.total.count === 1 ? 'nota registrada' : 'notas registradas'}</span>
+                      </div>
+                      <div className="kpi-card approved">
+                        <div className="kpi-header"><span className="kpi-label">Neteo total</span></div>
+                        <span className="kpi-value">{nStats.completo.count}</span>
+                        <span className="kpi-sub">S/ {fmt(nStats.completo.pen)}{nStats.completo.usd > 0 ? ` | $ ${fmt(nStats.completo.usd)}` : ''} · facturas canceladas</span>
+                      </div>
+                      <div className="kpi-card pending">
+                        <div className="kpi-header"><span className="kpi-label">Neteo parcial</span></div>
+                        <span className="kpi-value">{nStats.parcial.count}</span>
+                        <span className="kpi-sub">S/ {fmt(nStats.parcial.pen)}{nStats.parcial.usd > 0 ? ` | $ ${fmt(nStats.parcial.usd)}` : ''} · queda saldo por pagar</span>
+                      </div>
+                      <div className="kpi-card">
+                        <div className="kpi-header"><span className="kpi-label">Sin factura emparejada</span></div>
+                        <span className="kpi-value" style={{ color: nStats.sinFactura.count > 0 ? '#b91c1c' : undefined }}>{nStats.sinFactura.count}</span>
+                        <span className="kpi-sub">{nStats.sinFactura.count > 0 ? `S/ ${fmt(nStats.sinFactura.pen)}${nStats.sinFactura.usd > 0 ? ` | $ ${fmt(nStats.sinFactura.usd)}` : ''} · requieren revisión` : 'Todas las notas tienen su factura'}</span>
+                      </div>
+                    </section>
+
+                    <section className="controls-panel">
+                      <div className="search-filter-row">
+                        <div className="search-wrapper">
+                          <span className="search-icon"></span>
+                          <input
+                            type="text"
+                            placeholder="Buscar por proveedor, RUC, nota de crédito o factura rectificada..."
+                            className="search-input"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                          />
+                        </div>
+                        <div className="calendar-popover-container" ref={calendarRef}>
+                          <button
+                            type="button"
+                            className={`calendar-trigger-btn ${filterStartDate ? 'active-filter' : ''}`}
+                            onClick={() => setShowCalendarPopover(prev => !prev)}
+                            title="Filtrar por rango de fecha de la nota"
+                          >
+                            {filterStartDate ? `${formatDisplayDate(filterStartDate)} - ${filterEndDate ? formatDisplayDate(filterEndDate) : '...'}` : 'Filtrar por fecha'}
+                            {filterStartDate && (
+                              <span
+                                className="clear-date-btn"
+                                onClick={(e) => { e.stopPropagation(); setFilterStartDate(null); setFilterEndDate(null); }}
+                                title="Limpiar filtro de fecha"
+                              >
+                                ✕
+                              </span>
+                            )}
+                          </button>
+                          {showCalendarPopover && renderCalendarPopover()}
+                        </div>
+                        <div className="action-group">
+                          <button
+                            type="button"
+                            className="btn btn-success"
+                            onClick={handleExportCreditNotes}
+                            disabled={filteredCreditNotes.length === 0 || isExporting}
+                            title="Exportar las notas de crédito a Excel"
+                          >
+                            {isExporting ? `${exportStatus}` : 'Exportar Excel'}
+                          </button>
+                          <button className="btn btn-primary" onClick={fetchExpenses} title="Refrescar datos" disabled={isExporting}>
+                            Sincronizar
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="table-card">
+                      {loading ? (
+                        <div className="loading-wrapper">
+                          <div className="spinner"></div>
+                          <p>Obteniendo registros en tiempo real desde Microsoft Dataverse...</p>
+                        </div>
+                      ) : (
+                        <div className="table-responsive">
+                          <table className="gastos-table">
+                            <thead>
+                              <tr>
+                                <th><div className="header-with-filter"><span className="header-label">Emisión NC</span></div></th>
+                                <th>
+                                  <div className="header-with-filter">
+                                    <span className="header-label">Empresa</span>
+                                    <select className="header-select-filter" value={empresaFilter} onChange={(e) => setEmpresaFilter(e.target.value)}>
+                                      <option value="">(Todos)</option>
+                                      {empresasList.map(emp => (<option key={emp} value={emp}>{emp}</option>))}
+                                    </select>
+                                  </div>
+                                </th>
+                                <th><div className="header-with-filter"><span className="header-label">Proveedor / RUC</span></div></th>
+                                <th><div className="header-with-filter"><span className="header-label">Nota de Crédito</span></div></th>
+                                <th><div className="header-with-filter"><span className="header-label">Factura que rectifica</span></div></th>
+                                <th><div className="header-with-filter"><span className="header-label">Monto NC</span></div></th>
+                                <th><div className="header-with-filter"><span className="header-label">Monto Factura</span></div></th>
+                                <th><div className="header-with-filter"><span className="header-label">Saldo Factura</span></div></th>
+                                <th><div className="header-with-filter"><span className="header-label">Estado del Neteo</span></div></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredCreditNotes.length === 0 ? (
+                                <tr>
+                                  <td colSpan={9} style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                    <p style={{ fontWeight: '500' }}>
+                                      {creditNoteRows.length === 0 ? 'Aún no hay notas de crédito registradas en el buzón.' : 'No se encontraron notas de crédito con los filtros seleccionados.'}
+                                    </p>
+                                  </td>
+                                </tr>
+                              ) : (
+                                filteredCreditNotes.map(row => {
+                                  const { nc, target, moneda, ncMonto, facMonto, saldo, estado, ref } = row;
+                                  const sym = moneda === 'USD' ? '$' : 'S/';
+                                  const est = ESTADO_NETEO[estado];
+                                  return (
+                                    <tr key={nc.cr168_reportedegastosid} style={{ cursor: 'pointer' }} onClick={() => setActiveExpense({ ...nc })}>
+                                      <td>{formatDisplayDate(nc.cr168_fechadelgasto) || '—'}</td>
+                                      <td style={{ color: 'var(--text-secondary)' }}>{nc.cr168_empresa || 'Sin Empresa'}</td>
+                                      <td>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                          <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{nc.cr168_nombredelcomercio || 'Proveedor'}</span>
+                                          {nc.cr168_rucdelcomercio && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>RUC: {nc.cr168_rucdelcomercio}</span>}
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <code style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155', fontWeight: '600', fontSize: '0.8rem' }}>
+                                          {nc.cr168_numerodecomprobante || 'S/N'}
+                                        </code>
+                                      </td>
+                                      <td>
+                                        {target ? (
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', alignItems: 'flex-start' }}>
+                                            <button
+                                              type="button"
+                                              title="Abrir la factura rectificada"
+                                              onClick={(e) => { e.stopPropagation(); setActiveExpense({ ...target }); }}
+                                              style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#334155', fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'monospace' }}
+                                            >
+                                              {target.cr168_numerodecomprobante || 'S/N'}
+                                            </button>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{formatDisplayDate(target.cr168_fechadelgasto) || ''}</span>
+                                          </div>
+                                        ) : (
+                                          <span style={{ color: 'var(--text-tertiary, #94a3b8)', fontSize: '0.8rem' }}>{ref ? `Ref: ${ref} (no encontrada)` : 'Sin referencia'}</span>
+                                        )}
+                                      </td>
+                                      <td style={{ fontWeight: '700', color: '#7c3aed' }}>− {sym} {fmt(ncMonto)}</td>
+                                      <td>{facMonto != null ? `${sym} ${fmt(facMonto)}` : '—'}</td>
+                                      <td style={{ fontWeight: '600' }}>{saldo != null ? `${sym} ${fmt(saldo)}` : '—'}</td>
+                                      <td>
+                                        <span
+                                          title={est.hint}
+                                          style={{ display: 'inline-block', fontSize: '0.75rem', fontWeight: '600', padding: '0.15rem 0.55rem', borderRadius: '9999px', whiteSpace: 'nowrap', backgroundColor: est.bg, color: est.color, border: `1px solid ${est.border}` }}
+                                        >
+                                          {est.label}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </section>
+                  </>
+                );
+              })()
             ) : (
               <>
                 {/* KPI Cards */}
@@ -4075,8 +4438,13 @@ export default function AdminDashboard({ onLogout }) {
                     ) : (
                       <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     )}
+                    {isBuzonView && stats.notasCreditoCount > 0 && (
+                      <span className="kpi-sub" style={{ color: '#7c3aed', fontWeight: 600 }}>
+                        {`Tras ${stats.notasCreditoCount} ${stats.notasCreditoCount === 1 ? 'nota de crédito' : 'notas de crédito'}: S/ ${(stats.totalTrasNcPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${stats.totalAmountUSD > 0 ? ` | $ ${(stats.totalTrasNcUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`}
+                      </span>
+                    )}
                     <span className="kpi-sub">
-                      {isBuzonView 
+                      {isBuzonView
                         ? (
                           stats.totalAmountUSD > 0
                             ? `Neto: S/ ${(stats.totalNetoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | $ ${(stats.totalNetoUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -4093,7 +4461,7 @@ export default function AdminDashboard({ onLogout }) {
                             <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                           </svg>
                         </span>
-                        <span className="kpi-label">Notas de Crédito</span>
+                        <span className="kpi-label">Neteo con Notas de Crédito</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', flexWrap: 'wrap' }}>
                         <span className="kpi-value" style={{ margin: 0, color: stats.notasCreditoCount > 0 ? '#7c3aed' : undefined }}>
@@ -4106,8 +4474,17 @@ export default function AdminDashboard({ onLogout }) {
                         )}
                       </div>
                       <span className="kpi-sub">
-                        {stats.notasCreditoCount} {stats.notasCreditoCount === 1 ? 'nota' : 'notas'} · ya restadas del total
+                        {stats.notasCreditoCount} {stats.notasCreditoCount === 1 ? 'nota' : 'notas'} · {stats.facturasNeteadas} {stats.facturasNeteadas === 1 ? 'factura neteada' : 'facturas neteadas'}
                       </span>
+                      {stats.notasCreditoCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setBuzonSubTab('notas'); setSelectedIds([]); }}
+                          style={{ alignSelf: 'flex-start', marginTop: '0.2rem', background: 'none', border: 'none', padding: 0, color: '#7c3aed', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Ver notas de crédito →
+                        </button>
+                      )}
                     </div>
                   )}
                   <div className="kpi-card approved">
