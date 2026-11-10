@@ -4415,7 +4415,12 @@ export default function AdminDashboard({ onLogout }) {
               <>
                 {/* KPI Cards */}
                 <section className="kpis-grid">
-                  <div className="kpi-card">
+                  <div
+                    className="kpi-card"
+                    title={isBuzonView
+                      ? `Neto a proveedor (después de detracción): S/ ${(stats.totalNetoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${stats.totalAmountUSD > 0 ? ` | $ ${(stats.totalNetoUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}\nSPOT (detracciones): S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : undefined}
+                  >
                     <div className="kpi-header">
                       <span className="kpi-icon">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -4425,33 +4430,30 @@ export default function AdminDashboard({ onLogout }) {
                       <span className="kpi-label">{isBuzonView ? 'Total Facturas Buzón' : 'Monto Total Registrado'}</span>
                     </div>
                     {isBuzonView ? (
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', flexWrap: 'wrap' }}>
-                        <span className="kpi-value" style={{ margin: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap' }}>
+                        <span className="kpi-value" style={{ margin: 0, whiteSpace: 'nowrap' }}>
                           S/ {(stats.totalAmountPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                         {stats.totalAmountUSD > 0 && (
-                          <span style={{ fontSize: '1.05rem', fontWeight: '700', color: '#6366f1' }}>
-                            + $ {(stats.totalAmountUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                            US$ {(stats.totalAmountUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         )}
                       </div>
                     ) : (
                       <span className="kpi-value">S/ {stats.totalAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     )}
-                    {isBuzonView && stats.notasCreditoCount > 0 && (
+                    {isBuzonView && stats.notasCreditoCount > 0 ? (
                       <span className="kpi-sub" style={{ color: '#7c3aed', fontWeight: 600 }}>
-                        {`Tras ${stats.notasCreditoCount} ${stats.notasCreditoCount === 1 ? 'nota de crédito' : 'notas de crédito'}: S/ ${(stats.totalTrasNcPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${stats.totalAmountUSD > 0 ? ` | $ ${(stats.totalTrasNcUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`}
+                        {`Tras NC: S/ ${(stats.totalTrasNcPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${stats.totalAmountUSD > 0 ? ` | $ ${(stats.totalTrasNcUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`}
+                      </span>
+                    ) : (
+                      <span className="kpi-sub">
+                        {isBuzonView
+                          ? `${stats.totalCount - stats.notasCreditoCount} facturas`
+                          : `Total de ${stats.totalCount} comprobantes`}
                       </span>
                     )}
-                    <span className="kpi-sub">
-                      {isBuzonView
-                        ? (
-                          stats.totalAmountUSD > 0
-                            ? `Neto: S/ ${(stats.totalNetoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | $ ${(stats.totalNetoUSD || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            : `Neto Prov: S/ ${(stats.totalNetoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SPOT: S/ ${(stats.totalDetracciones || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        )
-                        : `Total de ${stats.totalCount} comprobantes`}
-                    </span>
                   </div>
                   {isBuzonView && (
                     <div className="kpi-card">
@@ -4461,30 +4463,34 @@ export default function AdminDashboard({ onLogout }) {
                             <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                           </svg>
                         </span>
-                        <span className="kpi-label">Neteo con Notas de Crédito</span>
+                        <span className="kpi-label">Notas de Crédito</span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem', flexWrap: 'wrap' }}>
-                        <span className="kpi-value" style={{ margin: 0, color: stats.notasCreditoCount > 0 ? '#7c3aed' : undefined }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap' }}>
+                        <span className="kpi-value" style={{ margin: 0, whiteSpace: 'nowrap', color: stats.notasCreditoCount > 0 ? '#7c3aed' : undefined }}>
                           - S/ {(stats.notasCreditoPEN || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                         {stats.notasCreditoUSD > 0 && (
-                          <span style={{ fontSize: '1.05rem', fontWeight: '700', color: '#7c3aed' }}>
-                            - $ {stats.notasCreditoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span style={{ fontSize: '0.95rem', fontWeight: '600', color: '#7c3aed' }}>
+                            - US$ {stats.notasCreditoUSD.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         )}
                       </div>
                       <span className="kpi-sub">
-                        {stats.notasCreditoCount} {stats.notasCreditoCount === 1 ? 'nota' : 'notas'} · {stats.facturasNeteadas} {stats.facturasNeteadas === 1 ? 'factura neteada' : 'facturas neteadas'}
+                        {stats.notasCreditoCount} {stats.notasCreditoCount === 1 ? 'nota' : 'notas'}
+                        {stats.notasCreditoCount > 0 && (
+                          <>
+                            {' · '}
+                            <button
+                              type="button"
+                              onClick={() => { setBuzonSubTab('notas'); setSelectedIds([]); }}
+                              title="Ver las notas de crédito y las facturas que netean"
+                              style={{ background: 'none', border: 'none', padding: 0, color: '#7c3aed', fontSize: 'inherit', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              Ver detalle →
+                            </button>
+                          </>
+                        )}
                       </span>
-                      {stats.notasCreditoCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => { setBuzonSubTab('notas'); setSelectedIds([]); }}
-                          style={{ alignSelf: 'flex-start', marginTop: '0.2rem', background: 'none', border: 'none', padding: 0, color: '#7c3aed', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
-                        >
-                          Ver notas de crédito →
-                        </button>
-                      )}
                     </div>
                   )}
                   <div className="kpi-card approved">
