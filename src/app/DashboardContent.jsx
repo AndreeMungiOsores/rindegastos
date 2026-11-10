@@ -524,7 +524,8 @@ export default function AdminDashboard({ onLogout }) {
 
       // También enriquecer nuevos gastos de PowerApps pendientes si existen
       try {
-        const enrichRes = await fetch('/api/cron/enrich-expenses', { method: 'POST' });
+        // force=1: el botón manual reintenta también los gastos que la IA dejó "descansando" tras un intento fallido
+        const enrichRes = await fetch('/api/cron/enrich-expenses?force=1', { method: 'POST' });
         const enrichData = await enrichRes.json();
         if (enrichData.success && enrichData.processedCount > 0) {
           setSyncBanner({
@@ -657,6 +658,8 @@ export default function AdminDashboard({ onLogout }) {
   // Sincronización periódica y automática en segundo plano (Buzón + Enriquecimiento IA)
   const runAutoSync = async () => {
     if (isAutoSyncingRef.current) return;
+    // Una pestaña en segundo plano (olvidada abierta) no debe seguir disparando buzón e IA todo el día.
+    if (typeof document !== 'undefined' && document.hidden) return;
     isAutoSyncingRef.current = true;
 
     try {

@@ -10,12 +10,21 @@ import { estandarizarRazonSocialReciente } from '../../../../lib/razonSocialSwee
 
 const DATAVERSE_BASE_URL = 'https://org1123c726.api.crm2.dynamics.com/api/data/v9.2';
 
-export async function GET() {
-  return await handleEnrichExpenses();
+// Un gasto que la IA no pudo validar descansa este tiempo antes de reintentarse.
+// Sin esto, cada ciclo del portal (cada 2.5 min por pestaña abierta) volvía a gastar IA sobre los mismos gastos fallidos.
+const DESCANSO_FALLIDOS_MS = 6 * 60 * 60 * 1000;
+
+// `?force=1` (botón manual de sincronizar) ignora el descanso.
+const quiereForzar = (request) => {
+  try { return new URL(request.url).searchParams.get('force') === '1'; } catch { return false; }
+};
+
+export async function GET(request) {
+  return await handleEnrichExpenses({ force: quiereForzar(request) });
 }
 
-export async function POST() {
-  return await handleEnrichExpenses();
+export async function POST(request) {
+  return await handleEnrichExpenses({ force: quiereForzar(request) });
 }
 
 async function downloadExpenseImage(expenseId, campo, token) {
@@ -39,7 +48,7 @@ async function downloadExpenseImage(expenseId, campo, token) {
   }
 }
 
-async function handleEnrichExpenses() {
+async function handleEnrichExpenses({ force = false } = {}) {
   const startTime = Date.now();
   console.log('[EnrichCron] Iniciando revisión de gastos nuevos pendientes de enriquecer...');
 
@@ -66,7 +75,9 @@ async function handleEnrichExpenses() {
       'cr168_ia_procesado',
       'cr168_imagendelcomprobante',
       'cr168_voucher_propina',
-      'cr168_detalle'
+      'cr168_detalle',
+      'cr168_ia_confianza',
+      'modifiedon'
     ].join(',');
 
     const queryUrl = `${DATAVERSE_BASE_URL}/cr168_reportedegastoses?%24select=${campos}&%24filter=cr168_imagendelcomprobante ne null and cr168_ia_procesado ne true`;
@@ -81,16 +92,24 @@ async function handleEnrichExpenses() {
 
     const allRecords = listRes.data?.value || [];
     // Excluir gastos provenientes del buzón compartido (tienen detalle que inicia con [Factura Correo])
-    const pendingExpenses = allRecords.filter(g =>
+    const sinBuzon = allRecords.filter(g =>
       !(g.cr168_detalle && g.cr168_detalle.startsWith('[Factura Correo]'))
     );
 
+    // Los que la IA ya intentó y marcó con baja confianza descansan varias horas (modifiedon = hora del último intento).
+    const ahora = Date.now();
+    const enDescanso = force ? [] : sinBuzon.filter(g =>
+      g.cr168_ia_confianza === 'baja' && g.modifiedon && (ahora - new Date(g.modifiedon).getTime()) < DESCANSO_FALLIDOS_MS
+    );
+    const pendingExpenses = force ? sinBuzon : sinBuzon.filter(g => !enDescanso.includes(g));
+
     if (pendingExpenses.length === 0) {
-      console.log('[EnrichCron] No hay nuevos gastos con imagen pendientes de enriquecer.');
+      console.log(`[EnrichCron] No hay nuevos gastos con imagen pendientes de enriquecer (${enDescanso.length} en descanso tras un intento fallido).`);
       return NextResponse.json({
         success: true,
         message: 'No hay nuevos gastos pendientes de enriquecer.',
         processedCount: 0,
+        enDescanso: enDescanso.length,
         razonSocial,
         executionTimeMs: Date.now() - startTime
       });
@@ -198,6 +217,12 @@ async function handleEnrichExpenses() {
       } catch (itemErr) {
         console.error(`[EnrichCron] ❌ Error procesando gasto ${id}:`, itemErr.message);
         errores.push({ id, vendedor: g.cr168_vendedor, error: itemErr.message });
+        // Un error (Kimi caído, imagen corrupta...) tampoco debe reintentarse en cada ciclo: se marca para que descanse igual.
+        try {
+          await updateExpense(id, { cr168_ia_procesado: false, cr168_ia_confianza: 'baja' });
+        } catch (marcaErr) {
+          console.warn(`[EnrichCron] No se pudo marcar el descanso del gasto ${id}:`, marcaErr.message);
+        }
       }
     }
 
@@ -208,6 +233,7 @@ async function handleEnrichExpenses() {
       errorCount: errores.length,
       hasMore: pendingExpenses.length > batchToProcess.length,
       remainingCount: Math.max(0, pendingExpenses.length - batchToProcess.length),
+      enDescanso: enDescanso.length,
       razonSocial,
       exitosos,
       alertas,
