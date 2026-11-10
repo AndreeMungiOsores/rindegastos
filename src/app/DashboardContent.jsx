@@ -3195,11 +3195,6 @@ export default function AdminDashboard({ onLogout }) {
                         <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                       </svg>
                       <span>Notas de Crédito</span>
-                      {creditNoteRows.length > 0 && (
-                        <span style={{ marginLeft: '0.35rem', fontSize: '0.7rem', fontWeight: 700, padding: '0.05rem 0.45rem', borderRadius: '9999px', background: '#f5f3ff', color: '#7c3aed', border: '1px solid #c4b5fd' }}>
-                          {creditNoteRows.length}
-                        </span>
-                      )}
                     </button>
                     <button
                       type="button"
