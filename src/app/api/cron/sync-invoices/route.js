@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 import { NextResponse } from 'next/server';
 import { fetchUnreadInvoiceEmails, markEmailAsRead } from '../../../../lib/graphMailReader.js';
-import { createExpense, getExpenses, uploadFileToExpense, updateExpense } from '../../../../lib/dataverseClient.js';
+import { createExpense, getExpenses, uploadFileToExpense, updateExpense, deleteExpense } from '../../../../lib/dataverseClient.js';
 import { extractInvoiceFromBuffer, extractInvoiceFromXml, formatProviderMetadataTag } from '../../../../lib/invoiceExtractor.js';
 import { resolveVendorFromEmail } from '../../../../lib/vendorAreaMatcher.js';
 
@@ -282,6 +282,15 @@ async function handleInvoiceSync() {
           }
         }
 
+        // Número y RUC definitivos del comprobante (los del nombre de archivo solo sirven si es un archivo SUNAT estándar)
+        let finalNumero = itemNumero;
+        let finalRuc = itemRuc;
+        let finalTotal = null;
+        let finalNombre = cleanMerchant;
+        // Si al leer el comprobante resulta ser el mismo que otro ya registrado (ej. el correo trae la factura y su recibo),
+        // el registro recién creado se descarta y se conserva el que ya existía.
+        let duplicateOf = null;
+
         // Enriquecimiento automático: primero XML si existe (100% exacto), luego Kimi AI para PDF
         if (item.xmlContent || (item.pdfBuffer && item.pdfBuffer.length > 0)) {
           try {
@@ -331,10 +340,47 @@ async function handleInvoiceSync() {
               enrichPayload.cr168_fecha = `${invoiceData.fecha_vencimiento}T05:00:00Z`;
             }
 
-            await updateExpense(expenseId, enrichPayload);
-            console.log(`[InvoiceCronSync] Factura ${expenseId} enriquecida exitosamente con Kimi AI/XML.`);
+            if (invoiceData.numero_comprobante) finalNumero = String(invoiceData.numero_comprobante).toUpperCase().trim();
+            if (invoiceData.ruc_emisor) finalRuc = String(invoiceData.ruc_emisor).replace(/[^0-9]/g, '');
+            if (invoiceData.total_factura != null) finalTotal = Number(invoiceData.total_factura);
+            finalNombre = finalMerchant;
+
+            // ¿Ya hay otro registro con el mismo comprobante? Mismo número y (mismo RUC, o RUC ausente en alguno + mismo monto y proveedor)
+            const normNum = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const digits = (v) => String(v || '').replace(/[^0-9]/g, '');
+            const normName = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+            if (normNum(finalNumero)) {
+              duplicateOf = existingExpenses.find(e => {
+                if (e.cr168_reportedegastosid === expenseId) return false;
+                if (normNum(e.cr168_numerodecomprobante) !== normNum(finalNumero)) return false;
+                const eRuc = digits(e.cr168_rucdelcomercio);
+                if (eRuc && finalRuc) return eRuc === digits(finalRuc);
+                const sameAmount = Math.abs(Number(e.cr168_montototalincluyendoigv || 0) - Number(invoiceData.total_factura || 0)) < 0.01;
+                return sameAmount && normName(e.cr168_nombredelcomercio) === normName(finalMerchant);
+              }) || null;
+            }
+
+            if (!duplicateOf) {
+              await updateExpense(expenseId, enrichPayload);
+              console.log(`[InvoiceCronSync] Factura ${expenseId} enriquecida exitosamente con Kimi AI/XML.`);
+            }
           } catch (aiErr) {
             console.warn(`[InvoiceCronSync] No se pudo auto-enriquecer con Kimi AI (se mantiene registro base):`, aiErr.message);
+          }
+        }
+
+        if (duplicateOf) {
+          try {
+            await deleteExpense(expenseId);
+            console.log(`[InvoiceCronSync] Comprobante ${finalNumero} ya existía (${duplicateOf.cr168_reportedegastosid}): se descartó el duplicado ${expenseId}.`);
+            await markEmailAsRead(item.messageId);
+            skippedInvoices.push({
+              subject: item.subject,
+              reason: `Mismo comprobante ${finalNumero} que otro registro ya existente (${item.pdfFileName}): no se duplicó`
+            });
+            continue;
+          } catch (delErr) {
+            console.warn(`[InvoiceCronSync] No se pudo eliminar el duplicado ${expenseId}:`, delErr.message);
           }
         }
 
@@ -348,8 +394,10 @@ async function handleInvoiceSync() {
           cr168_voucher_propina_name: item.pdfFileName,
           cr168_voucher_desembolso_name: null,
           cr168_archivo_xml_name: item.xmlFileName || null,
-          cr168_numerodecomprobante: itemNumero,
-          cr168_rucdelcomercio: itemRuc,
+          cr168_numerodecomprobante: finalNumero,
+          cr168_rucdelcomercio: finalRuc,
+          cr168_montototalincluyendoigv: finalTotal,
+          cr168_nombredelcomercio: finalNombre,
           cr168_detalle: newExpensePayload.cr168_detalle
         });
 
