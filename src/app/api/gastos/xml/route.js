@@ -99,7 +99,8 @@ async function resolveXmlData(id) {
   if (expense) {
     try {
       console.log(`[XmlProxy] Buscando archivo XML en el buzón Graph para el gasto ${id}...`);
-      const emails = await fetchUnreadInvoiceEmails({ includeRead: true });
+      // Ventana más amplia: busca el XML de gastos que pueden ser de hace meses
+      const emails = await fetchUnreadInvoiceEmails({ includeRead: true, lookbackDays: 180 });
       const targetPdfName = (expense.cr168_voucher_desembolso_name || '').toLowerCase().trim();
       const detalle = (expense.cr168_detalle || '').toLowerCase();
 

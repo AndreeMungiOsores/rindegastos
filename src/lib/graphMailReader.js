@@ -9,17 +9,23 @@ const DEFAULT_SHARED_MAILBOX = 'proveedores.pe@blisscorp.lat';
  * Por defecto incluye correos leídos y no leídos para no omitir correos abiertos en Outlook.
  * @param {Object} [options]
  * @param {boolean} [options.includeRead=true] - Si es true, incluye correos leídos y no leídos
+ * @param {number} [options.lookbackDays=30] - Solo se leen correos recibidos en esos últimos días
  * @returns {Promise<Array>} Lista de correos filtrados con metadatos y adjuntos PDF
  */
-export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
+export async function fetchUnreadInvoiceEmails({ includeRead = true, lookbackDays = 30 } = {}) {
   const targetMailbox = process.env.MICROSOFT_SHARED_MAILBOX || DEFAULT_SHARED_MAILBOX;
-  console.log(`[GraphMailReader] Solicitando correos con adjuntos PDF de ${targetMailbox} (includeRead: ${includeRead})...`);
-  
+  console.log(`[GraphMailReader] Solicitando correos con adjuntos PDF de ${targetMailbox} (includeRead: ${includeRead}, últimos ${lookbackDays} días)...`);
+
   const token = await getAccessToken('https://graph.microsoft.com/.default');
-  
-  const filterQuery = includeRead 
-    ? '$filter=hasAttachments eq true' 
-    : '$filter=isRead eq false and hasAttachments eq true';
+
+  // Graph devuelve los correos del más antiguo al más nuevo si no se pide orden. Con un tope de 50, al pasar de 50 correos
+  // con adjuntos los más recientes quedaban fuera y nunca llegaban al portal. Se pide el orden "más nuevo primero"
+  // (Graph solo lo permite si receivedDateTime también está en el $filter) y se acota a una ventana de días.
+  // El tope de 50 correos por lectura se mantiene a propósito.
+  const desde = new Date(Date.now() - lookbackDays * 86400000).toISOString();
+  const filterQuery = includeRead
+    ? `$filter=receivedDateTime ge ${desde} and hasAttachments eq true&$orderby=receivedDateTime desc`
+    : `$filter=receivedDateTime ge ${desde} and isRead eq false and hasAttachments eq true&$orderby=receivedDateTime desc`;
 
   const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(targetMailbox)}/messages?${filterQuery}&$expand=attachments&$top=50`;
 
@@ -119,6 +125,16 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
           .trim();
       };
 
+      // Clave serie-número para nombres que no siguen el formato estándar de SUNAT.
+      // Ej. XML "FACTURAE001-921820600679717.XML" (serie-número + RUC pegado) y PDF "FACTURAE001-9218 - OP. LOG VARIAS.pdf".
+      const sinPrefijoTipo = (key) => key.replace(/^(factura|boleta)/, '');
+      const xmlDocKey = (filename) => {
+        const base = (filename || '').toLowerCase().replace(/\.(pdf|xml|zip)$/i, '').replace(/\s+/g, '');
+        const m = base.match(/^(.+?-\d+)((?:10|15|17|20)\d{9})$/);
+        return m ? sinPrefijoTipo(m[1]) : null;
+      };
+      const pdfDocKey = (filename) => sinPrefijoTipo((filename || '').toLowerCase().trim().split(/\s+/)[0].replace(/\.(pdf|xml|zip)$/i, ''));
+
       // 3. Emparejamiento inteligente de cada PDF con su respectivo XML
       const availableXmls = [...xmlFiles];
 
@@ -137,7 +153,9 @@ export async function fetchUnreadInvoiceEmails({ includeRead = true } = {}) {
         let matchedXml = null;
         const xmlIndex = availableXmls.findIndex(x => {
           const xmlBaseKey = getBaseKey(x.name);
-          return xmlBaseKey === pdfBaseKey || x.name.toLowerCase().includes(pdfBaseKey) || pdf.name.toLowerCase().includes(xmlBaseKey);
+          if (xmlBaseKey === pdfBaseKey || x.name.toLowerCase().includes(pdfBaseKey) || pdf.name.toLowerCase().includes(xmlBaseKey)) return true;
+          const xk = xmlDocKey(x.name);
+          return Boolean(xk) && xk === pdfDocKey(pdf.name);
         });
 
         if (xmlIndex !== -1) {
