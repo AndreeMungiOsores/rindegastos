@@ -860,7 +860,11 @@ export default function AdminDashboard({ onLogout }) {
     for (const exp of raw) {
       const ruc = (exp.cr168_rucdelcomercio || '').trim();
       const num = (exp.cr168_numerodecomprobante || '').trim().toUpperCase();
-      const key = (ruc && num) ? `${ruc}::${num}` : exp.cr168_reportedegastosid;
+      // Mismo comprobante = mismo número y monto. Se usa así (sin RUC) porque a facturas del extranjero (Storepoint,
+      // Novascent...) la IA a veces no les saca el RUC y, con la clave por RUC, el duplicado no se ocultaba.
+      const numKey = num.replace(/[^A-Z0-9]/g, '');
+      const amountKey = Number(exp.cr168_montototalincluyendoigv || 0).toFixed(2);
+      const key = numKey.length >= 4 ? `NUM::${numKey}::${amountKey}` : ((ruc && num) ? `${ruc}::${num}` : exp.cr168_reportedegastosid);
 
       if (!map.has(key)) {
         map.set(key, exp);

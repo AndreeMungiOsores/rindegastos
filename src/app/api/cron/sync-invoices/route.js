@@ -35,7 +35,17 @@ async function handleInvoiceSync() {
     );
 
     // 2. Consultar correos con adjuntos .PDF desde el buzón compartido (incluyendo leídos y no leídos)
-    const invoiceEmails = await fetchUnreadInvoiceEmails({ includeRead: true });
+    const fetchedInvoices = await fetchUnreadInvoiceEmails({ includeRead: true });
+
+    // Proveedores como Storepoint, Sleekflow o Novascent mandan en el mismo correo "Invoice-XXX.pdf" y "Receipt-NNNN.pdf":
+    // el recibo es la constancia de pago de esa misma factura, no un comprobante aparte. Si el correo trae la factura,
+    // el recibo se ignora (no crea registro, no gasta IA y no reaparece si alguien lo borra).
+    const messagesWithInvoicePdf = new Set(
+      fetchedInvoices.filter(i => /^invoice[-_ ]/i.test(i.pdfFileName || '')).map(i => i.messageId)
+    );
+    const invoiceEmails = fetchedInvoices.filter(i =>
+      !(/^receipt[-_ ]/i.test(i.pdfFileName || '') && messagesWithInvoicePdf.has(i.messageId))
+    );
 
     if (invoiceEmails.length === 0) {
       console.log('[InvoiceCronSync] No se encontraron facturas en PDF en el buzón.');
