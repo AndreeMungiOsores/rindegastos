@@ -5,6 +5,7 @@ import { extractVoucherMetadata } from '../../../lib/kimiClient.js';
 import { optimizePdfBuffer } from '../../../lib/pdfOptimizer.js';
 import { getSupabaseAdmin } from '../../../lib/supabaseClient.js';
 import { normalizeExpenseChoices } from '../../../lib/dataverseChoiceResolver.js';
+import { isLowConfidence } from '../../../lib/iaAmountAlert.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -315,6 +316,18 @@ export async function PATCH(request) {
         previousExpense = await getExpense(id);
       } catch (err) {
         console.warn(`[API PATCH] No se pudo obtener el estado previo del gasto ${id}:`, err.message);
+      }
+
+      // Si se corrige a mano el monto de un gasto que la IA dejó como dudoso, se limpia esa marca: así el siguiente ciclo de
+      // la IA lo reprocesa enseguida (y completa el desglose) en vez de esperar las 6 horas de descanso.
+      if (
+        previousExpense &&
+        updateData.cr168_montototalincluyendoigv !== undefined &&
+        previousExpense.cr168_ia_procesado !== true &&
+        isLowConfidence(previousExpense.cr168_ia_confianza) &&
+        Number(previousExpense.cr168_montototalincluyendoigv) !== Number(updateData.cr168_montototalincluyendoigv)
+      ) {
+        updateData.cr168_ia_confianza = null;
       }
 
       // Ejecutar la actualización en Dataverse
