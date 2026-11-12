@@ -3552,3 +3552,12 @@ body {
   60% { transform: translateX(-6px); }
   80% { transform: translateX(6px); }
 }
+
+/* Nombres largos de proveedor/comercio en las tablas: ancho estándar con "…" y el nombre completo al pasar el mouse (title) */
+.cell-ellipsis {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

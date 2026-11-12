@@ -4361,7 +4361,7 @@ export default function AdminDashboard({ onLogout }) {
                                       <td style={{ color: 'var(--text-secondary)' }}>{nc.cr168_empresa || 'Sin Empresa'}</td>
                                       <td>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                                          <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{nc.cr168_nombredelcomercio || 'Proveedor'}</span>
+                                          <span className="cell-ellipsis" title={nc.cr168_nombredelcomercio || 'Proveedor'} style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{nc.cr168_nombredelcomercio || 'Proveedor'}</span>
                                           {nc.cr168_rucdelcomercio && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>RUC: {nc.cr168_rucdelcomercio}</span>}
                                         </div>
                                       </td>
@@ -5041,7 +5041,7 @@ export default function AdminDashboard({ onLogout }) {
                                     </td>
                                     <td onClick={() => setActiveExpense({ ...item })}>
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                                        <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
+                                        <span className="cell-ellipsis" title={item.cr168_nombredelcomercio || 'Proveedor'} style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
                                           {item.cr168_nombredelcomercio || 'Proveedor'}
                                         </span>
                                         {item.cr168_rucdelcomercio && (
@@ -5155,7 +5155,7 @@ export default function AdminDashboard({ onLogout }) {
                                     {item.cr168_vendedor || 'Sin Vendedor'}
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })} style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
-                                    <span>{item.cr168_nombredelcomercio || 'Sin Comercio'}</span>
+                                    <span className="cell-ellipsis" title={item.cr168_nombredelcomercio || 'Sin Comercio'}>{item.cr168_nombredelcomercio || 'Sin Comercio'}</span>
                                     {item.cr168_detalle && item.cr168_detalle.startsWith('[Factura Correo]') && (
                                       <span className="badge-buzon">📬 De buzón proveedores</span>
                                     )}
