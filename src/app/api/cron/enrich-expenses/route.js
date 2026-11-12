@@ -7,6 +7,7 @@ import { updateExpense } from '../../../../lib/dataverseClient.js';
 import { extractFromComprobante, evaluarCambioBrusco, tasaIgvValida } from '../../../../lib/kimiClient.js';
 import { resolverComercio } from '../../../../lib/sunatRucClient.js';
 import { estandarizarRazonSocialReciente } from '../../../../lib/razonSocialSweep.js';
+import { formatAmountAlertConfidence, isLowConfidence } from '../../../../lib/iaAmountAlert.js';
 
 const DATAVERSE_BASE_URL = 'https://org1123c726.api.crm2.dynamics.com/api/data/v9.2';
 
@@ -99,7 +100,7 @@ async function handleEnrichExpenses({ force = false } = {}) {
     // Los que la IA ya intentó y marcó con baja confianza descansan varias horas (modifiedon = hora del último intento).
     const ahora = Date.now();
     const enDescanso = force ? [] : sinBuzon.filter(g =>
-      g.cr168_ia_confianza === 'baja' && g.modifiedon && (ahora - new Date(g.modifiedon).getTime()) < DESCANSO_FALLIDOS_MS
+      isLowConfidence(g.cr168_ia_confianza) && g.modifiedon && (ahora - new Date(g.modifiedon).getTime()) < DESCANSO_FALLIDOS_MS
     );
     const pendingExpenses = force ? sinBuzon : sinBuzon.filter(g => !enDescanso.includes(g));
 
@@ -152,12 +153,16 @@ async function handleEnrichExpenses({ force = false } = {}) {
         // Validaciones de seguridad anti-alucinación y coherencia numérica
         const alertasList = [];
         const totalValido = typeof comp.total_comprobante === 'number' && !isNaN(comp.total_comprobante) && comp.total_comprobante > 0;
+        let totalDifiere = false;
 
         if (!totalValido) {
           alertasList.push('Extracción incompleta: no se obtuvo un importe total numérico válido');
         } else {
           const chkTotal = evaluarCambioBrusco(g.cr168_montototalincluyendoigv, comp.total_comprobante, 'total');
-          if (chkTotal.brusco) alertasList.push(chkTotal.detalle);
+          if (chkTotal.brusco) {
+            alertasList.push(chkTotal.detalle);
+            totalDifiere = true;
+          }
         }
 
         if (!tasaIgvValida(comp.tasa_igv)) {
@@ -171,9 +176,11 @@ async function handleEnrichExpenses({ force = false } = {}) {
 
         if (alertasList.length > 0 || esIlegible) {
           console.warn(`[EnrichCron] Discrepancia o alerta en gasto ${id}:`, alertasList);
+          // Si el motivo es que el total de la foto difiere del registrado, se guarda el total que leyó la IA ("baja|T:207.00")
+          // para que el portal muestre el aviso de monto. El monto registrado nunca se pisa.
           await updateExpense(id, {
             cr168_ia_procesado: false,
-            cr168_ia_confianza: 'baja'
+            cr168_ia_confianza: totalDifiere ? formatAmountAlertConfidence(comp.total_comprobante) : 'baja'
           });
           alertas.push({ id, vendedor: g.cr168_vendedor, alertas: alertasList });
         } else {

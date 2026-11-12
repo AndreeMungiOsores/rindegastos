@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getVendorArea } from '../lib/vendorAreaMatcher.js';
 import { parseProviderMetadataTag, getExpenseDocumentKind, getDocumentKindLabel, buildCreditNoteLinks } from '../lib/providerMetadata.js';
+import { getAmountAlert } from '../lib/iaAmountAlert.js';
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 import CxcModule from './components/CxcModule';
@@ -126,6 +127,32 @@ function DocumentKindPill({ kind, fontSize = '0.68rem' }) {
       }}
     >
       {label}
+    </span>
+  );
+}
+
+/** Pastilla pequeña: la IA lee en la foto un total distinto al monto registrado del gasto */
+function IaAmountPill({ alert: amountAlert, fontSize = '0.62rem' }) {
+  if (!amountAlert) return null;
+  const fmt = (n) => n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <span
+      title={`La IA lee S/ ${fmt(amountAlert.iaTotal)} en la foto del comprobante, pero el monto registrado es S/ ${fmt(amountAlert.actual)}. Verifica el monto antes de aprobar o desembolsar.`}
+      style={{
+        display: 'inline-block',
+        width: 'fit-content',
+        fontSize,
+        fontWeight: 600,
+        lineHeight: 1.3,
+        padding: '0.05rem 0.4rem',
+        borderRadius: '9999px',
+        whiteSpace: 'nowrap',
+        backgroundColor: '#fef2f2',
+        color: '#b91c1c',
+        border: '1px solid #fecaca'
+      }}
+    >
+      ⚠ IA: S/ {fmt(amountAlert.iaTotal)}
     </span>
   );
 }
@@ -1719,6 +1746,19 @@ export default function AdminDashboard({ onLogout }) {
     return !(item && isCreditSettled(item));
   });
 
+  // Antes de aprobar o desembolsar: si algún gasto tiene el aviso de monto (la IA lee en la foto un total distinto al registrado), pide confirmar
+  const confirmAmountAlerts = (items, accion) => {
+    const flagged = (items || []).filter(e => getAmountAlert(e));
+    if (flagged.length === 0) return true;
+    const money = (n) => n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const detalle = flagged.slice(0, 5).map(e => {
+      const a = getAmountAlert(e);
+      return `• ${e.cr168_nombredelcomercio || 'Gasto'} ${e.cr168_numerodecomprobante || ''}: registrado S/ ${money(a.actual)}, la IA lee S/ ${money(a.iaTotal)}`;
+    }).join('\n');
+    const mas = flagged.length > 5 ? `\n… y ${flagged.length - 5} más` : '';
+    return window.confirm(`Aviso de monto: ${flagged.length === 1 ? 'este gasto tiene' : `${flagged.length} gastos tienen`} un importe distinto al que la IA lee en la foto del comprobante.\n\n${detalle}${mas}\n\n¿Quieres ${accion} de todas formas?`);
+  };
+
   // Confirmar y generar el desembolso masivo / individual
   const handleConfirmDisburse = async () => {
     if (selectedIds.length === 0 || !disburseFile) return;
@@ -1727,6 +1767,7 @@ export default function AdminDashboard({ onLogout }) {
       alert('Las notas de crédito y las facturas neteadas con ellas no requieren desembolso.');
       return;
     }
+    if (!confirmAmountAlerts(expenses.filter(e => actionableIds.includes(e.cr168_reportedegastosid)), 'desembolsarlos')) return;
     if (disburseFile.size > 50 * 1024 * 1024) {
       alert('El archivo del comprobante supera el límite permitido de 50 MB.');
       return;
@@ -1823,6 +1864,7 @@ export default function AdminDashboard({ onLogout }) {
     }
     const confirmApprove = window.confirm(`¿Estás seguro de que deseas aprobar los ${actionableIds.length} gastos seleccionados?`);
     if (!confirmApprove) return;
+    if (!confirmAmountAlerts(expenses.filter(e => actionableIds.includes(e.cr168_reportedegastosid)), 'aprobarlos')) return;
 
     setIsUpdating(true);
     try {
@@ -1918,6 +1960,12 @@ export default function AdminDashboard({ onLogout }) {
       alert('Por favor, selecciona un archivo de comprobante nuevo o cancela el reemplazo.');
       return;
     }
+
+    // Aviso de monto: solo al pasar a aprobado o a desembolsado (no cada vez que se edita otro dato del gasto)
+    const originalExpense = expenses.find(x => x.cr168_reportedegastosid === activeExpense.cr168_reportedegastosid);
+    const estaAprobando = Boolean(activeExpense.cr168_aprobado) && !originalExpense?.cr168_aprobado;
+    const estaDesembolsando = isDesembolsado && parseInt(originalExpense?.cr168_estado, 10) !== 553050001;
+    if ((estaAprobando || estaDesembolsando) && !confirmAmountAlerts([activeExpense], estaDesembolsando ? 'desembolsarlo' : 'aprobarlo')) return;
 
     setIsUpdating(true);
 
@@ -5166,7 +5214,10 @@ export default function AdminDashboard({ onLogout }) {
                                     </code>
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })} style={{ fontWeight: '600' }}>
-                                    {((item.cr168_detalle || '').includes('USD') ? '$' : 'S/')} {(item.cr168_montototalincluyendoigv || 0).toFixed(2)}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                      <span>{((item.cr168_detalle || '').includes('USD') ? '$' : 'S/')} {(item.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
+                                      <IaAmountPill alert={getAmountAlert(item)} />
+                                    </div>
                                   </td>
                                   <td onClick={() => setActiveExpense({ ...item })}>
                                     <span className={`badge ${item.cr168_aprobado ? 'badge-approved' : 'badge-pending'}`}>
@@ -5419,6 +5470,7 @@ export default function AdminDashboard({ onLogout }) {
                         <div className="info-row">
                           <span className="info-label">Monto Total (IGV Inc.)</span>
                           <span className="info-value amount total-amount">{modalCurrency} {(activeExpense.cr168_montototalincluyendoigv || 0).toFixed(2)}</span>
+                          <IaAmountPill alert={getAmountAlert(activeExpense)} fontSize="0.72rem" />
                         </div>
                         {activeExpense.cr168_monto_propina !== undefined && activeExpense.cr168_monto_propina !== null && (
                           <div className="info-row">
