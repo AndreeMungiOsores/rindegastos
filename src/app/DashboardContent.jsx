@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { getVendorArea } from '../lib/vendorAreaMatcher.js';
 import { parseProviderMetadataTag, getExpenseDocumentKind, getDocumentKindLabel, buildCreditNoteLinks } from '../lib/providerMetadata.js';
 import { getAmountAlert } from '../lib/iaAmountAlert.js';
+import { buildLoanSlots, splitEqualCents, validateCustomAmounts, toCents } from '../lib/loanSchedule.js';
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 import CxcModule from './components/CxcModule';
@@ -342,6 +343,33 @@ export default function AdminDashboard({ onLogout }) {
   const [newLoanFechaInicioPago, setNewLoanFechaInicioPago] = useState('');
   const [newLoanIncluirGrati, setNewLoanIncluirGrati] = useState(false);
   const [newLoanTipoGrati, setNewLoanTipoGrati] = useState('diciembre');
+  // Cuotas con montos distintos: montos (texto) por cuota en orden cronológico y cuáles editó la persona a mano
+  const [newLoanCustomOn, setNewLoanCustomOn] = useState(false);
+  const [newLoanCustomAmounts, setNewLoanCustomAmounts] = useState([]);
+  const [newLoanCustomEdited, setNewLoanCustomEdited] = useState([]);
+  const loanSlots = useMemo(() => {
+    if (newLoanModalidad !== 'Pago en Cuotas' || !newLoanFechaInicioPago) return [];
+    return buildLoanSlots({
+      fechaInicioPago: newLoanFechaInicioPago,
+      numeroCuotas: newLoanNumeroCuotas,
+      modalidad: newLoanModalidad,
+      incluirGrati: newLoanIncluirGrati,
+      tipoGrati: newLoanTipoGrati
+    });
+  }, [newLoanModalidad, newLoanFechaInicioPago, newLoanNumeroCuotas, newLoanIncluirGrati, newLoanTipoGrati]);
+  const loanCustomActive = newLoanCustomOn && loanSlots.length > 1;
+  // Al activar la opción, o al cambiar el monto o la cantidad de cuotas, se vuelve a proponer la división en partes iguales
+  useEffect(() => {
+    if (!newLoanCustomOn || loanSlots.length < 2) return;
+    const parts = splitEqualCents(toCents(newLoanMonto) || 0, loanSlots.length);
+    setNewLoanCustomAmounts(parts.map(c => (c / 100).toFixed(2)));
+    setNewLoanCustomEdited(parts.map(() => false));
+  }, [newLoanCustomOn, loanSlots.length, newLoanMonto]);
+  const loanCustomCheck = loanCustomActive
+    ? validateCustomAmounts(newLoanCustomAmounts.map(v => (v === '' ? NaN : Number(v))), newLoanMonto, loanSlots.length)
+    : { ok: true };
+  const loanCustomSumCents = newLoanCustomAmounts.reduce((acc, v) => acc + (toCents(v) || 0), 0);
+  const loanCustomDiffCents = (toCents(newLoanMonto) || 0) - loanCustomSumCents;
   const [newLoanEstado, setNewLoanEstado] = useState('Pendiente');
 
 
@@ -2758,9 +2786,21 @@ export default function AdminDashboard({ onLogout }) {
       return;
     }
     
+    if (newLoanCustomOn && newLoanModalidad === 'Pago en Cuotas') {
+      if (loanSlots.length < 2) {
+        alert('Para personalizar los montos se necesitan al menos 2 cuotas y la fecha de inicio de pago.');
+        return;
+      }
+      if (!loanCustomCheck.ok) {
+        alert(`Los montos de las cuotas no cuadran: ${loanCustomCheck.error}`);
+        return;
+      }
+    }
+
     setIsSavingLoan(true);
     try {
       const payload = {
+        cuotasPersonalizadas: loanCustomActive ? newLoanCustomAmounts.map(Number) : undefined,
         trabajador: newLoanTrabajador,
         empresa: newLoanEmpresa,
         monto: parseFloat(newLoanMonto),
@@ -2794,6 +2834,9 @@ export default function AdminDashboard({ onLogout }) {
       setNewLoanFechaInicioPago('');
       setNewLoanIncluirGrati(false);
       setNewLoanTipoGrati('diciembre');
+      setNewLoanCustomOn(false);
+      setNewLoanCustomAmounts([]);
+      setNewLoanCustomEdited([]);
       setIsAddLoanModalOpen(false);
       await fetchLoans();
     } catch (err) {
@@ -7094,6 +7137,108 @@ export default function AdminDashboard({ onLogout }) {
                       />
                     </div>
 
+                    {newLoanModalidad === 'Pago en Cuotas' && (
+                      <div style={{ background: 'var(--bg-surface-2, #f7f9fc)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={newLoanCustomOn}
+                            onChange={(e) => setNewLoanCustomOn(e.target.checked)}
+                            style={{ width: '15px', height: '15px', accentColor: 'var(--primary-color, #2563eb)', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--navy-900)' }}>
+                            Personalizar montos de las cuotas
+                          </span>
+                        </label>
+
+                        {newLoanCustomOn && loanSlots.length < 2 && (
+                          <p style={{ margin: '0.6rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            Indica la fecha de inicio de pago y al menos 2 cuotas para ver el cronograma.
+                          </p>
+                        )}
+
+                        {loanCustomActive && (
+                          <div style={{ marginTop: '0.7rem' }}>
+                            <div style={{ maxHeight: '230px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px', background: '#fff' }}>
+                              {loanSlots.map((slot, idx) => (
+                                <div
+                                  key={`${slot.fecha}-${idx}`}
+                                  style={{ display: 'grid', gridTemplateColumns: '1.6rem 1fr 7rem', alignItems: 'center', gap: '0.5rem', padding: '0.3rem 0.6rem', borderBottom: idx < loanSlots.length - 1 ? '1px solid var(--border-color)' : 'none' }}
+                                >
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{idx + 1}</span>
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                    {slot.mesNombre}
+                                    <span style={{ color: 'var(--text-tertiary)', marginLeft: '0.4rem', fontSize: '0.72rem' }}>{slot.fecha.split('-').reverse().join('/')}</span>
+                                  </span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    className="loans-input"
+                                    aria-label={`Monto de la cuota ${idx + 1}`}
+                                    value={newLoanCustomAmounts[idx] ?? ''}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      setNewLoanCustomAmounts(prev => prev.map((x, i) => (i === idx ? v : x)));
+                                      setNewLoanCustomEdited(prev => prev.map((x, i) => (i === idx ? true : x)));
+                                    }}
+                                    style={{ padding: '0.25rem 0.4rem', fontSize: '0.8rem', textAlign: 'right' }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.6rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: loanCustomCheck.ok ? '#15803d' : '#b45309' }}>
+                                Suma S/ {(loanCustomSumCents / 100).toFixed(2)} de S/ {((toCents(newLoanMonto) || 0) / 100).toFixed(2)}
+                                {loanCustomCheck.ok
+                                  ? ' · cuadra ✓'
+                                  : loanCustomDiffCents > 0
+                                    ? ` · faltan S/ ${(loanCustomDiffCents / 100).toFixed(2)}`
+                                    : loanCustomDiffCents < 0
+                                      ? ` · sobran S/ ${(Math.abs(loanCustomDiffCents) / 100).toFixed(2)}`
+                                      : ' · revisa los montos'}
+                              </span>
+                              <span style={{ display: 'flex', gap: '0.4rem' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  style={{ fontSize: '0.74rem', padding: '0.25rem 0.55rem' }}
+                                  title="Reparte en partes iguales lo que falta entre las cuotas que no editaste"
+                                  disabled={!newLoanCustomEdited.some(e => !e) || !newLoanCustomEdited.some(e => e)}
+                                  onClick={() => {
+                                    const freeIdx = newLoanCustomEdited.map((e, i) => (e ? -1 : i)).filter(i => i >= 0);
+                                    const fixedSum = newLoanCustomAmounts.reduce((acc, v, i) => acc + (newLoanCustomEdited[i] ? (toCents(v) || 0) : 0), 0);
+                                    const rest = (toCents(newLoanMonto) || 0) - fixedSum;
+                                    if (freeIdx.length === 0 || rest <= 0) return;
+                                    const parts = splitEqualCents(rest, freeIdx.length);
+                                    setNewLoanCustomAmounts(prev => prev.map((v, i) => {
+                                      const k = freeIdx.indexOf(i);
+                                      return k >= 0 ? (parts[k] / 100).toFixed(2) : v;
+                                    }));
+                                  }}
+                                >
+                                  Repartir lo restante
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  style={{ fontSize: '0.74rem', padding: '0.25rem 0.55rem' }}
+                                  title="Volver a partes iguales"
+                                  onClick={() => {
+                                    const parts = splitEqualCents(toCents(newLoanMonto) || 0, loanSlots.length);
+                                    setNewLoanCustomAmounts(parts.map(c => (c / 100).toFixed(2)));
+                                    setNewLoanCustomEdited(parts.map(() => false));
+                                  }}
+                                >
+                                  Restablecer
+                                </button>
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
                       <button
@@ -7106,8 +7251,10 @@ export default function AdminDashboard({ onLogout }) {
                       <button
                         type="submit"
                         className="btn"
-                        disabled={isSavingLoan}
+                        disabled={isSavingLoan || (newLoanCustomOn && newLoanModalidad === 'Pago en Cuotas' && !loanCustomCheck.ok)}
+                        title={newLoanCustomOn && !loanCustomCheck.ok ? 'La suma de las cuotas debe coincidir con el monto del préstamo' : undefined}
                         style={{
+                          opacity: (newLoanCustomOn && newLoanModalidad === 'Pago en Cuotas' && !loanCustomCheck.ok) ? 0.5 : 1,
                           backgroundColor: 'var(--navy-900, #0E2A43)',
                           color: '#ffffff',
                           fontWeight: '600',

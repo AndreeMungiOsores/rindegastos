@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getAccessToken, invalidateCache } from './tokenManager.js';
+import { buildLoanSlots, splitEqualCents, validateCustomAmounts, toCents, fromCents } from './loanSchedule.js';
 
 const DATAVERSE_BASE_URL = 'https://org1123c726.api.crm2.dynamics.com/api/data/v9.2';
 
@@ -348,61 +349,37 @@ export async function createLoan(loanData) {
     fechaDesembolso,
     fechaInicioPago,
     incluirGrati = false,
-    tipoGrati = 'diciembre'
+    tipoGrati = 'diciembre',
+    cuotasPersonalizadas = null // montos (S/) por cuota en orden cronológico; si no viene, se reparte en partes iguales
   } = loanData;
 
-  const numCuotas = modalidad === 'Pago en Cuotas' ? Math.max(1, parseInt(numeroCuotas, 10) || 1) : 1;
   const totalMonto = parseFloat(monto) || 0;
-  const cuotaBase = numCuotas > 1 ? Math.floor((totalMonto / numCuotas) * 100) / 100 : totalMonto;
+  const totalCents = toCents(totalMonto);
+
+  // ── Cronograma (fechas + etiquetas) ────────────────────────────────────────
+  const slots = buildLoanSlots({ fechaInicioPago, numeroCuotas, modalidad, incluirGrati, tipoGrati });
+  const numCuotas = slots.length;
+
+  // ── Montos por cuota (en céntimos) ─────────────────────────────────────────
+  const personalizado = Array.isArray(cuotasPersonalizadas) && modalidad === 'Pago en Cuotas' && numCuotas > 1;
+  let montosCents;
+  if (personalizado) {
+    const check = validateCustomAmounts(cuotasPersonalizadas, totalMonto, numCuotas);
+    if (!check.ok) {
+      const err = new Error(check.error);
+      err.code = 'VALIDATION';
+      throw err;
+    }
+    montosCents = check.cents;
+  } else {
+    montosCents = splitEqualCents(totalCents, numCuotas);
+  }
+  const cuotaBase = fromCents(Math.floor(totalCents / numCuotas)); // referencia: promedio por cuota
 
   const codigo = `PRE-${Date.now().toString().slice(-6)}`;
 
-  const monthNames = [
-    'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
-    'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
-  ];
-
-  // ── Generar slots de cuotas (fechas + etiquetas) ──────────────────────────
-  const slots = [];
-  const activarGrati = incluirGrati && modalidad === 'Pago en Cuotas' && numCuotas > 1;
-  const regularCount = activarGrati ? numCuotas - 1 : numCuotas;
-
-  // Cuotas regulares (fin de mes)
-  for (let i = 0; i < regularCount; i++) {
-    let cuotaDate = new Date(`${fechaInicioPago}T00:00:00`);
-    if (i > 0) {
-      cuotaDate.setMonth(cuotaDate.getMonth() + i);
-      cuotaDate = new Date(cuotaDate.getFullYear(), cuotaDate.getMonth() + 1, 0);
-    }
-    const label = `${monthNames[cuotaDate.getMonth()]} ${cuotaDate.getFullYear()}`;
-    slots.push({ date: new Date(cuotaDate), mesNombre: label, isGrati: false });
-  }
-
-  // Cuota de gratificación (15 de julio o 15 de diciembre)
-  if (activarGrati) {
-    const gratiMonthIdx = tipoGrati === 'julio' ? 6 : 11; // 0-indexed
-    const startDate = new Date(`${fechaInicioPago}T00:00:00`);
-    let gratiYear = startDate.getFullYear();
-    // Si la grati de ese año ya pasó respecto a la fecha de inicio, usar el siguiente año
-    if (
-      startDate.getMonth() > gratiMonthIdx ||
-      (startDate.getMonth() === gratiMonthIdx && startDate.getDate() > 15)
-    ) {
-      gratiYear++;
-    }
-    const gratiDate = new Date(gratiYear, gratiMonthIdx, 15);
-    const gratiLabel = tipoGrati === 'julio'
-      ? `GRATIFICACIÓN JULIO ${gratiYear}`
-      : `GRATIFICACIÓN DICIEMBRE ${gratiYear}`;
-    slots.push({ date: gratiDate, mesNombre: gratiLabel, isGrati: true });
-  }
-
-  // Ordenar cronológicamente
-  slots.sort((a, b) => a.date - b.date);
-
-  // ── fechaFin = última fecha del cronograma ────────────────────────────────
-  const lastSlotDate = slots.length > 0 ? slots[slots.length - 1].date : new Date(`${fechaInicioPago}T00:00:00`);
-  const fechaFin = lastSlotDate.toISOString().split('T')[0];
+  // fechaFin = última fecha del cronograma
+  const fechaFin = slots.length > 0 ? slots[slots.length - 1].fecha : fechaInicioPago;
 
   const prestamoPayload = {
     cr168_codigo: codigo,
@@ -431,24 +408,24 @@ export async function createLoan(loanData) {
 
   // ── Crear cuotas en Dataverse ────────────────────────────────────────────
   const cuotasCreadas = [];
-  let sumaCuotasPrevias = 0;
 
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
     const isLast = i === slots.length - 1;
-    const montoCuota = isLast ? Number((totalMonto - sumaCuotasPrevias).toFixed(2)) : cuotaBase;
-    sumaCuotasPrevias += cuotaBase;
+    const montoCuota = fromCents(montosCents[i]);
+
+    let observacion = null;
+    if (personalizado) observacion = 'Monto personalizado';
+    else if (isLast && numCuotas > 1 && montosCents[i] !== Math.floor(totalCents / numCuotas)) observacion = 'Ajuste de céntimos en última cuota';
 
     const cuotaPayload = {
       cr168_codigocuota: `${codigo}-C${String(i + 1).padStart(2, '0')}`,
       cr168_numerocuota: i + 1,
       cr168_mes: slot.mesNombre,
       cr168_monto: montoCuota,
-      cr168_fechaprogramada: slot.date.toISOString().split('T')[0],
+      cr168_fechaprogramada: slot.fecha,
       cr168_estadocuota: 'Pendiente',
-      cr168_observacion: isLast && numCuotas > 1 && montoCuota !== cuotaBase
-        ? 'Ajuste de céntimos en última cuota'
-        : null,
+      cr168_observacion: observacion,
       'cr168_prestamoid@odata.bind': `/cr168_prestamos(${prestamoId})`
     };
 

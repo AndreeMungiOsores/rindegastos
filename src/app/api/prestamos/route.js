@@ -29,6 +29,10 @@ export async function POST(request) {
     return NextResponse.json({ success: true, loan: created }, { status: 201 });
   } catch (error) {
     console.error('Error in POST /api/prestamos:', error);
+    // Montos de cuotas personalizados que no cuadran con el monto del préstamo: error de datos, no del servidor
+    if (error.code === 'VALIDATION') {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
     return NextResponse.json(
       { success: false, error: 'Error al crear el préstamo en Dataverse', details: error.message },
       { status: 500 }
