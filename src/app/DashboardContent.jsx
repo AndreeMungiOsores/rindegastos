@@ -3682,6 +3682,7 @@ export default function AdminDashboard({ onLogout }) {
                         areaBlockData.byArea.map((item) => {
                           const areaClass = item.area === 'VISITA' ? 'area-visita' :
                                             item.area === 'MARKETING Y COMUNICACIONES' ? 'area-marketing' :
+                                            item.area === 'DISEÑO GRÁFICO' ? 'area-diseno' :
                                             item.area === 'LOGISTICA' ? 'area-logistica' :
                                             item.area === 'TI' ? 'area-ti' :
                                             item.area === 'GERENCIA' ? 'area-gerencia' : 'area-admin';
