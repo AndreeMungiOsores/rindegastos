@@ -303,6 +303,8 @@ export default function AdminDashboard({ onLogout }) {
   const [cabifyMenuOpen, setCabifyMenuOpen] = useState(false);
   const [rindegastosSubTab, setRindegastosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'notas' | 'estadisticas'
+  // Meses elegidos ('YYYY-MM') en el bloque "Gastos por Equipo / Área" de las estadísticas de RindeGastos; vacío = total general
+  const [areaMonths, setAreaMonths] = useState([]);
   const isBuzonView = activeModule === 'buzon';
   const [prestamosSubTab, setPrestamosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const sidebarCollapsed = false;
@@ -1319,6 +1321,35 @@ export default function AdminDashboard({ onLogout }) {
       byMonth
     };
   }, [filteredExpenses]);
+
+  // Bloque "Gastos por Equipo / Área": mismo cálculo que el total general, pero limitado a los meses elegidos (si hay)
+  const areaBlockData = useMemo(() => {
+    const selected = new Set(areaMonths);
+    const rows = filteredExpenses.filter(item => {
+      if (selected.size === 0) return true;
+      const dateStr = item.cr168_fechadelgasto || item.createdon;
+      if (!dateStr) return false;
+      const clean = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+      return selected.has(clean.slice(0, 7));
+    });
+    const total = rows.reduce((sum, item) => sum + (item.cr168_montototalincluyendoigv || 0), 0);
+    const map = new Map();
+    for (const item of rows) {
+      const area = getVendorArea(item.cr168_vendedor);
+      if (!map.has(area)) map.set(area, { area, amount: 0, count: 0 });
+      const d = map.get(area);
+      d.amount += item.cr168_montototalincluyendoigv || 0;
+      d.count += 1;
+    }
+    const byArea = Array.from(map.values())
+      .map(item => ({
+        ...item,
+        percentage: total > 0 ? (item.amount / total) * 100 : 0,
+        avgTicket: item.count > 0 ? item.amount / item.count : 0
+      }))
+      .sort((a, b) => b.amount - a.amount);
+    return { byArea, total, count: rows.length };
+  }, [filteredExpenses, areaMonths]);
 
   // Cálculos de Analítica Financiera para Buzón de Proveedores (Cuentas por Pagar & Concentración de Proveedores)
   const buzonAnalyticsData = useMemo(() => {
@@ -3549,13 +3580,57 @@ export default function AdminDashboard({ onLogout }) {
                         </svg>
                         Gastos por Equipo / Área
                       </h3>
-                      <span className="analytics-section-badge">{analyticsData.byArea.length} Áreas Activas</span>
+                      <span className="analytics-section-badge">{areaBlockData.byArea.length} Áreas Activas</span>
                     </div>
+
+                    {/* Filtro de meses del bloque: sin selección = total general */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem', marginBottom: '0.9rem' }}>
+                      {(() => {
+                        const shortMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                        const chip = (active) => ({
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          padding: '0.18rem 0.6rem',
+                          borderRadius: '9999px',
+                          cursor: 'pointer',
+                          border: `1px solid ${active ? 'var(--accent-color, #1e3a5f)' : 'var(--border-color, #e2e8f0)'}`,
+                          background: active ? 'var(--accent-color, #1e3a5f)' : 'transparent',
+                          color: active ? '#fff' : 'var(--text-secondary)'
+                        });
+                        return (
+                          <>
+                            <button type="button" style={chip(areaMonths.length === 0)} onClick={() => setAreaMonths([])} title="Ver el total general de todos los meses">
+                              Total general
+                            </button>
+                            {analyticsData.byMonth.map(m => {
+                              const active = areaMonths.includes(m.key);
+                              const [yyyy, mm] = m.key.split('-');
+                              return (
+                                <button
+                                  key={m.key}
+                                  type="button"
+                                  style={chip(active)}
+                                  title={`${m.label}: puedes elegir varios meses`}
+                                  onClick={() => setAreaMonths(prev => active ? prev.filter(k => k !== m.key) : [...prev, m.key])}
+                                >
+                                  {shortMonths[parseInt(mm, 10) - 1] || mm} {yyyy.slice(2)}
+                                </button>
+                              );
+                            })}
+                          </>
+                        );
+                      })()}
+                    </div>
+                    {areaMonths.length > 0 && (
+                      <p style={{ margin: '0 0 0.8rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        {areaMonths.length} {areaMonths.length === 1 ? 'mes' : 'meses'} · {areaBlockData.count} comprobantes · Total S/ {areaBlockData.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    )}
                     <div className="bar-distribution-list">
-                      {analyticsData.byArea.length === 0 ? (
+                      {areaBlockData.byArea.length === 0 ? (
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros para mostrar en el filtro seleccionado.</p>
                       ) : (
-                        analyticsData.byArea.map((item) => {
+                        areaBlockData.byArea.map((item) => {
                           const areaClass = item.area === 'VISITA' ? 'area-visita' :
                                             item.area === 'MARKETING Y COMUNICACIONES' ? 'area-marketing' :
                                             item.area === 'LOGISTICA' ? 'area-logistica' :
