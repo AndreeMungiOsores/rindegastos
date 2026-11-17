@@ -305,6 +305,16 @@ export default function AdminDashboard({ onLogout }) {
   const [buzonSubTab, setBuzonSubTab] = useState('tabla'); // 'tabla' | 'notas' | 'estadisticas'
   // Meses elegidos ('YYYY-MM') en el bloque "Gastos por Equipo / Área" de las estadísticas de RindeGastos; vacío = total general
   const [areaMonths, setAreaMonths] = useState([]);
+  const [areaMenuOpen, setAreaMenuOpen] = useState(false);
+  const areaMenuRef = useRef(null);
+  useEffect(() => {
+    if (!areaMenuOpen) return undefined;
+    const onDown = (e) => { if (areaMenuRef.current && !areaMenuRef.current.contains(e.target)) setAreaMenuOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setAreaMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [areaMenuOpen]);
   const isBuzonView = activeModule === 'buzon';
   const [prestamosSubTab, setPrestamosSubTab] = useState('tabla'); // 'tabla' | 'estadisticas'
   const sidebarCollapsed = false;
@@ -3584,48 +3594,90 @@ export default function AdminDashboard({ onLogout }) {
                     </div>
 
                     {/* Filtro de meses del bloque: sin selección = total general */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem', marginBottom: '0.9rem' }}>
-                      {(() => {
-                        const shortMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                        const chip = (active) => ({
-                          fontSize: '0.72rem',
-                          fontWeight: 600,
-                          padding: '0.18rem 0.6rem',
-                          borderRadius: '9999px',
-                          cursor: 'pointer',
-                          border: `1px solid ${active ? 'var(--accent-color, #1e3a5f)' : 'var(--border-color, #e2e8f0)'}`,
-                          background: active ? 'var(--accent-color, #1e3a5f)' : 'transparent',
-                          color: active ? '#fff' : 'var(--text-secondary)'
-                        });
-                        return (
-                          <>
-                            <button type="button" style={chip(areaMonths.length === 0)} onClick={() => setAreaMonths([])} title="Ver el total general de todos los meses">
-                              Total general
-                            </button>
-                            {analyticsData.byMonth.map(m => {
-                              const active = areaMonths.includes(m.key);
-                              const [yyyy, mm] = m.key.split('-');
-                              return (
-                                <button
-                                  key={m.key}
-                                  type="button"
-                                  style={chip(active)}
-                                  title={`${m.label}: puedes elegir varios meses`}
-                                  onClick={() => setAreaMonths(prev => active ? prev.filter(k => k !== m.key) : [...prev, m.key])}
-                                >
-                                  {shortMonths[parseInt(mm, 10) - 1] || mm} {yyyy.slice(2)}
-                                </button>
-                              );
-                            })}
-                          </>
-                        );
-                      })()}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', marginBottom: '0.9rem' }}>
+                      <div ref={areaMenuRef} style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          onClick={() => setAreaMenuOpen(o => !o)}
+                          aria-haspopup="true"
+                          aria-expanded={areaMenuOpen}
+                          title="Filtrar por meses"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                            fontSize: '0.78rem', fontWeight: 600, padding: '0.3rem 0.65rem',
+                            borderRadius: '8px', cursor: 'pointer',
+                            border: `1px solid ${areaMonths.length > 0 ? 'var(--accent-color, #1e3a5f)' : 'var(--border-color, #e2e8f0)'}`,
+                            background: areaMenuOpen ? 'var(--bg-hover, #f1eee7)' : 'transparent',
+                            color: areaMonths.length > 0 ? 'var(--accent-color, #1e3a5f)' : 'var(--text-secondary)'
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                          </svg>
+                          {areaMonths.length === 0 ? 'Total general' : `${areaMonths.length} ${areaMonths.length === 1 ? 'mes' : 'meses'}`}
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: areaMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+
+                        {areaMenuOpen && (() => {
+                          const shortMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                          const itemStyle = {
+                            display: 'flex', alignItems: 'center', gap: '0.55rem', width: '100%',
+                            padding: '0.4rem 0.75rem', fontSize: '0.8rem', cursor: 'pointer',
+                            color: 'var(--text-primary, #0f172a)', textAlign: 'left'
+                          };
+                          return (
+                            <div
+                              role="menu"
+                              style={{
+                                position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30,
+                                minWidth: '190px', maxHeight: '300px', overflowY: 'auto',
+                                background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)',
+                                borderRadius: '10px', boxShadow: '0 10px 25px rgba(15, 23, 42, 0.12)', padding: '0.3rem 0'
+                              }}
+                            >
+                              <label style={{ ...itemStyle, fontWeight: 700 }}>
+                                <input type="checkbox" checked={areaMonths.length === 0} onChange={() => setAreaMonths([])} />
+                                Total general
+                              </label>
+                              <div style={{ height: 1, background: 'var(--border-color, #e2e8f0)', margin: '0.25rem 0' }} />
+                              {analyticsData.byMonth.map(m => {
+                                const checked = areaMonths.includes(m.key);
+                                const [yyyy, mm] = m.key.split('-');
+                                return (
+                                  <label key={m.key} style={itemStyle}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => setAreaMonths(prev => checked ? prev.filter(k => k !== m.key) : [...prev, m.key])}
+                                    />
+                                    {shortMonths[parseInt(mm, 10) - 1] || mm} {yyyy}
+                                  </label>
+                                );
+                              })}
+                              {areaMonths.length > 0 && (
+                                <>
+                                  <div style={{ height: 1, background: 'var(--border-color, #e2e8f0)', margin: '0.25rem 0' }} />
+                                  <button
+                                    type="button"
+                                    onClick={() => setAreaMonths([])}
+                                    style={{ ...itemStyle, background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
+                                  >
+                                    Limpiar selección
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      {areaMonths.length > 0 && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                          {areaBlockData.count} comprobantes · Total S/ {areaBlockData.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      )}
                     </div>
-                    {areaMonths.length > 0 && (
-                      <p style={{ margin: '0 0 0.8rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        {areaMonths.length} {areaMonths.length === 1 ? 'mes' : 'meses'} · {areaBlockData.count} comprobantes · Total S/ {areaBlockData.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    )}
                     <div className="bar-distribution-list">
                       {areaBlockData.byArea.length === 0 ? (
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros para mostrar en el filtro seleccionado.</p>
