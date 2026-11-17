@@ -3590,11 +3590,6 @@ export default function AdminDashboard({ onLogout }) {
                         </svg>
                         Gastos por Equipo / Área
                       </h3>
-                      <span className="analytics-section-badge">{areaBlockData.byArea.length} Áreas Activas</span>
-                    </div>
-
-                    {/* Filtro de meses del bloque: sin selección = total general */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', marginBottom: '0.9rem' }}>
                       <div ref={areaMenuRef} style={{ position: 'relative' }}>
                         <button
                           type="button"
@@ -3631,7 +3626,7 @@ export default function AdminDashboard({ onLogout }) {
                             <div
                               role="menu"
                               style={{
-                                position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30,
+                                position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30,
                                 minWidth: '190px', maxHeight: '300px', overflowY: 'auto',
                                 background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)',
                                 borderRadius: '10px', boxShadow: '0 10px 25px rgba(15, 23, 42, 0.12)', padding: '0.3rem 0'
@@ -3672,12 +3667,14 @@ export default function AdminDashboard({ onLogout }) {
                           );
                         })()}
                       </div>
-                      {areaMonths.length > 0 && (
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                          {areaBlockData.count} comprobantes · Total S/ {areaBlockData.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      )}
                     </div>
+
+                    {/* Resumen del filtro de meses: solo con meses elegidos */}
+                    {areaMonths.length > 0 && (
+                      <p style={{ margin: '-0.4rem 0 0.9rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        {areaBlockData.count} comprobantes · Total S/ {areaBlockData.total.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    )}
                     <div className="bar-distribution-list">
                       {areaBlockData.byArea.length === 0 ? (
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No hay registros para mostrar en el filtro seleccionado.</p>
