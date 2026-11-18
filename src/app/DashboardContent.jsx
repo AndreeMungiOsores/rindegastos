@@ -8,6 +8,7 @@ import { buildLoanSlots, splitEqualCents, validateCustomAmounts, toCents } from 
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 import CxcModule from './components/CxcModule';
+import AtribucionModule from './components/AtribucionModule';
 import AccessCodeGate from './components/AccessCodeGate';
 
 // Código de acceso a Préstamos. Es un bloqueo visual en el navegador, no una protección de datos.
@@ -3071,6 +3072,21 @@ export default function AdminDashboard({ onLogout }) {
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
             </svg>
             {!sidebarCollapsed && <span className="menu-label">Cuentas por cobrar</span>}
+          </button>
+
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'atribucion' ? 'active' : ''}`}
+            onClick={() => setActiveModule('atribucion')}
+            title="Centro de Atribución de Costos"
+            aria-current={activeModule === 'atribucion' ? 'page' : undefined}
+          >
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <circle cx="12" cy="12" r="6"/>
+              <circle cx="12" cy="12" r="2"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Atribución de Costos</span>}
           </button>
 
           <button
@@ -7286,6 +7302,8 @@ export default function AdminDashboard({ onLogout }) {
         )}
 
         {activeModule === 'cxc' && <CxcModule />}
+
+        {activeModule === 'atribucion' && <AtribucionModule />}
 
         {activeModule === 'cabify-taxi' && <CabifyMobilityModule key="cabify-taxi" group="taxi" />}
         {activeModule === 'cabify-delivery' && <CabifyMobilityModule key="cabify-delivery" group="delivery" />}
