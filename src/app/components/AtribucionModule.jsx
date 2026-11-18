@@ -57,7 +57,7 @@ const EstadoPill = ({ estado }) => {
 function Entregas({ consumos, zeroMeta }) {
   const zero = useMemo(() => consumos.filter(c => c.origen === 'Zero'), [consumos]);
   const [mes, setMes] = useState('');
-  const [tipoEntrega, setTipoEntrega] = useState('');
+  const [tipoProducto, setTipoProducto] = useState('');
   const [destTipo, setDestTipo] = useState('');
   const [busqueda, setBusqueda] = useState('');
 
@@ -66,11 +66,11 @@ function Entregas({ consumos, zeroMeta }) {
     const q = busqueda.trim().toLowerCase();
     return zero.filter(c =>
       (!mes || c.mes === mes) &&
-      (!tipoEntrega || (tipoEntrega === 'bonificado' ? c.bonificado : !c.bonificado)) &&
+      (!tipoProducto || c.tipoProducto === tipoProducto) &&
       (!destTipo || (destTipo === 'sin' ? !c.destinatario : c.destinatarioTipo === destTipo)) &&
       (!q || `${c.destinatario || ''} ${c.concepto} ${c.responsable || ''}`.toLowerCase().includes(q))
     );
-  }, [zero, mes, tipoEntrega, destTipo, busqueda]);
+  }, [zero, mes, tipoProducto, destTipo, busqueda]);
 
   const resumen = useMemo(() => {
     const marcas = {};
@@ -101,7 +101,7 @@ function Entregas({ consumos, zeroMeta }) {
   return (
     <>
       <div style={s.note} role="note">
-        Unidades entregadas según las solicitudes de Zero. El valor en soles aún no se puede calcular: SeaFácil no expone el costo del producto, así que las entregas bonificadas se miden en unidades.
+        Unidades entregadas según las solicitudes de Zero. El valor en soles aún no se puede calcular: SeaFácil no expone el costo del producto, así que los productos bonificados de Zero se miden en unidades.
         {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && (
           <> Se excluyen {fmtInt(zeroMeta.pruebasExcluidas.solicitudes)} solicitudes de prueba (observaciones como “Prueba, no atender” o “Test, no atender”): {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
         )}
@@ -113,10 +113,10 @@ function Entregas({ consumos, zeroMeta }) {
           <option value="">Todos los meses</option>
           {meses.map(m => <option key={m} value={m}>{fmtMes(m)}</option>)}
         </select>
-        <select style={s.select} value={tipoEntrega} onChange={e => setTipoEntrega(e.target.value)} aria-label="Tipo de entrega">
-          <option value="">Todas las entregas</option>
-          <option value="bonificado">Solo bonificados</option>
-          <option value="otras">Entregas / pruebas</option>
+        <select style={s.select} value={tipoProducto} onChange={e => setTipoProducto(e.target.value)} aria-label="Tipo de producto">
+          <option value="">Originales y muestras</option>
+          <option value="Original">Solo originales</option>
+          <option value="Muestra">Solo muestras</option>
         </select>
         <select style={s.select} value={destTipo} onChange={e => setDestTipo(e.target.value)} aria-label="Tipo de destinatario">
           <option value="">Todos los destinatarios</option>

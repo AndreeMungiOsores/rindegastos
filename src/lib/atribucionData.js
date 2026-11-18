@@ -3,7 +3,7 @@
  *
  * Reúne en una misma lista de "consumos" lo que hoy existe en tres orígenes y deduce, SIN guardar nada,
  * qué consumos ya dicen a quién beneficiaron y cuáles les falta:
- *  - Zero (Entorno de Sistemas): ítems de solicitudes de productos (bonificados, muestras, tests).
+ *  - Zero (Entorno de Sistemas): ítems de solicitudes de productos gratuitos (todo lo que sale por Zero es bonificado).
  *  - RindeGastos (rendición de gastos, sin el buzón de proveedores).
  *  - Cabify: tickets de viaje guardados en Supabase.
  *
@@ -78,7 +78,7 @@ function tipoDesdeCategoriaLegado(cat) {
 
 async function cargarZero() {
   const [items, solicitudes, productos, contactos, legado] = await Promise.all([
-    dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_esbonificado,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
+    dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
     dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_observaciones'),
     dvGetAll('sistemas', 'crb7e_producto1s?$select=crb7e_producto1id,crb7e_nombredelproducto,crb7e_sku,crb7e_marca,crb7e_tipodeproducto'),
     dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra'),
@@ -223,8 +223,9 @@ async function cargarZero() {
       destinatarioTipo: tipoDest,
       vinculo,
       marca,
-      categoria: it.crb7e_esbonificado ? 'Bonificado' : 'Entrega / prueba',
-      bonificado: !!it.crb7e_esbonificado,
+      // Todo lo que se pide por Zero es bonificado. El campo "Es Bonificado" solo se llena desde agosto de 2026, así que no se usa.
+      categoria: prod?.tipo || 'Bonificado',
+      bonificado: true,
       tipoProducto: prod?.tipo || null,
       empresa: it[`crb7e_empresa${FV}`] || null,
       estadoOrigen: sol?.[`crb7e_estado${FV}`] || null,
