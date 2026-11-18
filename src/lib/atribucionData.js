@@ -46,12 +46,44 @@ export function tipoDestinatario(contacto) {
 // ──────────────────────────────────────────────────────────────────────────
 // Zero
 // ──────────────────────────────────────────────────────────────────────────
+
+const soloDigitos = (v) => String(v || '').replace(/\D/g, '');
+const claveNombre = (n) => norm(n).replace(/[^a-z ]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
+const normObs = (s) => norm(s).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * ¿La solicitud de Zero es una prueba interna? Los visitadores y el equipo lo escriben en Observaciones:
+ * "Test, no atender", "Prueba, no atender", "Esto es una prueba"... No se confunde con pedidos reales de "testers" (muestras).
+ */
+export function esSolicitudDePrueba(observaciones) {
+  const t = normObs(observaciones);
+  if (!t) return false;
+  if (/\bno (atender\w*|antender\w*|atiendan|atienda|considerar|procesar)\b/.test(t)) return true;
+  if (/^(esto|este|esta|estos|estas|es)\b.*\b(prueba|pruebas|test)\b/.test(t)) return true;
+  if (/^(prueba|pruebas|test)( \d+| final)?$/.test(t)) return true;
+  if (/\bprueba final\b/.test(t)) return true;
+  if (/^ignor\w*$/.test(t)) return true;
+  return false;
+}
+
+/** Tipo de destinatario cuando solo se conoce la categoría del sistema anterior (dDestinatarios). */
+function tipoDesdeCategoriaLegado(cat) {
+  const c = norm(cat);
+  if (c === 'doctor') return 'Médico';
+  if (c === 'empresa') return 'Centro / empresa';
+  if (['blisscorp', 'visitadora', 'marketing'].includes(c)) return 'Staff';
+  if (!c) return 'Otro';
+  return 'Influencer'; // Lifestyle, Embajador, Deportista, Actor, Moda, Beauty, Make Up Artist...
+}
+
 async function cargarZero() {
-  const [items, solicitudes, productos, contactos] = await Promise.all([
-    dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_esbonificado,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
-    dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante'),
+  const [items, solicitudes, productos, contactos, legado] = await Promise.all([
+    dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_esbonificado,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
+    dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_observaciones'),
     dvGetAll('sistemas', 'crb7e_producto1s?$select=crb7e_producto1id,crb7e_nombredelproducto,crb7e_sku,crb7e_marca,crb7e_tipodeproducto'),
-    dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_tipodepersona,crb7e_categoriamaestra')
+    dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra'),
+    // Sistema anterior de destinatarios (antes de Contactos Maestro); se conserva como historial.
+    dvGetAll('sistemas', 'crb7e_ddestinatarioses?$select=crb7e_iddestinatario,crb7e_nombre,crb7e_nrodocumento,crb7e_categoria')
   ]);
 
   const solPorRef = new Map(solicitudes.map(s => [s.crb7e_referenciasolicitud, s]));
@@ -68,26 +100,117 @@ async function cargarZero() {
     if (p.crb7e_sku) prodPorSku.set(norm(p.crb7e_sku), info);
     if (p.crb7e_nombredelproducto) prodPorNombre.set(norm(p.crb7e_nombredelproducto), info);
   }
-  const contPorId = new Map(contactos.map(c => [c.crb7e_contactosmaestroid, {
-    nombre: c.crb7e_nombre,
-    categoria: c[`crb7e_categoriamaestra${FV}`] || null,
-    tipoPersona: c[`crb7e_tipodepersona${FV}`] || null
-  }]));
+  const contPorId = new Map();
+  const contPorDoc = new Map(); // documento (DNI, CMP o RUC, solo dígitos) -> ids de contacto
+  const contPorNombre = new Map(); // nombre sin orden ni tildes -> ids de contacto
+  for (const c of contactos) {
+    const info = {
+      id: c.crb7e_contactosmaestroid,
+      nombre: c.crb7e_nombre,
+      categoria: c[`crb7e_categoriamaestra${FV}`] || null,
+      tipoPersona: c[`crb7e_tipodepersona${FV}`] || null
+    };
+    contPorId.set(info.id, info);
+    for (const d of [c.crb7e_numerodedocumento, c.crb7e_cmp, c.crb7e_ruc]) {
+      const k = soloDigitos(d);
+      if (k.length >= 5) { if (!contPorDoc.has(k)) contPorDoc.set(k, new Set()); contPorDoc.get(k).add(info.id); }
+    }
+    const kn = claveNombre(c.crb7e_nombre);
+    if (kn) { if (!contPorNombre.has(kn)) contPorNombre.set(kn, new Set()); contPorNombre.get(kn).add(info.id); }
+  }
+  const legadoPorId = new Map(legado.map(d => [d.crb7e_iddestinatario, d]));
 
-  return items.map(it => {
+  /** Busca en Contactos Maestro a un destinatario del sistema anterior: primero por documento, luego por nombre. */
+  const cruzarLegado = (d) => {
+    const doc = soloDigitos(d.crb7e_nrodocumento);
+    const porDoc = doc.length >= 5 ? contPorDoc.get(doc) : null;
+    if (porDoc?.size === 1) return { metodo: 'documento', contacto: contPorId.get([...porDoc][0]) };
+    if (porDoc?.size > 1) return { metodo: 'ambiguo', contacto: null };
+    const porNombre = contPorNombre.get(claveNombre(d.crb7e_nombre));
+    if (porNombre?.size === 1) return { metodo: 'nombre', contacto: contPorId.get([...porNombre][0]) };
+    if (porNombre?.size > 1) return { metodo: 'ambiguo', contacto: null };
+    return { metodo: 'sin_coincidencia', contacto: null };
+  };
+  const cruceCache = new Map();
+
+  const meta = {
+    pruebasExcluidas: { solicitudes: 0, items: 0, unidades: 0 },
+    legado: { items: 0, unidades: 0, porMetodo: { documento: 0, nombre: 0, ambiguo: 0, sin_coincidencia: 0 }, destinatarios: new Map() },
+    sinVinculo: { desde: null, hasta: null, items: 0 },
+    conVinculo: { desde: null, hasta: null, items: 0 }
+  };
+  const refsPrueba = new Set();
+  for (const s of solicitudes) if (esSolicitudDePrueba(s.crb7e_observaciones)) refsPrueba.add(s.crb7e_referenciasolicitud);
+  meta.pruebasExcluidas.solicitudes = refsPrueba.size;
+
+  const filas = [];
+  for (const it of items) {
+    const unidades = Number(it.crb7e_cantidad) || 0;
+    if (refsPrueba.has(it.crb7e_referenciasolicitud)) {
+      meta.pruebasExcluidas.items++;
+      meta.pruebasExcluidas.unidades += unidades;
+      continue;
+    }
     const sol = solPorRef.get(it.crb7e_referenciasolicitud) || null;
     const prod = prodPorId.get(it._crb7e_producto_value)
       || (it.crb7e_sku && prodPorSku.get(norm(it.crb7e_sku)))
       || (it.crb7e_nombreproducto && prodPorNombre.get(norm(it.crb7e_nombreproducto)))
       || null;
-    const contacto = contPorId.get(it._crb7e_contacto_value) || null;
     const fecha = ymLima(sol?.crb7e_fechasolicitud || it.createdon);
-    const tipoDest = tipoDestinatario(contacto);
     const marca = prod?.marca || null;
+
+    let contacto = contPorId.get(it._crb7e_contacto_value) || null;
+    let destinatario = contacto?.nombre || it['_crb7e_contacto_value' + FV] || null;
+    let tipoDest = tipoDestinatario(contacto);
+    let vinculo = contacto ? 'maestro' : null;
+    const sinContactoMaestro = !contacto;
+
+    // Sin vínculo a Contactos Maestro: se intenta con el destinatario del sistema anterior (dDestinatarios).
+    if (!contacto) {
+      const d = legadoPorId.get(it.crb7e_iddestinatario);
+      if (d) {
+        if (!cruceCache.has(d.crb7e_iddestinatario)) cruceCache.set(d.crb7e_iddestinatario, cruzarLegado(d));
+        const cruce = cruceCache.get(d.crb7e_iddestinatario);
+        meta.legado.items++;
+        meta.legado.unidades += unidades;
+        meta.legado.porMetodo[cruce.metodo]++;
+        const acum = meta.legado.destinatarios.get(d.crb7e_iddestinatario) || {
+          nombreLegado: d.crb7e_nombre, categoria: d[`crb7e_categoria${FV}`] || null, metodo: cruce.metodo,
+          contacto: cruce.contacto?.nombre || null, items: 0, unidades: 0
+        };
+        acum.items++;
+        acum.unidades += unidades;
+        meta.legado.destinatarios.set(d.crb7e_iddestinatario, acum);
+        if (cruce.contacto) {
+          destinatario = cruce.contacto.nombre;
+          tipoDest = tipoDestinatario(cruce.contacto);
+          vinculo = cruce.metodo === 'documento' ? 'legado_documento' : 'legado_nombre';
+        } else {
+          destinatario = d.crb7e_nombre || null;
+          tipoDest = tipoDesdeCategoriaLegado(d[`crb7e_categoria${FV}`]);
+          vinculo = cruce.metodo === 'ambiguo' ? 'legado_ambiguo' : 'legado_sin_coincidencia';
+        }
+      }
+    }
+
+    // Rango de fechas con y sin vínculo directo a Contactos Maestro (para saber desde cuándo se usa el maestro).
+    if (fecha) {
+      const rango = sinContactoMaestro ? meta.sinVinculo : meta.conVinculo;
+      rango.items++;
+      if (!rango.desde || fecha < rango.desde) rango.desde = fecha;
+      if (!rango.hasta || fecha > rango.hasta) rango.hasta = fecha;
+    }
+
     const falta = [];
-    if (!contacto) falta.push('destinatario');
+    if (!destinatario) falta.push('destinatario');
     if (!marca) falta.push('marca');
-    return {
+    let estado;
+    if (vinculo === 'maestro') estado = falta.length === 0 ? 'completo' : 'pendiente';
+    else if (vinculo === 'legado_documento' || vinculo === 'legado_nombre') estado = falta.length === 0 ? 'cruce_propuesto' : 'pendiente';
+    else if (vinculo) estado = falta.length === 0 ? 'texto_libre' : 'pendiente'; // destinatario del sistema anterior sin coincidencia
+    else estado = 'pendiente';
+
+    filas.push({
       key: `ZERO:${it.crb7e_hitemsid}`,
       origen: 'Zero',
       fecha,
@@ -95,19 +218,22 @@ async function cargarZero() {
       responsable: sol?.crb7e_solicitante || null,
       concepto: it.crb7e_nombreproducto || prod?.nombre || 'Producto sin nombre',
       importe: null,
-      unidades: Number(it.crb7e_cantidad) || 0,
-      destinatario: contacto?.nombre || it['_crb7e_contacto_value' + FV] || null,
+      unidades,
+      destinatario,
       destinatarioTipo: tipoDest,
+      vinculo,
       marca,
       categoria: it.crb7e_esbonificado ? 'Bonificado' : 'Entrega / prueba',
       bonificado: !!it.crb7e_esbonificado,
       tipoProducto: prod?.tipo || null,
       empresa: it[`crb7e_empresa${FV}`] || null,
       estadoOrigen: sol?.[`crb7e_estado${FV}`] || null,
-      estado: falta.length === 0 ? 'completo' : 'pendiente',
+      estado,
       falta
-    };
-  });
+    });
+  }
+
+  return { filas, meta: { ...meta, legado: { ...meta.legado, destinatarios: [...meta.legado.destinatarios.values()].sort((a, b) => b.unidades - a.unidades) } } };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -211,9 +337,12 @@ export async function cargarConsumos() {
     ['rindegastos', cargarRindegastos],
     ['cabify', cargarCabify]
   ];
+  let zeroMeta = null;
   await Promise.all(tareas.map(async ([nombre, fn]) => {
     try {
-      const filas = await fn();
+      const res = await fn();
+      const filas = Array.isArray(res) ? res : res.filas;
+      if (!Array.isArray(res)) zeroMeta = res.meta;
       consumos.push(...filas);
       fuentes[nombre] = { ok: true, filas: filas.length };
     } catch (e) {
@@ -222,5 +351,5 @@ export async function cargarConsumos() {
     }
   }));
   consumos.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
-  return { generadoEn: new Date().toISOString(), fuentes, consumos };
+  return { generadoEn: new Date().toISOString(), fuentes, zeroMeta, consumos };
 }

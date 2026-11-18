@@ -16,7 +16,8 @@ const TABS = [
 
 const ESTADOS = {
   completo: { label: 'Completo', fg: 'var(--status-success-fg)', bg: 'var(--status-success-bg)', hint: 'Tiene destinatario del maestro y marca' },
-  texto_libre: { label: 'Destinatario sin vincular', fg: 'var(--status-pending-fg)', bg: 'var(--status-pending-bg)', hint: 'Hay un nombre escrito a mano, pero no está vinculado al maestro de médicos y centros' },
+  texto_libre: { label: 'Destinatario sin vincular', fg: 'var(--status-pending-fg)', bg: 'var(--status-pending-bg)', hint: 'Hay un destinatario registrado (a mano o en el sistema anterior), pero no se pudo vincular al maestro de médicos y centros' },
+  cruce_propuesto: { label: 'Cruce propuesto', fg: 'var(--accent-600, #1d4f91)', bg: 'var(--accent-tint, #EEF4F9)', hint: 'Destinatario del sistema anterior que se encontró en Contactos Maestro (por documento o nombre); falta confirmar y guardar el vínculo' },
   sugerido_corporativo: { label: 'Corporativo sugerido', fg: 'var(--status-done-fg)', bg: 'var(--status-done-bg)', hint: 'Gasto de atención al personal: se propone como Corporativo, pendiente de validar' },
   pendiente: { label: 'Pendiente', fg: 'var(--status-error-fg)', bg: 'var(--status-error-bg)', hint: 'Falta el destinatario y/o la marca' }
 };
@@ -53,7 +54,7 @@ const EstadoPill = ({ estado }) => {
 };
 
 /* ─────────────────────────── Pestaña 1: Entregas ─────────────────────────── */
-function Entregas({ consumos }) {
+function Entregas({ consumos, zeroMeta }) {
   const zero = useMemo(() => consumos.filter(c => c.origen === 'Zero'), [consumos]);
   const [mes, setMes] = useState('');
   const [tipoEntrega, setTipoEntrega] = useState('');
@@ -101,6 +102,9 @@ function Entregas({ consumos }) {
     <>
       <div style={s.note} role="note">
         Unidades entregadas según las solicitudes de Zero. El valor en soles aún no se puede calcular: SeaFácil no expone el costo del producto, así que las entregas bonificadas se miden en unidades.
+        {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && (
+          <> Se excluyen {fmtInt(zeroMeta.pruebasExcluidas.solicitudes)} solicitudes de prueba (observaciones como “Prueba, no atender” o “Test, no atender”): {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
+        )}
       </div>
 
       <div style={s.controls}>
@@ -298,7 +302,7 @@ function Consumos({ consumos }) {
 }
 
 /* ─────────────────────────── Pestaña 3: Calidad ─────────────────────────── */
-function Calidad({ consumos, fuentes }) {
+function Calidad({ consumos, fuentes, zeroMeta }) {
   const porOrigen = useMemo(() => ORIGENES.map(o => {
     const filas = consumos.filter(c => c.origen === o);
     const est = { completo: 0, texto_libre: 0, sugerido_corporativo: 0, pendiente: 0 };
@@ -371,7 +375,9 @@ function Calidad({ consumos, fuentes }) {
             <span>Ítems sin empresa</span><span style={s.num}>{fmtInt(zero.filter(c => !c.empresa).length)}</span><span style={{ ...s.num, color: 'var(--text-secondary)' }}>{pct(zero.filter(c => !c.empresa).length, zero.length)}%</span>
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.6rem 0 0' }}>
-            La mayoría de los ítems de Zero no trae el médico o centro al que va el producto.
+            {zeroMeta?.sinVinculo?.desde
+              ? <>Los ítems sin vínculo directo a Contactos Maestro van del {fmtDate(zeroMeta.sinVinculo.desde)} al {fmtDate(zeroMeta.sinVinculo.hasta)}; desde el {fmtDate(zeroMeta.conVinculo?.desde)} los pedidos ya traen su contacto del maestro. Antes se usaba el sistema de destinatarios anterior (ver abajo).</>
+              : 'Sin datos del rango de fechas.'}
           </p>
         </section>
 
@@ -388,6 +394,54 @@ function Calidad({ consumos, fuentes }) {
           </p>
         </section>
       </div>
+
+      {zeroMeta?.legado?.items > 0 && (
+        <section style={s.card} aria-label="Sistema anterior de destinatarios">
+          <h3 style={s.h3}>Zero: destinatarios del sistema anterior (dDestinatarios)</h3>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem' }}>
+            {fmtInt(zeroMeta.legado.items)} ítems ({fmtInt(zeroMeta.legado.unidades)} unidades) se registraron con el sistema anterior, no con Contactos Maestro. Se buscó a cada destinatario en Contactos Maestro, primero por documento y luego por nombre. Es solo una propuesta: no se ha guardado ningún vínculo en Dataverse.
+          </p>
+          {[
+            ['documento', 'Cruce por documento (DNI, CMP o RUC)'],
+            ['nombre', 'Cruce por nombre exacto'],
+            ['ambiguo', 'Ambiguo: hay más de un contacto posible'],
+            ['sin_coincidencia', 'Sin coincidencia en Contactos Maestro']
+          ].map(([k, label]) => (
+            <div key={k} style={{ ...s.barRow, gridTemplateColumns: '1fr 80px 50px' }}>
+              <span>{label}</span>
+              <span style={s.num}>{fmtInt(zeroMeta.legado.porMetodo[k])} ítems</span>
+              <span style={{ ...s.num, color: 'var(--text-secondary)' }}>{pct(zeroMeta.legado.porMetodo[k], zeroMeta.legado.items)}%</span>
+            </div>
+          ))}
+          <details style={{ marginTop: '0.75rem' }}>
+            <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver los {fmtInt(zeroMeta.legado.destinatarios.length)} destinatarios y su cruce para revisarlos</summary>
+            <div style={{ ...s.tableWrap, marginTop: '0.6rem', maxHeight: '40vh' }}>
+              <table style={s.table}>
+                <thead>
+                  <tr>
+                    <th style={s.th}>Destinatario (sistema anterior)</th>
+                    <th style={s.th}>Categoría</th>
+                    <th style={s.th}>Resultado</th>
+                    <th style={s.th}>Contacto propuesto en Contactos Maestro</th>
+                    <th style={{ ...s.th, ...s.num }}>Unidades</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {zeroMeta.legado.destinatarios.map((d, i) => (
+                    <tr key={`${d.nombreLegado}-${i}`}>
+                      <td style={s.td}>{d.nombreLegado || '—'}</td>
+                      <td style={s.td}>{d.categoria || '—'}</td>
+                      <td style={s.td}>{{ documento: 'Por documento', nombre: 'Por nombre', ambiguo: 'Ambiguo', sin_coincidencia: 'Sin coincidencia' }[d.metodo]}</td>
+                      <td style={s.td}>{d.contacto || '—'}</td>
+                      <td style={{ ...s.td, ...s.num }}>{fmtInt(d.unidades)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+      )}
 
       <div style={s.note} role="note">
         Estos estados se deducen de lo que cada origen ya registra. Todavía no existe una atribución guardada: la fase 2 permitirá elegir médico o centro y marcas, con historial de cambios.
@@ -460,9 +514,9 @@ export default function AtribucionModule() {
         ))}
         {loading && !data && <div style={{ color: 'var(--text-secondary)' }}>Leyendo Zero, RindeGastos y Cabify…</div>}
 
-        {data && tab === 'entregas' && <Entregas consumos={consumos} />}
+        {data && tab === 'entregas' && <Entregas consumos={consumos} zeroMeta={data.zeroMeta} />}
         {data && tab === 'consumos' && <Consumos consumos={consumos} />}
-        {data && tab === 'calidad' && <Calidad consumos={consumos} fuentes={data.fuentes} />}
+        {data && tab === 'calidad' && <Calidad consumos={consumos} fuentes={data.fuentes} zeroMeta={data.zeroMeta} />}
       </div>
     </div>
   );
