@@ -57,3 +57,49 @@ export async function dvGetAll(envName, path) {
 }
 
 export const FV = '@OData.Community.Display.V1.FormattedValue';
+
+/**
+ * ESCRITURA: solo en el Entorno de Sistemas y solo sobre las tablas propias del Centro de Atribución (crb7e_atr*).
+ * Ninguna otra tabla (Zero, contactos, productos...) se puede modificar desde aquí.
+ */
+const TABLAS_ESCRITURA = new Set([
+  'crb7e_atrconsumos',
+  'crb7e_atrconsumodestinatarios',
+  'crb7e_atrconsumomarcas',
+  'crb7e_atrasignacions',
+  'crb7e_atrhistorials'
+]);
+
+async function escribir(metodo, conjunto, id, cuerpo, devolver = false) {
+  if (!TABLAS_ESCRITURA.has(conjunto)) throw new Error(`Escritura no permitida en la tabla ${conjunto}`);
+  const env = ENVIRONMENTS.sistemas;
+  const scope = env.scope();
+  const url = `${env.host}/api/data/v9.2/${conjunto}${id ? `(${id})` : ''}`;
+  const pedir = async () => axios({
+    method: metodo,
+    url,
+    data: cuerpo,
+    timeout: 25000,
+    headers: {
+      Authorization: `Bearer ${await getAccessToken(scope)}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
+      'OData-MaxVersion': '4.0',
+      'OData-Version': '4.0',
+      ...(devolver ? { Prefer: 'return=representation' } : {})
+    }
+  });
+  try {
+    return (await pedir()).data;
+  } catch (error) {
+    if (error.response?.status === 401) {
+      invalidateCache(scope);
+      return (await pedir()).data;
+    }
+    throw new Error(`Dataverse sistemas ${metodo} ${conjunto}: ${error.response?.data?.error?.message || error.message}`);
+  }
+}
+
+export const dvCrear = (conjunto, cuerpo) => escribir('POST', conjunto, null, cuerpo, true);
+export const dvActualizar = (conjunto, id, cuerpo) => escribir('PATCH', conjunto, id, cuerpo);
+export const dvEliminar = (conjunto, id) => escribir('DELETE', conjunto, id);

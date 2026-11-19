@@ -11,6 +11,7 @@
  */
 import { dvGetAll, FV } from './dataverseEnv.js';
 import { getJourneysFromSupabase } from './cabifyClient.js';
+import { leerAtribuciones } from './atribucionStore.js';
 
 const SIN_DESTINATARIO_INVALIDO = new Set(['no', 'n', 'na', 'n/a', 'ninguno', 'ninguna', 'nada', 'sin', '-', '.', 'x']);
 
@@ -379,6 +380,24 @@ export async function cargarConsumos() {
       fuentes[nombre] = { ok: false, filas: 0, error: e.message };
     }
   }));
+  // Atribuciones ya guardadas en el portal (fase 2): se superponen a lo que se deducía del origen.
+  try {
+    const guardadas = await leerAtribuciones();
+    for (const c of consumos) {
+      const g = guardadas.get(c.key);
+      if (!g) continue;
+      c.atribucion = { destino: g.destino, estado: g.estado, motivo: g.motivo, atribuidoPor: g.atribuidoPor, fechaAtribucion: g.fechaAtribucion, contactoIds: g.destinatarios.map(d => d.contactoId), marcas: g.marcas.map(m => m.marca) };
+      c.destinatario = g.destinatarios.map(d => d.nombre).filter(Boolean).join(' · ') || ((g.destino === 'Corporativo' || g.destino === 'No aplica') ? g.destino : null);
+      c.destinatarioTipo = g.destino;
+      c.marca = g.marcas.map(m => m.marca).join(', ') || null;
+      c.estado = g.estado === 'Validado' ? 'validado' : 'provisional';
+      c.falta = [];
+    }
+    fuentes.atribuciones = { ok: true, filas: guardadas.size };
+  } catch (e) {
+    console.error('[Atribucion] No se pudieron leer las atribuciones guardadas:', e.message);
+    fuentes.atribuciones = { ok: false, filas: 0, error: e.message };
+  }
   consumos.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
   return { generadoEn: new Date().toISOString(), fuentes, zeroMeta, consumos };
 }
