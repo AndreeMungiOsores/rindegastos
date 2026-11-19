@@ -103,7 +103,7 @@ function Entregas({ consumos, zeroMeta }) {
       <div style={s.note} role="note">
         Unidades entregadas según las solicitudes de Zero. El valor en soles aún no se puede calcular: SeaFácil no expone el costo del producto, así que los productos bonificados de Zero se miden en unidades.
         {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && (
-          <> Se excluyen {fmtInt(zeroMeta.pruebasExcluidas.solicitudes)} solicitudes de prueba (observaciones como “Prueba, no atender” o “Test, no atender”): {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
+          <> No se consideran las pruebas: {fmtInt(zeroMeta.pruebasExcluidas.porObservaciones.solicitudes)} solicitudes con observaciones como “Prueba, no atender”, {fmtInt(zeroMeta.pruebasExcluidas.deTI.solicitudes)} solicitudes de Gonzalo Laqui y Andree Mungi (TI) y {fmtInt(zeroMeta.pruebasExcluidas.sinSolicitud.items)} ítems sin solicitud de las primeras pruebas. En total {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
         )}
       </div>
 

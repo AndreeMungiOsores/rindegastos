@@ -66,6 +66,16 @@ export function esSolicitudDePrueba(observaciones) {
   return false;
 }
 
+/**
+ * Todas las solicitudes del equipo de TI (Gonzalo Laqui y Andree Mungi) fueron pruebas: no se consideran.
+ * Se detecta por el solicitante o por su correo (gonzalo@blisscorp.lat / .pe y ti@blisscorp.lat).
+ */
+export function esSolicitudDeTI(solicitud) {
+  const quien = norm(solicitud?.crb7e_solicitante);
+  const correo = String(solicitud?.crb7e_email || '').toLowerCase();
+  return quien === 'gonzalo laqui' || quien === 'andree mungi' || /^gonzalo@/.test(correo) || /^ti@/.test(correo);
+}
+
 /** Tipo de destinatario cuando solo se conoce la categoría del sistema anterior (dDestinatarios). */
 function tipoDesdeCategoriaLegado(cat) {
   const c = norm(cat);
@@ -79,7 +89,7 @@ function tipoDesdeCategoriaLegado(cat) {
 async function cargarZero() {
   const [items, solicitudes, productos, contactos, legado] = await Promise.all([
     dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
-    dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_observaciones'),
+    dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_email,crb7e_observaciones'),
     dvGetAll('sistemas', 'crb7e_producto1s?$select=crb7e_producto1id,crb7e_nombredelproducto,crb7e_sku,crb7e_marca,crb7e_tipodeproducto'),
     dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra'),
     // Sistema anterior de destinatarios (antes de Contactos Maestro); se conserva como historial.
@@ -134,23 +144,41 @@ async function cargarZero() {
   const cruceCache = new Map();
 
   const meta = {
-    pruebasExcluidas: { solicitudes: 0, items: 0, unidades: 0 },
+    // Pruebas que no se consideran: por observaciones ("Prueba, no atender"), solicitudes del equipo de TI (Gonzalo Laqui y Andree Mungi) y
+    // ítems sin solicitud (de las primeras pruebas de Zero, cuando aún no se hacía el vínculo).
+    pruebasExcluidas: {
+      solicitudes: 0, items: 0, unidades: 0,
+      porObservaciones: { solicitudes: 0, items: 0, unidades: 0 },
+      deTI: { solicitudes: 0, items: 0, unidades: 0 },
+      sinSolicitud: { items: 0, unidades: 0 }
+    },
     legado: { items: 0, unidades: 0, porMetodo: { documento: 0, nombre: 0, ambiguo: 0, sin_coincidencia: 0 }, destinatarios: new Map() },
     sinVinculo: { desde: null, hasta: null, items: 0 },
     conVinculo: { desde: null, hasta: null, items: 0 }
   };
-  const refsPrueba = new Set();
-  for (const s of solicitudes) if (esSolicitudDePrueba(s.crb7e_observaciones)) refsPrueba.add(s.crb7e_referenciasolicitud);
-  meta.pruebasExcluidas.solicitudes = refsPrueba.size;
+  const refsObservaciones = new Set();
+  const refsTI = new Set();
+  for (const s of solicitudes) {
+    if (esSolicitudDePrueba(s.crb7e_observaciones)) refsObservaciones.add(s.crb7e_referenciasolicitud);
+    else if (esSolicitudDeTI(s)) refsTI.add(s.crb7e_referenciasolicitud);
+  }
+  meta.pruebasExcluidas.porObservaciones.solicitudes = refsObservaciones.size;
+  meta.pruebasExcluidas.deTI.solicitudes = refsTI.size;
+  meta.pruebasExcluidas.solicitudes = refsObservaciones.size + refsTI.size;
 
   const filas = [];
   for (const it of items) {
     const unidades = Number(it.crb7e_cantidad) || 0;
-    if (refsPrueba.has(it.crb7e_referenciasolicitud)) {
+    const ref = it.crb7e_referenciasolicitud;
+    const excluir = (grupo) => {
+      grupo.items++;
+      grupo.unidades += unidades;
       meta.pruebasExcluidas.items++;
       meta.pruebasExcluidas.unidades += unidades;
-      continue;
-    }
+    };
+    if (!ref || !solPorRef.has(ref)) { excluir(meta.pruebasExcluidas.sinSolicitud); continue; }
+    if (refsObservaciones.has(ref)) { excluir(meta.pruebasExcluidas.porObservaciones); continue; }
+    if (refsTI.has(ref)) { excluir(meta.pruebasExcluidas.deTI); continue; }
     const sol = solPorRef.get(it.crb7e_referenciasolicitud) || null;
     const prod = prodPorId.get(it._crb7e_producto_value)
       || (it.crb7e_sku && prodPorSku.get(norm(it.crb7e_sku)))
