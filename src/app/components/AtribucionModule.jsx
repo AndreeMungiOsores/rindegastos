@@ -247,6 +247,15 @@ function AtribuirModal({ filas, onClose, onGuardado }) {
     fetch(`/api/atribucion/historial?key=${encodeURIComponent(unico.key)}`).then(r => r.json()).then(j => setHistorial(j.success ? j.historial : [])).catch(() => setHistorial([]));
   }, [unico]);
 
+  const sugerencia = unico?.estado === 'pendiente' ? unico.sugerencia : null;
+  const usarSugerencia = () => {
+    if (!sugerencia) return;
+    if (sugerencia.destino) setDestino(sugerencia.destino);
+    const contacto = sugerencia.contactoId && maestro?.contactos.find(x => x.id === sugerencia.contactoId);
+    setSeleccion(contacto ? [contacto] : []);
+    setMarcas((sugerencia.marcas || []).filter(m => m !== 'Blisscorp / Corporativo'));
+  };
+
   const esComercial = destino === 'Médico' || destino === 'Centro médico';
   const opciones = useMemo(() => {
     if (!maestro || !esComercial) return [];
@@ -338,6 +347,18 @@ function AtribuirModal({ filas, onClose, onGuardado }) {
           </div>
           <button type="button" onClick={() => !guardando && onClose()} aria-label="Cerrar" style={{ background: 'none', border: 'none', fontSize: '1.4rem', lineHeight: 1, cursor: 'pointer', color: 'var(--text-tertiary)', alignSelf: 'flex-start' }}>&times;</button>
         </div>
+
+        {unico?.viaje?.destino && (
+          <p style={{ margin: '0.6rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+            Viaje: {unico.viaje.origen || '—'} → {unico.viaje.destino}
+          </p>
+        )}
+        {sugerencia && !previo && (
+          <div role="note" style={{ marginTop: '0.7rem', padding: '0.6rem 0.8rem', borderRadius: 8, background: 'var(--status-done-bg)', color: 'var(--status-done-fg)', fontSize: '0.8rem', display: 'flex', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span><strong>Sugerencia ({sugerencia.confianza}):</strong> {sugerencia.razon}</span>
+            <button type="button" className="btn btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '3px 10px' }} onClick={usarSugerencia}>Usar sugerencia</button>
+          </div>
+        )}
 
         <label style={etiqueta}>¿Para quién fue el gasto?</label>
         <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="Destino">
@@ -442,7 +463,7 @@ function Consumos({ consumos, onRecargar }) {
     const q = busqueda.trim().toLowerCase();
     return consumos.filter(c =>
       (!origen || c.origen === origen) &&
-      (!estado || c.estado === estado) &&
+      (!estado || (estado === 'con_sugerencia' ? (c.sugerencia && c.estado === 'pendiente') : c.estado === estado)) &&
       (!mes || c.mes === mes) &&
       (!q || `${c.responsable || ''} ${c.concepto} ${c.destinatario || ''} ${c.marca || ''}`.toLowerCase().includes(q))
     );
@@ -450,7 +471,93 @@ function Consumos({ consumos, onRecargar }) {
 
   useEffect(() => { setLimite(200); }, [origen, estado, mes, busqueda]);
 
+  const [aplicando, setAplicando] = useState(null); // { hecho, total } mientras se guardan sugerencias
+  const [avisoSug, setAvisoSug] = useState('');
+
+  const exportarExcel = async (filas) => {
+    const ExcelJS = await import('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Consumos');
+    const sugerenciaTxt = (c) => (c.sugerencia ? `${c.sugerencia.destino || 'Sin destino'}${c.sugerencia.contactoNombre ? `: ${c.sugerencia.contactoNombre}` : ''}${c.sugerencia.marcas?.length ? ` · ${c.sugerencia.marcas.join(', ')}` : ''}` : '');
+    ws.addTable({
+      name: 'ConsumosAtribucion', ref: 'A1', headerRow: true, totalsRow: false,
+      style: { theme: 'TableStyleMedium2', showRowStripes: true },
+      columns: ['Origen', 'Fecha', 'Responsable', 'Concepto', 'Importe (S/)', 'Unidades', 'Destinatario', 'Tipo de destinatario', 'Marca', 'Estado', 'Días pendiente', 'Sugerencia', 'Confianza de la sugerencia', 'Atribuido por'].map(name => ({ name, filterButton: true })),
+      rows: filas.map(c => [
+        c.origen, c.fecha || '', c.responsable || '', c.concepto, c.importe ?? '', c.unidades ?? '',
+        c.destinatario || '', c.destinatarioTipo || '', c.marca || '', (ESTADOS[c.estado] || ESTADOS.pendiente).label,
+        c.estado === 'pendiente' ? (diasDesde(c.fecha) ?? '') : '', sugerenciaTxt(c), c.sugerencia?.confianza || '', c.atribucion?.atribuidoPor || ''
+      ])
+    });
+    ws.eachRow((row, n) => { if (n > 1) row.getCell(5).numFmt = '#,##0.00'; });
+    ws.columns.forEach(col => {
+      let max = 0;
+      col.eachCell({ includeEmpty: true }, cell => { const v = cell.value ? cell.value.toString() : ''; if (v.length > max) max = v.length; });
+      col.width = Math.min(Math.max(max + 3, 12), 60);
+    });
+    const buffer = await wb.xlsx.writeBuffer();
+    const url = window.URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Atribucion_Consumos_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  /** Guarda como Provisional la sugerencia de cada consumo; los que tienen la misma sugerencia se envían juntos. */
+  const aplicarSugerencias = async (filas) => {
+    const aplicables = filas.filter(c => c.estado === 'pendiente' && c.sugerencia?.aplicable);
+    if (aplicables.length === 0) return;
+    const grupos = new Map();
+    for (const c of aplicables) {
+      const sg = c.sugerencia;
+      const firma = [sg.destino, sg.contactoId || '', [...sg.marcas].sort().join('|')].join('::');
+      if (!grupos.has(firma)) grupos.set(firma, { sg, keys: [] });
+      grupos.get(firma).keys.push(c.key);
+    }
+    const corporativos = aplicables.filter(c => c.sugerencia.destino === 'Corporativo').length;
+    if (!window.confirm(`Se guardarán ${aplicables.length} atribuciones como Provisional según la sugerencia: ${corporativos} como Corporativo y ${aplicables.length - corporativos} con médico o centro y marca. Podrás revisarlas y cambiarlas después. ¿Continuar?`)) return;
+    let autor = '';
+    try { autor = localStorage.getItem('atribucion_autor') || ''; } catch { /* sin almacenamiento */ }
+    if (!autor.trim()) autor = (window.prompt('¿Quién registra estas atribuciones? (tu nombre)') || '').trim();
+    if (!autor) return;
+    try { localStorage.setItem('atribucion_autor', autor); } catch { /* sin almacenamiento */ }
+
+    setAvisoSug('');
+    setAplicando({ hecho: 0, total: aplicables.length });
+    let hecho = 0;
+    const errores = [];
+    try {
+      for (const { sg, keys } of grupos.values()) {
+        for (let i = 0; i < keys.length; i += LOTE) {
+          const lote = keys.slice(i, i + LOTE);
+          const res = await fetch('/api/atribucion/guardar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              keys: lote, destino: sg.destino, contactoIds: sg.contactoId ? [sg.contactoId] : [], marcas: sg.destino === 'Corporativo' ? [] : sg.marcas,
+              estado: 'Provisional', motivo: 'Sugerencia automática aceptada', autor
+            })
+          });
+          const j = await res.json();
+          if (!res.ok || !j.success) throw new Error(j.error || 'No se pudo guardar');
+          errores.push(...(j.errores || []));
+          hecho += lote.length;
+          setAplicando({ hecho, total: aplicables.length });
+        }
+      }
+      setAvisoSug(errores.length ? `Se guardaron ${hecho - errores.length} de ${aplicables.length}. Fallaron ${errores.length}: ${errores[0].error}` : `Se guardaron ${aplicables.length} atribuciones como Provisional.`);
+    } catch (e) {
+      setAvisoSug(`Se guardaron ${hecho} de ${aplicables.length} antes del error: ${e.message}`);
+    } finally {
+      setAplicando(null);
+      setSeleccionados(new Set());
+      onRecargar();
+    }
+  };
+
   const atribuibles = useMemo(() => filtrados.filter(esAtribuible), [filtrados]);
+  const seleccionConSugerencia = useMemo(() => consumos.filter(c => seleccionados.has(c.key) && c.estado === 'pendiente' && c.sugerencia?.aplicable), [consumos, seleccionados]);
   const filasSeleccionadas = useMemo(() => consumos.filter(c => seleccionados.has(c.key)), [consumos, seleccionados]);
   const todosMarcados = atribuibles.length > 0 && atribuibles.every(c => seleccionados.has(c.key));
   const alternarTodos = () => setSeleccionados(todosMarcados ? new Set() : new Set(atribuibles.map(c => c.key)));
@@ -480,11 +587,13 @@ function Consumos({ consumos, onRecargar }) {
         <select style={s.select} value={estado} onChange={e => setEstado(e.target.value)} aria-label="Estado">
           <option value="">Todos los estados</option>
           {Object.entries(ESTADOS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          <option value="con_sugerencia">Pendientes con sugerencia</option>
         </select>
         <select style={s.select} value={mes} onChange={e => setMes(e.target.value)} aria-label="Mes">
           <option value="">Todos los meses</option>
           {meses.map(m => <option key={m} value={m}>{fmtMes(m)}</option>)}
         </select>
+        <button type="button" className="btn btn-secondary" onClick={() => exportarExcel(filtrados)} disabled={filtrados.length === 0} title="Descarga a Excel todos los consumos que cumplen los filtros">Exportar Excel</button>
       </div>
 
       <div className="kpis-grid">
@@ -494,10 +603,16 @@ function Consumos({ consumos, onRecargar }) {
         <div className="kpi-card"><span className="kpi-label">Unidades (Zero)</span><span className="kpi-value">{fmtInt(kpi.unidades)}</span><span className="kpi-sub">productos entregados</span></div>
       </div>
 
+      {avisoSug && <div style={s.note} role="status">{avisoSug}</div>}
       {seleccionados.size > 0 && (
         <div style={{ ...s.note, display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }} role="status">
           <strong>{fmtInt(seleccionados.size)} seleccionados</strong>
           <button type="button" className="btn" style={{ backgroundColor: 'var(--navy-900, #0E2A43)', color: '#fff', fontWeight: 600 }} onClick={() => setAtribuyendo(filasSeleccionadas)}>Atribuir seleccionados</button>
+          {seleccionConSugerencia.length > 0 && (
+            <button type="button" className="btn btn-secondary" onClick={() => aplicarSugerencias(filasSeleccionadas)} disabled={!!aplicando} title="Guarda como Provisional la sugerencia de cada consumo seleccionado que la tenga completa">
+              {aplicando ? `Guardando ${fmtInt(aplicando.hecho)} de ${fmtInt(aplicando.total)}…` : `Aplicar sugerencias (${fmtInt(seleccionConSugerencia.length)})`}
+            </button>
+          )}
           <button type="button" className="btn btn-secondary" onClick={() => setSeleccionados(new Set())}>Quitar selección</button>
           <span style={{ fontSize: '0.78rem' }}>Se guarda la misma atribución en todos; cada cambio queda en el historial.</span>
         </div>
@@ -516,6 +631,7 @@ function Consumos({ consumos, onRecargar }) {
               <th style={s.th}>Destinatario</th>
               <th style={s.th}>Marca</th>
               <th style={s.th}>Estado</th>
+              <th style={s.th}>Sugerencia</th>
               <th style={{ ...s.th, ...s.num }}>Días</th>
               <th style={s.th}></th>
             </tr>
@@ -534,12 +650,19 @@ function Consumos({ consumos, onRecargar }) {
                   <td style={{ ...s.td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.destinatario ? `${c.destinatario} (${c.destinatarioTipo})` : ''}>{c.destinatario || '—'}</td>
                   <td style={s.td}>{c.marca || '—'}</td>
                   <td style={s.td}><EstadoPill estado={c.estado} /></td>
+                  <td style={{ ...s.td, maxWidth: 230, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.sugerencia ? `${c.sugerencia.razon} (confianza ${c.sugerencia.confianza})` : ''}>
+                    {c.sugerencia && c.estado === 'pendiente' ? (
+                      <span style={s.pill(c.sugerencia.confianza === 'baja' ? 'var(--status-neutral-fg)' : 'var(--status-done-fg)', c.sugerencia.confianza === 'baja' ? 'var(--status-neutral-bg)' : 'var(--status-done-bg)')}>
+                        {c.sugerencia.destino || 'Marca'}{c.sugerencia.contactoNombre ? `: ${c.sugerencia.contactoNombre}` : ''}{c.sugerencia.marcas?.length ? ` · ${c.sugerencia.marcas.join(', ')}` : ''}
+                      </span>
+                    ) : ''}
+                  </td>
                   <td style={{ ...s.td, ...s.num }}>{dias != null ? dias : ''}</td>
                   <td style={s.td}>{esAtribuible(c) && <button type="button" className="btn btn-secondary" style={{ fontSize: '0.72rem', padding: '2px 10px' }} onClick={() => setAtribuyendo([c])}>{c.atribucion ? 'Editar' : 'Atribuir'}</button>}</td>
                 </tr>
               );
             })}
-            {filtrados.length === 0 && <tr><td style={s.td} colSpan={11}>No hay consumos para los filtros elegidos.</td></tr>}
+            {filtrados.length === 0 && <tr><td style={s.td} colSpan={12}>No hay consumos para los filtros elegidos.</td></tr>}
           </tbody>
         </table>
       </div>

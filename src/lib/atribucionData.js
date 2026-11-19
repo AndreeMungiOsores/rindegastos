@@ -11,7 +11,8 @@
  */
 import { dvGetAll, FV } from './dataverseEnv.js';
 import { getJourneysFromSupabase } from './cabifyClient.js';
-import { leerAtribuciones } from './atribucionStore.js';
+import { leerAtribuciones, cargarMaestro } from './atribucionStore.js';
+import { crearSugeridor, claveDestino } from './cabifySugerencias.js';
 
 const SIN_DESTINATARIO_INVALIDO = new Set(['no', 'n', 'na', 'n/a', 'ninguno', 'ninguna', 'nada', 'sin', '-', '.', 'x']);
 
@@ -331,8 +332,29 @@ async function cargarCabify() {
     const res = await getJourneysFromSupabase({ from: `${anio}-${mm}-01`, to: `${anio}-${mm}-${String(ultimo).padStart(2, '0')}` });
     journeys.push(...(res?.journeys || []));
   }
+  // Sugerencias de atribución (solo proponen; si algo falla, la lista se muestra igual sin ellas).
+  let sugerir = () => null;
+  try {
+    const [maestro, direcciones] = await Promise.all([
+      cargarMaestro(),
+      dvGetAll('sistemas', 'crb7e_direccionesmaestras?$select=crb7e_direccion,_crb7e_contacto_value,crb7e_sede')
+    ]);
+    const conteo = new Map();
+    for (const j of journeys) { const k = claveDestino(j.destination); if (k) conteo.set(k, (conteo.get(k) || 0) + 1); }
+    const destinosFrecuentes = new Set([...conteo].filter(([, n]) => n >= 20).map(([k]) => k));
+    sugerir = crearSugeridor({
+      direcciones: direcciones.map(d => ({ direccion: d.crb7e_direccion, contactoId: d._crb7e_contacto_value, sede: d.crb7e_sede })),
+      contactos: maestro.contactos,
+      marcasCatalogo: maestro.marcas,
+      destinosFrecuentes
+    });
+  } catch (e) {
+    console.error('[Atribucion] No se pudieron preparar las sugerencias de Cabify:', e.message);
+  }
+
   return journeys.map(j => {
     const fecha = ymLima(j.startAt) || ymd(j.invoiceDate);
+    const sug = sugerir(j);
     return {
       key: `CAB:${j.id}`,
       origen: 'Cabify',
@@ -350,6 +372,9 @@ async function cargarCabify() {
       tipoProducto: null,
       empresa: null,
       estadoOrigen: j.ticketCode || null,
+      viaje: { origen: j.origin || null, destino: j.destination || null },
+      // Una sugerencia es "aplicable" cuando ya se podría guardar tal cual (Corporativo, o contacto más marca).
+      sugerencia: sug ? { ...sug, aplicable: sug.destino === 'Corporativo' || (!!sug.contactoId && sug.marcas.length > 0) } : null,
       estado: 'pendiente',
       falta: ['destinatario', 'marca']
     };
@@ -392,6 +417,7 @@ export async function cargarConsumos() {
       c.marca = g.marcas.map(m => m.marca).join(', ') || null;
       c.estado = g.estado === 'Validado' ? 'validado' : 'provisional';
       c.falta = [];
+      c.sugerencia = null;
     }
     fuentes.atribuciones = { ok: true, filas: guardadas.size };
   } catch (e) {
