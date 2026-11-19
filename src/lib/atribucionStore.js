@@ -4,9 +4,9 @@
  * Se guardan en tablas propias del Entorno de Sistemas (solución "Atribución de Costos", prefijo crb7e_atr*):
  *  - crb7e_atrconsumo: un consumo (gasto de RindeGastos o ticket de Cabify) con su destino y estado.
  *  - crb7e_atrconsumodestinatario: los médicos (varios) o el centro (uno) vinculados a Contactos Maestro.
- *  - crb7e_atrconsumomarca: las marcas involucradas. No implica reparto de importe.
+ *  - crb7e_atrconsumomarca: las marcas involucradas. El importe se reparte en partes iguales entre las marcas (y, aparte, entre los destinatarios): ver atribucionReparto.js.
  *  - crb7e_atrhistorial: quién, cuándo, valor anterior y nuevo en cada cambio.
- * La tabla crb7e_atrasignacion (reparto en soles) existe pero no se usa hasta que se defina la regla de distribución.
+ * La tabla crb7e_atrasignacion no se usa: el reparto en soles se calcula al leer (partes iguales) y no se guarda.
  */
 import { dvGetAll, dvCrear, dvActualizar, dvEliminar, FV } from './dataverseEnv.js';
 

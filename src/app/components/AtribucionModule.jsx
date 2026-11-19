@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { lineasDeReparto, totalesPorBeneficiario, SIN_DESTINATARIO, SIN_MARCA } from '../../lib/atribucionReparto.js';
 
 /**
  * Centro de Atribución de Costos — fase 1 (solo lectura).
@@ -10,6 +11,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 const TABS = [
   { id: 'entregas', label: 'Entregas por médico y marca' },
+  { id: 'reparto', label: 'Reparto de costos' },
   { id: 'consumos', label: 'Consumos y pendientes' },
   { id: 'calidad', label: 'Calidad del dato' }
 ];
@@ -103,7 +105,7 @@ function Entregas({ consumos, zeroMeta }) {
   return (
     <>
       <div style={s.note} role="note">
-        Unidades entregadas según las solicitudes de Zero. El valor en soles aún no se puede calcular: SeaFácil no expone el costo del producto, así que los productos bonificados de Zero se miden en unidades.
+        Unidades entregadas según las solicitudes de Zero. El valor en soles es una aproximación: cada unidad se valoriza con el precio de venta promedio sin IGV de SeaFácil (últimos 12 meses), porque los bonificados no tienen costo ni precio pagado registrado.
         {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && (
           <> No se consideran las pruebas: {fmtInt(zeroMeta.pruebasExcluidas.porObservaciones.solicitudes)} solicitudes con observaciones como “Prueba, no atender”, {fmtInt(zeroMeta.pruebasExcluidas.deTI.solicitudes)} solicitudes de Gonzalo Laqui y Andree Mungi (TI) y {fmtInt(zeroMeta.pruebasExcluidas.sinSolicitud.items)} ítems sin solicitud de las primeras pruebas. En total {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
         )}
@@ -136,6 +138,7 @@ function Entregas({ consumos, zeroMeta }) {
         <div className="kpi-card"><span className="kpi-label">Con destinatario</span><span className="kpi-value">{pct(resumen.total - resumen.sinDest, resumen.total)}%</span><span className="kpi-sub">{fmtInt(resumen.total - resumen.sinDest)} de {fmtInt(resumen.total)} unidades</span></div>
         <div className="kpi-card"><span className="kpi-label">Médicos alcanzados</span><span className="kpi-value">{fmtInt(resumen.medicos)}</span><span className="kpi-sub">{fmtInt(resumen.filas.length)} destinatarios distintos</span></div>
         <div className="kpi-card"><span className="kpi-label">Sin destinatario</span><span className="kpi-value">{fmtInt(resumen.sinDest)}</span><span className="kpi-sub">unidades sin a quién atribuir</span></div>
+        <div className="kpi-card"><span className="kpi-label">Valor aproximado sin IGV</span><span className="kpi-value">{fmtMoney(filtrados.reduce((a, c) => a + (c.importe || 0), 0))}</span><span className="kpi-sub">{fmtInt(filtrados.filter(c => c.importe == null).reduce((a, c) => a + (c.unidades || 0), 0))} unidades sin precio</span></div>
       </div>
 
       <section style={s.card} aria-label="Unidades por marca">
@@ -482,11 +485,11 @@ function Consumos({ consumos, onRecargar }) {
     ws.addTable({
       name: 'ConsumosAtribucion', ref: 'A1', headerRow: true, totalsRow: false,
       style: { theme: 'TableStyleMedium2', showRowStripes: true },
-      columns: ['Origen', 'Fecha', 'Responsable', 'Concepto', 'Importe (S/)', 'Unidades', 'Destinatario', 'Tipo de destinatario', 'Marca', 'Estado', 'Días pendiente', 'Sugerencia', 'Confianza de la sugerencia', 'Atribuido por'].map(name => ({ name, filterButton: true })),
+      columns: ['Origen', 'Fecha', 'Responsable', 'Concepto', 'Importe sin IGV (S/)', 'Unidades', 'Destinatario', 'Tipo de destinatario', 'Marca', 'Estado', 'Días pendiente', 'Sugerencia', 'Confianza de la sugerencia', 'Atribuido por', 'Cómo se calculó el importe'].map(name => ({ name, filterButton: true })),
       rows: filas.map(c => [
         c.origen, c.fecha || '', c.responsable || '', c.concepto, c.importe ?? '', c.unidades ?? '',
         c.destinatario || '', c.destinatarioTipo || '', c.marca || '', (ESTADOS[c.estado] || ESTADOS.pendiente).label,
-        c.estado === 'pendiente' ? (diasDesde(c.fecha) ?? '') : '', sugerenciaTxt(c), c.sugerencia?.confianza || '', c.atribucion?.atribuidoPor || ''
+        c.estado === 'pendiente' ? (diasDesde(c.fecha) ?? '') : '', sugerenciaTxt(c), c.sugerencia?.confianza || '', c.atribucion?.atribuidoPor || '', VALORIZACION[c.valorizacion] || ''
       ])
     });
     ws.eachRow((row, n) => { if (n > 1) row.getCell(5).numFmt = '#,##0.00'; });
@@ -599,7 +602,7 @@ function Consumos({ consumos, onRecargar }) {
       <div className="kpis-grid">
         <div className="kpi-card"><span className="kpi-label">Consumos</span><span className="kpi-value">{fmtInt(filtrados.length)}</span><span className="kpi-sub">según los filtros</span></div>
         <div className="kpi-card"><span className="kpi-label">Pendientes</span><span className="kpi-value">{fmtInt(kpi.pendientes)}</span><span className="kpi-sub">{pct(kpi.pendientes, filtrados.length)}% sin destinatario y/o marca</span></div>
-        <div className="kpi-card"><span className="kpi-label">Importe en soles</span><span className="kpi-value">{fmtMoney(kpi.importe)}</span><span className="kpi-sub">{fmtMoney(kpi.importePend)} en pendientes · RindeGastos y Cabify</span></div>
+        <div className="kpi-card"><span className="kpi-label">Importe sin IGV</span><span className="kpi-value">{fmtMoney(kpi.importe)}</span><span className="kpi-sub">{fmtMoney(kpi.importePend)} en pendientes · Zero a precio de venta</span></div>
         <div className="kpi-card"><span className="kpi-label">Unidades (Zero)</span><span className="kpi-value">{fmtInt(kpi.unidades)}</span><span className="kpi-sub">productos entregados</span></div>
       </div>
 
@@ -646,7 +649,7 @@ function Consumos({ consumos, onRecargar }) {
                   <td style={s.td}>{fmtDate(c.fecha)}</td>
                   <td style={{ ...s.td, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.responsable || ''}>{c.responsable || '—'}</td>
                   <td style={{ ...s.td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${c.categoria} · ${c.concepto}`}>{c.concepto}</td>
-                  <td style={{ ...s.td, ...s.num }}>{c.importe != null ? fmtMoney(c.importe) : `${fmtInt(c.unidades)} u.`}</td>
+                  <td style={{ ...s.td, ...s.num }} title={c.valorizacion ? `Sin IGV. ${VALORIZACION[c.valorizacion] || ''}${c.precioUnitario ? ` (precio unitario ${fmtMoney(c.precioUnitario)})` : ''}` : ''}>{c.origen === 'Zero' ? `${fmtInt(c.unidades)} u. · ${c.importe != null ? fmtMoney(c.importe) : 'sin precio'}` : fmtMoney(c.importe)}</td>
                   <td style={{ ...s.td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.destinatario ? `${c.destinatario} (${c.destinatarioTipo})` : ''}>{c.destinatario || '—'}</td>
                   <td style={s.td}>{c.marca || '—'}</td>
                   <td style={s.td}><EstadoPill estado={c.estado} /></td>
@@ -677,6 +680,191 @@ function Consumos({ consumos, onRecargar }) {
         <div style={{ ...s.controls, justifyContent: 'center' }}>
           <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Mostrando {fmtInt(limite)} de {fmtInt(filtrados.length)}</span>
           <button type="button" className="btn btn-secondary" onClick={() => setLimite(l => l + 300)}>Ver más</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ─────────────────────────── Pestaña: Reparto de costos ─────────────────────────── */
+const VALORIZACION = {
+  igv_declarado: 'Total menos el IGV registrado en el gasto',
+  igv_estimado: 'Total entre 1.18 (no trae el IGV desglosado)',
+  precio_venta: 'Unidades por el precio de venta promedio sin IGV (SeaFácil, 12 meses); aún no hay costo real',
+  sin_precio: 'Sin precio en SeaFácil: no se puede valorizar'
+};
+
+function Reparto({ consumos, zeroMeta }) {
+  const [vista, setVista] = useState('destinatario');
+  const [mes, setMes] = useState('');
+  const [origen, setOrigen] = useState('');
+  const [tipo, setTipo] = useState('');
+  const [busqueda, setBusqueda] = useState('');
+  const [abierto, setAbierto] = useState(null);
+  const [limite, setLimite] = useState(100);
+
+  const meses = useMemo(() => [...new Set(consumos.map(c => c.mes).filter(Boolean))].sort().reverse(), [consumos]);
+  const base = useMemo(() => consumos.filter(c => (!mes || c.mes === mes) && (!origen || c.origen === origen)), [consumos, mes, origen]);
+  const lineas = useMemo(() => lineasDeReparto(base), [base]);
+  const porDest = useMemo(() => totalesPorBeneficiario(lineas, 'destinatario'), [lineas]);
+  const porMarca = useMemo(() => totalesPorBeneficiario(lineas, 'marca'), [lineas]);
+
+  const totalImporte = useMemo(() => base.reduce((a, c) => a + (c.importe || 0), 0), [base]);
+  const sinValor = useMemo(() => base.filter(c => c.importe == null), [base]);
+  const sumDest = porDest.reduce((a, f) => a + f.total, 0);
+  const sumMarca = porMarca.reduce((a, f) => a + f.total, 0);
+  const sinDest = porDest.find(f => f.beneficiario === SIN_DESTINATARIO)?.total || 0;
+  const sinMarca = porMarca.find(f => f.beneficiario === SIN_MARCA)?.total || 0;
+
+  const tipos = useMemo(() => [...new Set(porDest.map(f => f.tipo).filter(Boolean))].sort(), [porDest]);
+  const filas = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    const lista = vista === 'destinatario' ? porDest.filter(f => !tipo || f.tipo === tipo) : porMarca;
+    return lista.filter(f => !q || f.beneficiario.toLowerCase().includes(q));
+  }, [vista, porDest, porMarca, tipo, busqueda]);
+  useEffect(() => { setLimite(100); setAbierto(null); }, [vista, mes, origen, tipo, busqueda]);
+
+  const detalle = useMemo(() => (abierto ? lineas.filter(l => l.vista === vista && l.beneficiario === abierto).sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))) : []), [abierto, lineas, vista]);
+
+  const exportarExcel = async () => {
+    const ExcelJS = await import('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const hoja = (nombre, tabla, columnas, filasHoja, numCols) => {
+      const ws = wb.addWorksheet(nombre);
+      ws.addTable({ name: tabla, ref: 'A1', headerRow: true, totalsRow: false, style: { theme: 'TableStyleMedium2', showRowStripes: true }, columns: columnas.map(n => ({ name: n, filterButton: true })), rows: filasHoja.length ? filasHoja : [columnas.map(() => '')] });
+      ws.eachRow((row, n) => { if (n > 1) numCols.forEach(i => { row.getCell(i).numFmt = '#,##0.00'; }); });
+      ws.columns.forEach(col => {
+        let max = 0;
+        col.eachCell({ includeEmpty: true }, cell => { const v = cell.value ? cell.value.toString() : ''; if (v.length > max) max = v.length; });
+        col.width = Math.min(Math.max(max + 3, 12), 60);
+      });
+    };
+    const r2 = n => Math.round(n * 100) / 100;
+    hoja('Médicos y centros', 'RepartoDestinatarios', ['Destinatario', 'Tipo', 'Consumos', 'Zero (S/)', 'RindeGastos (S/)', 'Cabify (S/)', 'Total (S/)'],
+      porDest.map(f => [f.beneficiario, f.tipo || '', f.consumos, r2(f.porOrigen.Zero || 0), r2(f.porOrigen.RindeGastos || 0), r2(f.porOrigen.Cabify || 0), r2(f.total)]), [4, 5, 6, 7]);
+    hoja('Marcas', 'RepartoMarcas', ['Marca', 'Consumos', 'Zero (S/)', 'RindeGastos (S/)', 'Cabify (S/)', 'Total (S/)'],
+      porMarca.map(f => [f.beneficiario, f.consumos, r2(f.porOrigen.Zero || 0), r2(f.porOrigen.RindeGastos || 0), r2(f.porOrigen.Cabify || 0), r2(f.total)]), [3, 4, 5, 6]);
+    hoja('Detalle del reparto', 'RepartoDetalle', ['Origen', 'Fecha', 'Mes', 'Responsable', 'Concepto', 'Vista', 'Beneficiario', 'Tipo', 'Importe del consumo (S/)', 'Partes iguales', 'Parte (S/)', 'Sin importe'],
+      lineas.map(l => [l.origen, l.fecha || '', l.mes || '', l.responsable || '', l.concepto, l.vista === 'destinatario' ? 'Médico / centro' : 'Marca', l.beneficiario, l.tipo || '', r2(l.importe), l.partes, r2(l.parte), l.sinImporte ? 'Sí' : '']), [9, 11]);
+    const buffer = await wb.xlsx.writeBuffer();
+    const url = window.URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Atribucion_Reparto_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const esDest = vista === 'destinatario';
+  const totalVista = esDest ? sumDest : sumMarca;
+  const columnas = esDest ? 8 : 7;
+
+  return (
+    <>
+      <div style={s.note} role="note">
+        Regla de reparto: el importe de cada consumo se divide en <strong>partes iguales</strong>, y lo hace dos veces por separado. Entre médicos y clínicas por un lado, y entre marcas por el otro; no se suman ni se reparten entre sí, así que cada vista suma el 100% del importe.
+        Ejemplo: S/ 100 con 4 médicos son S/ 25 por médico, y con 3 marcas son S/ 33.33 por marca. Los importes van sin IGV; para Zero es el precio de venta, porque todavía no hay costo real.
+      </div>
+
+      <div style={s.controls}>
+        <div role="tablist" aria-label="Vista del reparto" style={{ display: 'inline-flex', border: '1px solid var(--border-default)', borderRadius: 8, overflow: 'hidden' }}>
+          {[['destinatario', 'Por médico / centro'], ['marca', 'Por marca']].map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={vista === id} onClick={() => setVista(id)}
+              style={{ padding: '0.45rem 0.9rem', border: 'none', cursor: 'pointer', font: 'inherit', fontWeight: 600, background: vista === id ? 'var(--navy-900, #0E2A43)' : 'var(--bg-surface)', color: vista === id ? '#fff' : 'var(--text-primary)' }}>{label}</button>
+          ))}
+        </div>
+        <input className="search-input" style={{ maxWidth: 240 }} placeholder={esDest ? 'Buscar destinatario' : 'Buscar marca'} value={busqueda} onChange={e => setBusqueda(e.target.value)} aria-label="Buscar" />
+        <select style={s.select} value={mes} onChange={e => setMes(e.target.value)} aria-label="Mes">
+          <option value="">Todos los meses</option>
+          {meses.map(m => <option key={m} value={m}>{fmtMes(m)}</option>)}
+        </select>
+        <select style={s.select} value={origen} onChange={e => setOrigen(e.target.value)} aria-label="Origen">
+          <option value="">Todos los orígenes</option>
+          {ORIGENES.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+        {esDest && (
+          <select style={s.select} value={tipo} onChange={e => setTipo(e.target.value)} aria-label="Tipo de destinatario">
+            <option value="">Todos los tipos</option>
+            {tipos.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+        <button type="button" className="btn btn-secondary" onClick={exportarExcel} disabled={lineas.length === 0} title="Descarga las dos vistas y el detalle línea por línea del reparto">Exportar Excel</button>
+      </div>
+
+      <div className="kpis-grid">
+        <div className="kpi-card"><span className="kpi-label">Importe sin IGV</span><span className="kpi-value">{fmtMoney(totalImporte)}</span><span className="kpi-sub">{fmtInt(base.length)} consumos{sinValor.length ? ` · ${fmtInt(sinValor.length)} sin valorizar` : ''}</span></div>
+        <div className="kpi-card"><span className="kpi-label">Repartido a médicos / centros</span><span className="kpi-value">{fmtMoney(sumDest - sinDest)}</span><span className="kpi-sub">{fmtMoney(sinDest)} sin destinatario ({pct(sinDest, sumDest)}%)</span></div>
+        <div className="kpi-card"><span className="kpi-label">Repartido a marcas</span><span className="kpi-value">{fmtMoney(sumMarca - sinMarca)}</span><span className="kpi-sub">{fmtMoney(sinMarca)} sin marca ({pct(sinMarca, sumMarca)}%)</span></div>
+        <div className="kpi-card"><span className="kpi-label">Cuadre</span><span className="kpi-value">{Math.abs(sumDest - totalImporte) < 0.05 && Math.abs(sumMarca - totalImporte) < 0.05 ? 'OK' : 'Revisar'}</span><span className="kpi-sub">cada vista suma el total</span></div>
+      </div>
+
+      {(zeroMeta?.valor?.sinPrecio > 0 || zeroMeta?.valor?.error) && (origen === '' || origen === 'Zero') && (
+        <div style={s.note} role="note">
+          Zero se valoriza con el precio de venta sin IGV de SeaFácil. {zeroMeta.valor.error
+            ? `No se pudieron leer los precios (${zeroMeta.valor.error}); los productos de Zero no tienen importe.`
+            : `${fmtInt(zeroMeta.valor.sinPrecio)} de ${fmtInt(zeroMeta.valor.sinPrecio + zeroMeta.valor.conPrecio)} unidades no tienen precio en SeaFácil y quedan sin importe hasta contar con el costo.`}
+        </div>
+      )}
+
+      <div style={s.tableWrap}>
+        <table style={s.table}>
+          <thead>
+            <tr>
+              <th style={s.th}>{esDest ? 'Médico / centro' : 'Marca'}</th>
+              {esDest && <th style={s.th}>Tipo</th>}
+              <th style={{ ...s.th, ...s.num }}>Consumos</th>
+              {ORIGENES.map(o => <th key={o} style={{ ...s.th, ...s.num }}>{o}</th>)}
+              <th style={{ ...s.th, ...s.num }}>Total sin IGV</th>
+              <th style={{ ...s.th, ...s.num }}>% del total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.slice(0, limite).map(f => {
+              const sin = f.beneficiario === SIN_DESTINATARIO || f.beneficiario === SIN_MARCA;
+              return (
+                <React.Fragment key={f.beneficiario}>
+                  <tr onClick={() => setAbierto(abierto === f.beneficiario ? null : f.beneficiario)} style={{ cursor: 'pointer', background: sin ? 'var(--status-error-bg)' : undefined }} title="Clic para ver los consumos">
+                    <td style={{ ...s.td, fontWeight: sin ? 600 : 400, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{abierto === f.beneficiario ? '▾ ' : '▸ '}{f.beneficiario}</td>
+                    {esDest && <td style={s.td}>{f.tipo || '—'}</td>}
+                    <td style={{ ...s.td, ...s.num }}>{fmtInt(f.consumos)}</td>
+                    {ORIGENES.map(o => <td key={o} style={{ ...s.td, ...s.num }}>{f.porOrigen[o] ? fmtMoney(f.porOrigen[o]) : ''}</td>)}
+                    <td style={{ ...s.td, ...s.num, fontWeight: 600 }}>{fmtMoney(f.total)}</td>
+                    <td style={{ ...s.td, ...s.num, color: 'var(--text-secondary)' }}>{totalVista ? `${((f.total / totalVista) * 100).toFixed(1)}%` : ''}</td>
+                  </tr>
+                  {abierto === f.beneficiario && (
+                    <tr>
+                      <td colSpan={columnas} style={{ ...s.td, background: 'var(--bg-hover)', whiteSpace: 'normal' }}>
+                        <div style={{ maxHeight: 260, overflow: 'auto' }}>
+                          <table style={{ ...s.table, fontSize: '0.8rem' }}>
+                            <thead><tr><th style={s.th}>Fecha</th><th style={s.th}>Origen</th><th style={s.th}>Concepto</th><th style={{ ...s.th, ...s.num }}>Importe</th><th style={{ ...s.th, ...s.num }}>Partes</th><th style={{ ...s.th, ...s.num }}>Le corresponde</th></tr></thead>
+                            <tbody>
+                              {detalle.slice(0, 60).map((l, i) => (
+                                <tr key={`${l.key}-${i}`}>
+                                  <td style={s.td}>{fmtDate(l.fecha)}</td><td style={s.td}>{l.origen}</td>
+                                  <td style={{ ...s.td, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }} title={l.concepto}>{l.concepto}</td>
+                                  <td style={{ ...s.td, ...s.num }}>{l.sinImporte ? 'sin precio' : fmtMoney(l.importe)}</td>
+                                  <td style={{ ...s.td, ...s.num }}>{l.partes}</td>
+                                  <td style={{ ...s.td, ...s.num }}>{l.sinImporte ? '—' : fmtMoney(l.parte)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {detalle.length > 60 && <div style={{ padding: '0.4rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Mostrando 60 de {fmtInt(detalle.length)}. El Excel trae el detalle completo.</div>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {filas.length === 0 && <tr><td style={s.td} colSpan={columnas}>No hay datos para los filtros elegidos.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {filas.length > limite && (
+        <div style={{ ...s.controls, justifyContent: 'center' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Mostrando {fmtInt(limite)} de {fmtInt(filas.length)}</span>
+          <button type="button" className="btn btn-secondary" onClick={() => setLimite(l => l + 200)}>Ver más</button>
         </div>
       )}
     </>
@@ -717,7 +905,7 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
       <div className="kpis-grid">
         <div className="kpi-card"><span className="kpi-label">Consumos analizados</span><span className="kpi-value">{fmtInt(total)}</span><span className="kpi-sub">Zero, RindeGastos y Cabify</span></div>
         <div className="kpi-card"><span className="kpi-label">Atribución completa</span><span className="kpi-value">{pct(completos, total)}%</span><span className="kpi-sub">{fmtInt(completos)} con destinatario del maestro y marca</span></div>
-        <div className="kpi-card"><span className="kpi-label">Soles sin atribuir</span><span className="kpi-value">{fmtMoney(porOrigen.reduce((a, o) => a + o.importePend, 0))}</span><span className="kpi-sub">RindeGastos y Cabify pendientes</span></div>
+        <div className="kpi-card"><span className="kpi-label">Soles sin atribuir (sin IGV)</span><span className="kpi-value">{fmtMoney(porOrigen.reduce((a, o) => a + o.importePend, 0))}</span><span className="kpi-sub">pendientes de los tres orígenes</span></div>
         <div className="kpi-card"><span className="kpi-label">Pendientes de más de 30 días</span><span className="kpi-value">{fmtInt(porOrigen.reduce((a, o) => a + o.viejos, 0))}</span><span className="kpi-sub">consumos con retraso</span></div>
       </div>
 
@@ -781,11 +969,12 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
         <section style={s.card} aria-label="Sistema anterior de destinatarios">
           <h3 style={s.h3}>Zero: destinatarios del sistema anterior (dDestinatarios)</h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem' }}>
-            {fmtInt(zeroMeta.legado.items)} ítems ({fmtInt(zeroMeta.legado.unidades)} unidades) se registraron con el sistema anterior, no con Contactos Maestro. Se buscó a cada destinatario en Contactos Maestro, primero por documento y luego por nombre. Es solo una propuesta: no se ha guardado ningún vínculo en Dataverse.
+            {fmtInt(zeroMeta.legado.items)} ítems ({fmtInt(zeroMeta.legado.unidades)} unidades) se registraron con el sistema anterior, no con Contactos Maestro. Se buscó a cada destinatario en Contactos Maestro, primero por documento y luego por nombre. Gonzalo revisó la lista: los cruces se aplican aquí al leer los datos, salvo cuando el contacto tiene CMP, RUC, nombre comercial o descuento (parece médico o centro), que quedan para revisión. No se modifica Zero.
           </p>
           {[
             ['documento', 'Cruce por documento (DNI, CMP o RUC)'],
             ['nombre', 'Cruce por nombre exacto'],
+            ['revisar', 'A revisar: el contacto tiene datos de médico o centro'],
             ['ambiguo', 'Ambiguo: hay más de un contacto posible'],
             ['sin_coincidencia', 'Sin coincidencia en Contactos Maestro']
           ].map(([k, label]) => (
@@ -813,7 +1002,7 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
                     <tr key={`${d.nombreLegado}-${i}`}>
                       <td style={s.td}>{d.nombreLegado || '—'}</td>
                       <td style={s.td}>{d.categoria || '—'}</td>
-                      <td style={s.td}>{{ documento: 'Por documento', nombre: 'Por nombre', ambiguo: 'Ambiguo', sin_coincidencia: 'Sin coincidencia' }[d.metodo]}</td>
+                      <td style={s.td}>{({ documento: 'Por documento', nombre: 'Por nombre', revisar: 'A revisar (datos de médico)', ambiguo: 'Ambiguo', sin_coincidencia: 'Sin coincidencia' }[d.metodo])}{d.desambiguado ? ' · contacto activo' : ''}</td>
                       <td style={s.td}>{d.contacto || '—'}</td>
                       <td style={{ ...s.td, ...s.num }}>{fmtInt(d.unidades)}</td>
                     </tr>
@@ -897,6 +1086,7 @@ export default function AtribucionModule() {
         {loading && !data && <div style={{ color: 'var(--text-secondary)' }}>Leyendo Zero, RindeGastos y Cabify…</div>}
 
         {data && tab === 'entregas' && <Entregas consumos={consumos} zeroMeta={data.zeroMeta} />}
+        {data && tab === 'reparto' && <Reparto consumos={consumos} zeroMeta={data.zeroMeta} />}
         {data && tab === 'consumos' && <Consumos consumos={consumos} onRecargar={load} />}
         {data && tab === 'calidad' && <Calidad consumos={consumos} fuentes={data.fuentes} zeroMeta={data.zeroMeta} />}
       </div>

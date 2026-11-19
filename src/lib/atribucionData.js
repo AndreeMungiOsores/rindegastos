@@ -13,6 +13,36 @@ import { dvGetAll, FV } from './dataverseEnv.js';
 import { getJourneysFromSupabase } from './cabifyClient.js';
 import { leerAtribuciones, cargarMaestro } from './atribucionStore.js';
 import { crearSugeridor, claveDestino } from './cabifySugerencias.js';
+import { queryReadOnly } from './seafacilClient.js';
+
+const IGV = 1.18;
+const redondear = (n) => Math.round(n * 100) / 100;
+
+/**
+ * Precio de venta promedio sin IGV por código de producto (SKU), de los últimos 12 meses en SeaFácil.
+ * Los productos de Zero son bonificados y no tienen precio pagado ni costo en ningún sistema, así que se valorizan
+ * con el precio al que se vende cada producto (aproximación acordada con Adrián hasta tener el costo real).
+ * El monto de las ventas de SeaFácil ya viene sin IGV.
+ */
+let preciosCache = null;
+async function cargarPreciosSeafacil() {
+  if (preciosCache && Date.now() - preciosCache.en < 6 * 3600 * 1000) return preciosCache.mapa;
+  const rows = await queryReadOnly(
+    `SELECT p.dprdcod AS sku, SUM(v.wmonto) / NULLIF(SUM(v.dcpv1can), 0) AS precio
+       FROM blisscorp_bi.v_productos p
+       JOIN blisscorp_bi.v_ventas_all v ON v.dprd_id = p.dprd_id
+      WHERE v.dcpvfec >= now() - interval '12 months' AND v.dcpv1can > 0 AND v.wmonto > 0 AND v.dmoncodiso = 'PEN'
+      GROUP BY p.dprdcod`
+  );
+  const mapa = new Map();
+  for (const r of rows) {
+    const k = String(r.sku || '').trim().toLowerCase();
+    const precio = Number(r.precio);
+    if (k && precio > 0) mapa.set(k, redondear(precio));
+  }
+  preciosCache = { en: Date.now(), mapa };
+  return mapa;
+}
 
 const SIN_DESTINATARIO_INVALIDO = new Set(['no', 'n', 'na', 'n/a', 'ninguno', 'ninguna', 'nada', 'sin', '-', '.', 'x']);
 
@@ -89,11 +119,14 @@ function tipoDesdeCategoriaLegado(cat) {
 }
 
 async function cargarZero() {
+  let precios = new Map();
+  let errorPrecios = null;
+  try { precios = await cargarPreciosSeafacil(); } catch (e) { errorPrecios = e.message; console.error('[Atribucion] No se pudieron leer los precios de SeaFácil:', e.message); }
   const [items, solicitudes, productos, contactos, legado] = await Promise.all([
     dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
     dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_email,crb7e_observaciones'),
     dvGetAll('sistemas', 'crb7e_producto1s?$select=crb7e_producto1id,crb7e_nombredelproducto,crb7e_sku,crb7e_marca,crb7e_tipodeproducto'),
-    dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra'),
+    dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra,crb7e_estadodelcontacto,crb7e_nombrecomercial,crb7e_descuento'),
     // Sistema anterior de destinatarios (antes de Contactos Maestro); se conserva como historial.
     dvGetAll('sistemas', 'crb7e_ddestinatarioses?$select=crb7e_iddestinatario,crb7e_nombre,crb7e_nrodocumento,crb7e_categoria')
   ]);
@@ -101,6 +134,7 @@ async function cargarZero() {
   const solPorRef = new Map(solicitudes.map(s => [s.crb7e_referenciasolicitud, s]));
   const prodPorId = new Map(productos.map(p => [p.crb7e_producto1id, {
     nombre: p.crb7e_nombredelproducto,
+    sku: p.crb7e_sku || null,
     marca: p[`crb7e_marca${FV}`] || null,
     tipo: p[`crb7e_tipodeproducto${FV}`] || null
   }]));
@@ -108,7 +142,7 @@ async function cargarZero() {
   const prodPorSku = new Map();
   const prodPorNombre = new Map();
   for (const p of productos) {
-    const info = { nombre: p.crb7e_nombredelproducto, marca: p[`crb7e_marca${FV}`] || null, tipo: p[`crb7e_tipodeproducto${FV}`] || null };
+    const info = { nombre: p.crb7e_nombredelproducto, sku: p.crb7e_sku || null, marca: p[`crb7e_marca${FV}`] || null, tipo: p[`crb7e_tipodeproducto${FV}`] || null };
     if (p.crb7e_sku) prodPorSku.set(norm(p.crb7e_sku), info);
     if (p.crb7e_nombredelproducto) prodPorNombre.set(norm(p.crb7e_nombredelproducto), info);
   }
@@ -120,7 +154,10 @@ async function cargarZero() {
       id: c.crb7e_contactosmaestroid,
       nombre: c.crb7e_nombre,
       categoria: c[`crb7e_categoriamaestra${FV}`] || null,
-      tipoPersona: c[`crb7e_tipodepersona${FV}`] || null
+      tipoPersona: c[`crb7e_tipodepersona${FV}`] || null,
+      activo: (c[`crb7e_estadodelcontacto${FV}`] || 'Activo') === 'Activo',
+      // Un contacto con CMP, RUC, nombre comercial o descuento es un médico o centro, no un destinatario de marketing (criterio de Gonzalo).
+      datosMedico: !!(c.crb7e_cmp || c.crb7e_ruc || c.crb7e_nombrecomercial || c.crb7e_descuento != null)
     };
     contPorId.set(info.id, info);
     for (const d of [c.crb7e_numerodedocumento, c.crb7e_cmp, c.crb7e_ruc]) {
@@ -132,16 +169,30 @@ async function cargarZero() {
   }
   const legadoPorId = new Map(legado.map(d => [d.crb7e_iddestinatario, d]));
 
-  /** Busca en Contactos Maestro a un destinatario del sistema anterior: primero por documento, luego por nombre. */
+  /** Si hay varios contactos con el mismo documento o nombre y solo uno está activo, se toma ese (caso de contactos duplicados e inactivos). */
+  const elegir = (ids, metodo) => {
+    if (ids.size === 1) return { metodo, contacto: contPorId.get([...ids][0]) };
+    const activos = [...ids].map(id => contPorId.get(id)).filter(c => c.activo);
+    if (activos.length === 1) return { metodo, contacto: activos[0], desambiguado: true };
+    return { metodo: 'ambiguo', contacto: null };
+  };
+
+  /**
+   * Busca en Contactos Maestro a un destinatario del sistema anterior: primero por documento, luego por nombre.
+   * Si el contacto encontrado tiene datos de médico o centro, el cruce no se aplica y queda para revisión.
+   */
   const cruzarLegado = (d) => {
     const doc = soloDigitos(d.crb7e_nrodocumento);
     const porDoc = doc.length >= 5 ? contPorDoc.get(doc) : null;
-    if (porDoc?.size === 1) return { metodo: 'documento', contacto: contPorId.get([...porDoc][0]) };
-    if (porDoc?.size > 1) return { metodo: 'ambiguo', contacto: null };
-    const porNombre = contPorNombre.get(claveNombre(d.crb7e_nombre));
-    if (porNombre?.size === 1) return { metodo: 'nombre', contacto: contPorId.get([...porNombre][0]) };
-    if (porNombre?.size > 1) return { metodo: 'ambiguo', contacto: null };
-    return { metodo: 'sin_coincidencia', contacto: null };
+    let r;
+    if (porDoc?.size) r = elegir(porDoc, 'documento');
+    if (!r || r.metodo === 'ambiguo') {
+      const porNombre = contPorNombre.get(claveNombre(d.crb7e_nombre));
+      if (porNombre?.size) r = elegir(porNombre, 'nombre');
+      else if (!r) r = { metodo: 'sin_coincidencia', contacto: null };
+    }
+    if (r.contacto?.datosMedico) return { ...r, revisar: true };
+    return r;
   };
   const cruceCache = new Map();
 
@@ -154,7 +205,8 @@ async function cargarZero() {
       deTI: { solicitudes: 0, items: 0, unidades: 0 },
       sinSolicitud: { items: 0, unidades: 0 }
     },
-    legado: { items: 0, unidades: 0, porMetodo: { documento: 0, nombre: 0, ambiguo: 0, sin_coincidencia: 0 }, destinatarios: new Map() },
+    legado: { items: 0, unidades: 0, porMetodo: { documento: 0, nombre: 0, revisar: 0, ambiguo: 0, sin_coincidencia: 0 }, destinatarios: new Map() },
+    valor: { conPrecio: 0, sinPrecio: 0, error: errorPrecios },
     sinVinculo: { desde: null, hasta: null, items: 0 },
     conVinculo: { desde: null, hasta: null, items: 0 }
   };
@@ -203,22 +255,22 @@ async function cargarZero() {
         const cruce = cruceCache.get(d.crb7e_iddestinatario);
         meta.legado.items++;
         meta.legado.unidades += unidades;
-        meta.legado.porMetodo[cruce.metodo]++;
+        meta.legado.porMetodo[cruce.revisar ? 'revisar' : cruce.metodo]++;
         const acum = meta.legado.destinatarios.get(d.crb7e_iddestinatario) || {
-          nombreLegado: d.crb7e_nombre, categoria: d[`crb7e_categoria${FV}`] || null, metodo: cruce.metodo,
+          nombreLegado: d.crb7e_nombre, categoria: d[`crb7e_categoria${FV}`] || null, metodo: cruce.revisar ? 'revisar' : cruce.metodo, desambiguado: !!cruce.desambiguado,
           contacto: cruce.contacto?.nombre || null, items: 0, unidades: 0
         };
         acum.items++;
         acum.unidades += unidades;
         meta.legado.destinatarios.set(d.crb7e_iddestinatario, acum);
-        if (cruce.contacto) {
+        if (cruce.contacto && !cruce.revisar) {
           destinatario = cruce.contacto.nombre;
           tipoDest = tipoDestinatario(cruce.contacto);
           vinculo = cruce.metodo === 'documento' ? 'legado_documento' : 'legado_nombre';
         } else {
           destinatario = d.crb7e_nombre || null;
           tipoDest = tipoDesdeCategoriaLegado(d[`crb7e_categoria${FV}`]);
-          vinculo = cruce.metodo === 'ambiguo' ? 'legado_ambiguo' : 'legado_sin_coincidencia';
+          vinculo = cruce.revisar ? 'legado_revisar' : cruce.metodo === 'ambiguo' ? 'legado_ambiguo' : 'legado_sin_coincidencia';
         }
       }
     }
@@ -231,12 +283,21 @@ async function cargarZero() {
       if (!rango.hasta || fecha > rango.hasta) rango.hasta = fecha;
     }
 
+    // Valor en soles sin IGV: unidades por el precio de venta promedio del producto (aproximación hasta tener el costo real).
+    const skuItem = String(it.crb7e_sku || prod?.sku || '').trim().toLowerCase();
+    const precioUnitario = precios.get(skuItem) ?? null;
+    const importe = precioUnitario != null ? redondear(unidades * precioUnitario) : null;
+    const valorizacion = precioUnitario != null ? 'precio_venta' : 'sin_precio';
+    meta.valor[precioUnitario != null ? 'conPrecio' : 'sinPrecio'] += unidades;
+
     const falta = [];
     if (!destinatario) falta.push('destinatario');
     if (!marca) falta.push('marca');
     let estado;
     if (vinculo === 'maestro') estado = falta.length === 0 ? 'completo' : 'pendiente';
-    else if (vinculo === 'legado_documento' || vinculo === 'legado_nombre') estado = falta.length === 0 ? 'cruce_propuesto' : 'pendiente';
+    // Los cruces sin datos de médico fueron revisados por Gonzalo y se aplican; la lectura no modifica Zero.
+    else if (vinculo === 'legado_documento' || vinculo === 'legado_nombre') estado = falta.length === 0 ? 'completo' : 'pendiente';
+    else if (vinculo === 'legado_revisar') estado = 'texto_libre';
     else if (vinculo) estado = falta.length === 0 ? 'texto_libre' : 'pendiente'; // destinatario del sistema anterior sin coincidencia
     else estado = 'pendiente';
 
@@ -247,7 +308,9 @@ async function cargarZero() {
       mes: fecha ? fecha.slice(0, 7) : null,
       responsable: sol?.crb7e_solicitante || null,
       concepto: it.crb7e_nombreproducto || prod?.nombre || 'Producto sin nombre',
-      importe: null,
+      importe,
+      precioUnitario,
+      valorizacion,
       unidades,
       destinatario,
       destinatarioTipo: tipoDest,
@@ -271,7 +334,7 @@ async function cargarZero() {
 // RindeGastos (rendición; el buzón de proveedores son documentos, no consumos de personas)
 // ──────────────────────────────────────────────────────────────────────────
 async function cargarRindegastos() {
-  const rows = await dvGetAll('rindegastos', 'cr168_reportedegastoses?$select=cr168_reportedegastosid,cr168_vendedor,cr168_fechadelgasto,createdon,cr168_montototalincluyendoigv,cr168_nombredelcomercio,cr168_tipodegasto,cr168_doctor,cr168_clinica,cr168_detalle,cr168_empresa');
+  const rows = await dvGetAll('rindegastos', 'cr168_reportedegastoses?$select=cr168_reportedegastosid,cr168_vendedor,cr168_fechadelgasto,createdon,cr168_montototalincluyendoigv,cr168_igv_monto,cr168_tasa_igv,cr168_nombredelcomercio,cr168_tipodegasto,cr168_doctor,cr168_clinica,cr168_detalle,cr168_empresa');
   return rows
     .filter(g => !(g.cr168_detalle || '').startsWith('[Factura Correo]'))
     .map(g => {
@@ -292,6 +355,10 @@ async function cargarRindegastos() {
         estado = 'pendiente';
         falta = ['destinatario', 'marca'];
       }
+      // Importe sin IGV: el total menos el IGV declarado; si no hay IGV registrado se estima con 18%.
+      const conIgv = Number(g.cr168_montototalincluyendoigv) || 0;
+      const igvDeclarado = g.cr168_igv_monto != null && g.cr168_tasa_igv != null;
+      const sinIgv = igvDeclarado ? Math.max(0, conIgv - (Number(g.cr168_igv_monto) || 0)) : conIgv / IGV;
       return {
         key: `RG:${g.cr168_reportedegastosid}`,
         origen: 'RindeGastos',
@@ -299,7 +366,9 @@ async function cargarRindegastos() {
         mes: fecha ? fecha.slice(0, 7) : null,
         responsable: g.cr168_vendedor || null,
         concepto: g.cr168_nombredelcomercio || g.cr168_detalle || 'Gasto sin comercio',
-        importe: Number(g.cr168_montototalincluyendoigv) || 0,
+        importe: redondear(sinIgv),
+        importeConIgv: conIgv,
+        valorizacion: igvDeclarado ? 'igv_declarado' : 'igv_estimado',
         unidades: null,
         destinatario: declarado,
         destinatarioTipo: declarado ? 'Sin vincular' : null,
@@ -362,7 +431,10 @@ async function cargarCabify() {
       mes: fecha ? fecha.slice(0, 7) : null,
       responsable: j.riderName || null,
       concepto: j.motivo || [j.origin, j.destination].filter(Boolean).join(' → ') || j.chargeCode || 'Viaje',
-      importe: Number(j.totalPEN) || 0,
+      // El total de Cabify se toma como con IGV (no trae el desglose): se estima el importe sin IGV dividiendo entre 1.18.
+      importe: redondear((Number(j.totalPEN) || 0) / IGV),
+      importeConIgv: Number(j.totalPEN) || 0,
+      valorizacion: 'igv_estimado',
       unidades: null,
       destinatario: null,
       destinatarioTipo: null,
@@ -411,7 +483,7 @@ export async function cargarConsumos() {
     for (const c of consumos) {
       const g = guardadas.get(c.key);
       if (!g) continue;
-      c.atribucion = { destino: g.destino, estado: g.estado, motivo: g.motivo, atribuidoPor: g.atribuidoPor, fechaAtribucion: g.fechaAtribucion, contactoIds: g.destinatarios.map(d => d.contactoId), marcas: g.marcas.map(m => m.marca) };
+      c.atribucion = { destino: g.destino, estado: g.estado, motivo: g.motivo, atribuidoPor: g.atribuidoPor, fechaAtribucion: g.fechaAtribucion, contactoIds: g.destinatarios.map(d => d.contactoId), destinatarios: g.destinatarios.map(d => ({ id: d.contactoId, nombre: d.nombre || null })), marcas: g.marcas.map(m => m.marca) };
       c.destinatario = g.destinatarios.map(d => d.nombre).filter(Boolean).join(' · ') || ((g.destino === 'Corporativo' || g.destino === 'No aplica') ? g.destino : null);
       c.destinatarioTipo = g.destino;
       c.marca = g.marcas.map(m => m.marca).join(', ') || null;
