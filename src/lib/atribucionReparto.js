@@ -6,7 +6,7 @@
  *  - marcas: el importe se divide en partes iguales entre las marcas del consumo.
  * Cada costal suma el 100% del importe. Un gasto de S/ 100 con 4 médicos y 3 marcas da 25 por médico y 33.33 por marca.
  *
- * El importe es el valor sin IGV (precio pagado; para Zero, el precio de venta mientras no exista el costo real).
+ * El importe es el valor sin IGV (precio pagado; para Zero, el precio mayorista B2B mientras no exista el costo real).
  * Lo que no tiene destinatario o marca se muestra como "Sin destinatario" / "Sin marca" para que cada vista cuadre con el total.
  */
 

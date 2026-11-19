@@ -19,7 +19,8 @@ const IGV = 1.18;
 const redondear = (n) => Math.round(n * 100) / 100;
 
 /**
- * Precio de venta promedio sin IGV por código de producto (SKU), de los últimos 12 meses en SeaFácil.
+ * Precio mayorista promedio sin IGV por código de producto (SKU), de los últimos 12 meses en SeaFácil, solo canales B2B
+ * (1 Niuxpro, 2 blisscorp.pe, 3 TomaPedidos). Los canales B2C (4 altea.pe, 5 y 7 WhatsApp, 6 blissfarma.pe) venden más caro: solo se usan para los productos sin ventas B2B.
  * Los productos de Zero son bonificados y no tienen precio pagado ni costo en ningún sistema, así que se valorizan
  * con el precio al que se vende cada producto (aproximación acordada con Adrián hasta tener el costo real).
  * El monto de las ventas de SeaFácil ya viene sin IGV.
@@ -28,7 +29,9 @@ let preciosCache = null;
 async function cargarPreciosSeafacil() {
   if (preciosCache && Date.now() - preciosCache.en < 6 * 3600 * 1000) return preciosCache.mapa;
   const rows = await queryReadOnly(
-    `SELECT p.dprdcod AS sku, SUM(v.wmonto) / NULLIF(SUM(v.dcpv1can), 0) AS precio
+    `SELECT p.dprdcod AS sku,
+            SUM(v.wmonto) FILTER (WHERE v.dcanvta_id IN (1, 2, 3)) / NULLIF(SUM(v.dcpv1can) FILTER (WHERE v.dcanvta_id IN (1, 2, 3)), 0) AS precio_b2b,
+            SUM(v.wmonto) FILTER (WHERE v.dcanvta_id IN (4, 5, 6, 7)) / NULLIF(SUM(v.dcpv1can) FILTER (WHERE v.dcanvta_id IN (4, 5, 6, 7)), 0) AS precio_b2c
        FROM blisscorp_bi.v_productos p
        JOIN blisscorp_bi.v_ventas_all v ON v.dprd_id = p.dprd_id
       WHERE v.dcpvfec >= now() - interval '12 months' AND v.dcpv1can > 0 AND v.wmonto > 0 AND v.dmoncodiso = 'PEN'
@@ -37,8 +40,11 @@ async function cargarPreciosSeafacil() {
   const mapa = new Map();
   for (const r of rows) {
     const k = String(r.sku || '').trim().toLowerCase();
-    const precio = Number(r.precio);
-    if (k && precio > 0) mapa.set(k, redondear(precio));
+    const b2b = Number(r.precio_b2b);
+    const b2c = Number(r.precio_b2c);
+    if (!k) continue;
+    if (b2b > 0) mapa.set(k, { precio: redondear(b2b), canal: 'b2b' });
+    else if (b2c > 0) mapa.set(k, { precio: redondear(b2c), canal: 'b2c' });
   }
   preciosCache = { en: Date.now(), mapa };
   return mapa;
@@ -212,7 +218,7 @@ async function cargarZero() {
       aTI: { items: 0, unidades: 0 }
     },
     legado: { items: 0, unidades: 0, porMetodo: { documento: 0, nombre: 0, revisar: 0, ambiguo: 0, sin_coincidencia: 0 }, destinatarios: new Map() },
-    valor: { conPrecio: 0, sinPrecio: 0, error: errorPrecios },
+    valor: { conPrecio: 0, sinPrecio: 0, unidadesB2c: 0, error: errorPrecios },
     sinVinculo: { desde: null, hasta: null, items: 0 },
     conVinculo: { desde: null, hasta: null, items: 0 }
   };
@@ -291,12 +297,14 @@ async function cargarZero() {
       if (!rango.hasta || fecha > rango.hasta) rango.hasta = fecha;
     }
 
-    // Valor en soles sin IGV: unidades por el precio de venta promedio del producto (aproximación hasta tener el costo real).
+    // Valor en soles sin IGV: unidades por el precio mayorista (B2B) promedio del producto (aproximación hasta tener el costo real).
     const skuItem = String(it.crb7e_sku || prod?.sku || '').trim().toLowerCase();
-    const precioUnitario = precios.get(skuItem) ?? null;
-    const importe = precioUnitario != null ? redondear(unidades * precioUnitario) : null;
-    const valorizacion = precioUnitario != null ? 'precio_venta' : 'sin_precio';
-    meta.valor[precioUnitario != null ? 'conPrecio' : 'sinPrecio'] += unidades;
+    const p = precios.get(skuItem) || null;
+    const precioUnitario = p ? p.precio : null;
+    const importe = p ? redondear(unidades * p.precio) : null;
+    const valorizacion = p ? (p.canal === 'b2b' ? 'precio_venta' : 'precio_b2c') : 'sin_precio';
+    meta.valor[p ? 'conPrecio' : 'sinPrecio'] += unidades;
+    if (p?.canal === 'b2c') meta.valor.unidadesB2c += unidades;
 
     const falta = [];
     if (!destinatario) falta.push('destinatario');

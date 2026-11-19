@@ -105,7 +105,7 @@ function Entregas({ consumos, zeroMeta }) {
   return (
     <>
       <div style={s.note} role="note">
-        Unidades entregadas según las solicitudes de Zero. El valor en soles es una aproximación: cada unidad se valoriza con el precio de venta promedio sin IGV de SeaFácil (últimos 12 meses), porque los bonificados no tienen costo ni precio pagado registrado.
+        Unidades entregadas según las solicitudes de Zero. El valor en soles es una aproximación: cada unidad se valoriza con el precio mayorista (canales B2B) promedio sin IGV de SeaFácil, o con el precio B2C si el producto no se vende por B2B (últimos 12 meses), porque los bonificados no tienen costo ni precio pagado registrado.
         {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && (
           <> No se consideran las pruebas: {fmtInt(zeroMeta.pruebasExcluidas.porObservaciones.solicitudes)} solicitudes con observaciones como “Prueba, no atender”, {fmtInt(zeroMeta.pruebasExcluidas.deTI.solicitudes)} solicitudes de Gonzalo Laqui y Andree Mungi (TI) y {fmtInt(zeroMeta.pruebasExcluidas.sinSolicitud.items)} ítems sin solicitud de las primeras pruebas{zeroMeta.pruebasExcluidas.aTI?.items > 0 && <>, además de {fmtInt(zeroMeta.pruebasExcluidas.aTI.items)} ítems pedidos a nombre de Gonzalo Laqui</>}. En total {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
         )}
@@ -602,7 +602,7 @@ function Consumos({ consumos, onRecargar }) {
       <div className="kpis-grid">
         <div className="kpi-card"><span className="kpi-label">Consumos</span><span className="kpi-value">{fmtInt(filtrados.length)}</span><span className="kpi-sub">según los filtros</span></div>
         <div className="kpi-card"><span className="kpi-label">Pendientes</span><span className="kpi-value">{fmtInt(kpi.pendientes)}</span><span className="kpi-sub">{pct(kpi.pendientes, filtrados.length)}% sin destinatario y/o marca</span></div>
-        <div className="kpi-card"><span className="kpi-label">Importe sin IGV</span><span className="kpi-value">{fmtMoney(kpi.importe)}</span><span className="kpi-sub">{fmtMoney(kpi.importePend)} en pendientes · Zero a precio de venta</span></div>
+        <div className="kpi-card"><span className="kpi-label">Importe sin IGV</span><span className="kpi-value">{fmtMoney(kpi.importe)}</span><span className="kpi-sub">{fmtMoney(kpi.importePend)} en pendientes · Zero a precio mayorista</span></div>
         <div className="kpi-card"><span className="kpi-label">Unidades (Zero)</span><span className="kpi-value">{fmtInt(kpi.unidades)}</span><span className="kpi-sub">productos entregados</span></div>
       </div>
 
@@ -690,7 +690,8 @@ function Consumos({ consumos, onRecargar }) {
 const VALORIZACION = {
   igv_declarado: 'Total menos el IGV registrado en el gasto',
   igv_estimado: 'Total entre 1.18 (no trae el IGV desglosado)',
-  precio_venta: 'Unidades por el precio de venta promedio sin IGV (SeaFácil, 12 meses); aún no hay costo real',
+  precio_venta: 'Unidades por el precio mayorista (B2B) promedio sin IGV de SeaFácil, 12 meses; aún no hay costo real',
+  precio_b2c: 'Unidades por el precio B2C promedio sin IGV de SeaFácil (el producto no tiene ventas B2B); es más alto que el mayorista; aún no hay costo real',
   sin_precio: 'Sin precio en SeaFácil: no se puede valorizar'
 };
 
@@ -763,7 +764,7 @@ function Reparto({ consumos, zeroMeta }) {
     <>
       <div style={s.note} role="note">
         Regla de reparto: el importe de cada consumo se divide en <strong>partes iguales</strong>, y lo hace dos veces por separado. Entre médicos y clínicas por un lado, y entre marcas por el otro; no se suman ni se reparten entre sí, así que cada vista suma el 100% del importe.
-        Ejemplo: S/ 100 con 4 médicos son S/ 25 por médico, y con 3 marcas son S/ 33.33 por marca. Los importes van sin IGV; para Zero es el precio de venta, porque todavía no hay costo real.
+        Ejemplo: S/ 100 con 4 médicos son S/ 25 por médico, y con 3 marcas son S/ 33.33 por marca. Los importes van sin IGV; para Zero es el precio mayorista (B2B), porque todavía no hay costo real.
       </div>
 
       <div style={s.controls}>
@@ -800,7 +801,7 @@ function Reparto({ consumos, zeroMeta }) {
 
       {(zeroMeta?.valor?.sinPrecio > 0 || zeroMeta?.valor?.error) && (origen === '' || origen === 'Zero') && (
         <div style={s.note} role="note">
-          Zero se valoriza con el precio de venta sin IGV de SeaFácil. {zeroMeta.valor.error
+          Zero se valoriza con el precio mayorista (B2B) sin IGV de SeaFácil. {zeroMeta.valor.unidadesB2c > 0 && ` ${fmtInt(zeroMeta.valor.unidadesB2c)} unidades de productos sin ventas B2B usan el precio B2C, que es más alto.`} {zeroMeta.valor.error
             ? `No se pudieron leer los precios (${zeroMeta.valor.error}); los productos de Zero no tienen importe.`
             : `${fmtInt(zeroMeta.valor.sinPrecio)} de ${fmtInt(zeroMeta.valor.sinPrecio + zeroMeta.valor.conPrecio)} unidades no tienen precio en SeaFácil y quedan sin importe hasta contar con el costo.`}
         </div>
