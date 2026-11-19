@@ -102,6 +102,11 @@ export function esSolicitudDePrueba(observaciones) {
  * Todas las solicitudes del equipo de TI (Gonzalo Laqui y Andree Mungi) fueron pruebas: no se consideran.
  * Se detecta por el solicitante o por su correo (gonzalo@blisscorp.lat / .pe y ti@blisscorp.lat).
  */
+/** Destinatario del equipo de TI (Gonzalo Laqui, Andree Mungi): lo pedido a su nombre fue prueba, según Gonzalo. */
+export function esDestinatarioDeTI(nombre) {
+  return /gonzalo laqui|andree mungi/.test(norm(nombre));
+}
+
 export function esSolicitudDeTI(solicitud) {
   const quien = norm(solicitud?.crb7e_solicitante);
   const correo = String(solicitud?.crb7e_email || '').toLowerCase();
@@ -203,7 +208,8 @@ async function cargarZero() {
       solicitudes: 0, items: 0, unidades: 0,
       porObservaciones: { solicitudes: 0, items: 0, unidades: 0 },
       deTI: { solicitudes: 0, items: 0, unidades: 0 },
-      sinSolicitud: { items: 0, unidades: 0 }
+      sinSolicitud: { items: 0, unidades: 0 },
+      aTI: { items: 0, unidades: 0 }
     },
     legado: { items: 0, unidades: 0, porMetodo: { documento: 0, nombre: 0, revisar: 0, ambiguo: 0, sin_coincidencia: 0 }, destinatarios: new Map() },
     valor: { conPrecio: 0, sinPrecio: 0, error: errorPrecios },
@@ -242,6 +248,7 @@ async function cargarZero() {
     const marca = prod?.marca || null;
 
     let contacto = contPorId.get(it._crb7e_contacto_value) || null;
+    if (contacto && esDestinatarioDeTI(contacto.nombre)) { excluir(meta.pruebasExcluidas.aTI); continue; }
     let destinatario = contacto?.nombre || it['_crb7e_contacto_value' + FV] || null;
     let tipoDest = tipoDestinatario(contacto);
     let vinculo = contacto ? 'maestro' : null;
@@ -253,6 +260,7 @@ async function cargarZero() {
       if (d) {
         if (!cruceCache.has(d.crb7e_iddestinatario)) cruceCache.set(d.crb7e_iddestinatario, cruzarLegado(d));
         const cruce = cruceCache.get(d.crb7e_iddestinatario);
+        if (esDestinatarioDeTI(cruce.contacto?.nombre || d.crb7e_nombre)) { excluir(meta.pruebasExcluidas.aTI); continue; }
         meta.legado.items++;
         meta.legado.unidades += unidades;
         meta.legado.porMetodo[cruce.revisar ? 'revisar' : cruce.metodo]++;

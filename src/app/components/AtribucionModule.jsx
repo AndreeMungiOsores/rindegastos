@@ -107,7 +107,7 @@ function Entregas({ consumos, zeroMeta }) {
       <div style={s.note} role="note">
         Unidades entregadas según las solicitudes de Zero. El valor en soles es una aproximación: cada unidad se valoriza con el precio de venta promedio sin IGV de SeaFácil (últimos 12 meses), porque los bonificados no tienen costo ni precio pagado registrado.
         {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && (
-          <> No se consideran las pruebas: {fmtInt(zeroMeta.pruebasExcluidas.porObservaciones.solicitudes)} solicitudes con observaciones como “Prueba, no atender”, {fmtInt(zeroMeta.pruebasExcluidas.deTI.solicitudes)} solicitudes de Gonzalo Laqui y Andree Mungi (TI) y {fmtInt(zeroMeta.pruebasExcluidas.sinSolicitud.items)} ítems sin solicitud de las primeras pruebas. En total {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
+          <> No se consideran las pruebas: {fmtInt(zeroMeta.pruebasExcluidas.porObservaciones.solicitudes)} solicitudes con observaciones como “Prueba, no atender”, {fmtInt(zeroMeta.pruebasExcluidas.deTI.solicitudes)} solicitudes de Gonzalo Laqui y Andree Mungi (TI) y {fmtInt(zeroMeta.pruebasExcluidas.sinSolicitud.items)} ítems sin solicitud de las primeras pruebas{zeroMeta.pruebasExcluidas.aTI?.items > 0 && <>, además de {fmtInt(zeroMeta.pruebasExcluidas.aTI.items)} ítems pedidos a nombre de Gonzalo Laqui</>}. En total {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
         )}
       </div>
 
