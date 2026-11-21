@@ -119,6 +119,15 @@ export function esSolicitudDeTI(solicitud) {
   return quien === 'gonzalo laqui' || quien === 'andree mungi' || /^gonzalo@/.test(correo) || /^ti@/.test(correo);
 }
 
+/**
+ * Documentos de despacho o facturación de una solicitud de Zero (campo "Nro Documento" de hSolicitudes).
+ * Lo carga Gonzalo cruzando los correos de atención; varios documentos van separados con ";".
+ * Solo guarda códigos: no dice qué producto ni qué cantidad cubre cada documento.
+ */
+export function documentosDeSolicitud(texto) {
+  return [...new Set(String(texto || '').split(/[;\n]/).map(d => d.trim()).filter(Boolean))];
+}
+
 /** Tipo de destinatario cuando solo se conoce la categoría del sistema anterior (dDestinatarios). */
 function tipoDesdeCategoriaLegado(cat) {
   const c = norm(cat);
@@ -135,7 +144,7 @@ async function cargarZero() {
   try { precios = await cargarPreciosSeafacil(); } catch (e) { errorPrecios = e.message; console.error('[Atribucion] No se pudieron leer los precios de SeaFácil:', e.message); }
   const [items, solicitudes, productos, contactos, legado] = await Promise.all([
     dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
-    dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_email,crb7e_observaciones'),
+    dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_email,crb7e_observaciones,crb7e_nrodocumento'),
     dvGetAll('sistemas', 'crb7e_producto1s?$select=crb7e_producto1id,crb7e_nombredelproducto,crb7e_sku,crb7e_marca,crb7e_tipodeproducto'),
     dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra,crb7e_estadodelcontacto,crb7e_nombrecomercial,crb7e_descuento'),
     // Sistema anterior de destinatarios (antes de Contactos Maestro); se conserva como historial.
@@ -219,6 +228,8 @@ async function cargarZero() {
     },
     legado: { items: 0, unidades: 0, porMetodo: { documento: 0, nombre: 0, revisar: 0, ambiguo: 0, sin_coincidencia: 0 }, destinatarios: new Map() },
     valor: { conPrecio: 0, sinPrecio: 0, unidadesB2c: 0, error: errorPrecios },
+    // Trazabilidad por documento (solo solicitudes reales, sin pruebas): se completa al final.
+    documentos: null,
     sinVinculo: { desde: null, hasta: null, items: 0 },
     conVinculo: { desde: null, hasta: null, items: 0 }
   };
@@ -233,6 +244,7 @@ async function cargarZero() {
   meta.pruebasExcluidas.solicitudes = refsObservaciones.size + refsTI.size;
 
   const filas = [];
+  const solicitudesReales = new Map(); // referencia -> { ref, fecha, solicitante, documentos, items, unidades }
   for (const it of items) {
     const unidades = Number(it.crb7e_cantidad) || 0;
     const ref = it.crb7e_referenciasolicitud;
@@ -317,9 +329,17 @@ async function cargarZero() {
     else if (vinculo) estado = falta.length === 0 ? 'texto_libre' : 'pendiente'; // destinatario del sistema anterior sin coincidencia
     else estado = 'pendiente';
 
+    const documentos = documentosDeSolicitud(sol?.crb7e_nrodocumento);
+    const real = solicitudesReales.get(ref) || { ref, fecha, solicitante: sol?.crb7e_solicitante || null, documentos, items: 0, unidades: 0 };
+    real.items++;
+    real.unidades += unidades;
+    solicitudesReales.set(ref, real);
+
     filas.push({
       key: `ZERO:${it.crb7e_hitemsid}`,
       origen: 'Zero',
+      solicitud: ref,
+      documentos,
       fecha,
       mes: fecha ? fecha.slice(0, 7) : null,
       responsable: sol?.crb7e_solicitante || null,
@@ -342,6 +362,28 @@ async function cargarZero() {
       falta
     });
   }
+
+  // Documentos por solicitud: cuántas ya tienen documento, cuáles no y qué documentos cubren varias solicitudes.
+  const porDocumento = new Map(); // documento -> referencias
+  for (const s of solicitudesReales.values()) {
+    for (const d of s.documentos) {
+      if (!porDocumento.has(d)) porDocumento.set(d, []);
+      porDocumento.get(d).push(s.ref);
+    }
+  }
+  const lista = [...solicitudesReales.values()];
+  const sinDocumento = lista.filter(s => s.documentos.length === 0);
+  meta.documentos = {
+    solicitudes: lista.length,
+    conDocumento: lista.length - sinDocumento.length,
+    sinDocumento: sinDocumento.length,
+    unidadesSinDocumento: sinDocumento.reduce((t, s) => t + s.unidades, 0),
+    unidades: lista.reduce((t, s) => t + s.unidades, 0),
+    listaSinDocumento: sinDocumento.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).map(s => ({ ref: s.ref, fecha: s.fecha, solicitante: s.solicitante, unidades: s.unidades })),
+    compartidos: [...porDocumento].filter(([, refs]) => refs.length > 1).map(([documento, refs]) => ({ documento, solicitudes: refs })).sort((a, b) => b.solicitudes.length - a.solicitudes.length),
+    multiples: lista.filter(s => s.documentos.length > 1).length,
+    totalDocumentos: porDocumento.size
+  };
 
   return { filas, meta: { ...meta, legado: { ...meta.legado, destinatarios: [...meta.legado.destinatarios.values()].sort((a, b) => b.unidades - a.unidades) } } };
 }
