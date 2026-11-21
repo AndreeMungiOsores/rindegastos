@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getCorporateJourneys } from '../../../../lib/cabifyClient.js';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // la sincronización con Cabify (ventas + detalle de viajes) puede tardar más de los 10 s por defecto
 
 export async function GET(request) {
   try {

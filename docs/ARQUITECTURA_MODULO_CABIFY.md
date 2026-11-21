@@ -74,6 +74,14 @@ Para garantizar respuestas en **menos de 300 ms** en el navegador y mitigar la l
 [4. Cabify Corporate API v4 (HTTP con Backoff y Reintentos)]
 ```
 
+### Sincronización incremental (Noviembre 2026)
+El endpoint `/sales` de Cabify es lento (≈3 s fijos + ≈0.15 s por venta; un mes completo tarda 25-30 s), por lo que sincronizar todo el mes en cada visita superaba el tiempo máximo de la función y nunca llegaba a guardar en Supabase. Ahora `syncSalesToSupabase` (en `cabifyClient.js`):
+1. Consulta solo las ventas desde 3 días antes de la última fecha guardada (o todo el mes con `full`), en páginas de 25 pedidas en paralelo.
+2. Pide el detalle `/journey/{id}` únicamente de las ventas que aún no están completas en Supabase (con tipo de servicio y pasajero).
+3. Guarda por lotes de 20; si se agota el presupuesto de tiempo (40 s) lo pendiente se completa en la siguiente sincronización.
+4. Marca `updated_at` de lo ya completo para que `lastSyncAt` (última sincronización) avance aunque no haya viajes nuevos.
+5. Si Cabify falla, se sirve lo ya guardado con un aviso, sin error. La ruta `/api/cabify/journeys` declara `maxDuration = 60`.
+
 ### Estrategia Stale-While-Revalidate (SWR)
 Cuando el usuario visualiza el **mes en curso**, el servidor:
 1. Retorna instantáneamente los datos disponibles en **Supabase**.

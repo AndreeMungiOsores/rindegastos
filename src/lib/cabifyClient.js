@@ -190,19 +190,6 @@ export async function getJourneyDetails(journeyId) {
 }
 
 /**
- * Procesa un lote de promesas con concurrencia controlada
- */
-async function processInBatches(items, batchSize, asyncFn) {
-  const results = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.allSettled(batch.map(asyncFn));
-    batchResults.forEach(r => results.push(r.status === 'fulfilled' ? r.value : null));
-  }
-  return results;
-}
-
-/**
  * Formatea una fecha ISO a la zona horaria de Lima (UTC-5)
  */
 function formatDateLima(dateStr) {
@@ -547,18 +534,228 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
 /**
  * Viajes corporativos con filtro opcional por grupo de servicio ('taxi' | 'delivery').
  * Sin `group` retorna todos los viajes.
+ *
+ * `forceRefresh` sincroniza con la API de Cabify (de forma incremental) y guarda en Supabase antes de responder.
+ * `full` fuerza a revisar todo el mes en lugar de solo la ventana reciente.
  */
-export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false, group = null }) {
-  const result = await fetchCorporateJourneys({ from, to, currency, forceRefresh });
+export async function getCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false, full = false, group = null }) {
+  const result = await fetchCorporateJourneys({ from, to, currency, forceRefresh, full });
   return applyServiceGroup(result, group);
 }
 
+// ── Sincronización incremental Cabify → Supabase ─────────────────────────────
+// El endpoint /sales de Cabify es lento (≈3 s fijos + ≈0.15 s por venta devuelta: un mes completo tarda 25-30 s) y el detalle de
+// cada viaje (/journey/{id}) requiere una llamada más. Para no depender de un tiempo largo, cada sincronización:
+//   1. pide solo las ventas desde unos días antes de la última guardada (no todo el mes),
+//   2. consulta el detalle únicamente de las ventas que todavía no están completas en Supabase,
+//   3. guarda por lotes, de modo que si se acaba el tiempo lo ya procesado queda guardado.
+const SYNC_LOOKBACK_DAYS = 3;       // margen hacia atrás desde la última fecha guardada (facturas que llegan tarde)
+const SYNC_REPAIR_DAYS = 10;        // viajes recientes guardados incompletos (sin tipo o sin pasajero) que se reintentan
+const SYNC_SALES_PER_PAGE = 25;     // páginas chicas: se piden en paralelo y cada una responde antes
+const SYNC_MAX_PAGES = 24;
+const SYNC_DETAIL_BATCH = 20;
+const SYNC_TIME_BUDGET_MS = 40000;  // pasado este tiempo se deja de resolver detalles; lo pendiente va en la próxima sincronización
+
+const isGenericRiderName = (name) => !name || /^Usuario \(|^Colaborador Cabify/.test(name);
+
+function shiftDate(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().split('T')[0];
+}
+
+/** Convierte una venta de Cabify (+ el detalle del viaje y el mapa de usuarios) en el formato de viaje del portal. */
+function buildEnrichedJourney(sale, detail, usersMap) {
+  const typeObj = sale.concept?.type_object || {};
+  const journeyId = typeObj.id;
+
+  const riderId = detail?.rider?.id || detail?.user_id;
+  const matchedUser = riderId ? usersMap.get(riderId) : null;
+
+  const contactPickup = typeObj.pickup?.contact;
+  const contactDropoff = typeObj.dropoff?.contact;
+  const contactName = contactPickup?.name || contactDropoff?.name;
+  const contactEmail = contactPickup?.email || contactDropoff?.email;
+
+  const riderName = matchedUser?.fullName || contactName || (riderId ? `Usuario (${riderId.substring(0, 8)})` : 'Colaborador Cabify');
+  const riderEmail = matchedUser?.email || contactEmail || '';
+  const riderPhone = matchedUser?.mobile || contactPickup?.mobile_num || '';
+
+  const pickupAddr = typeObj.pickup?.name || typeObj.pickup?.addr || 'Origen no especificado';
+  const dropoffAddr = typeObj.dropoff?.name || typeObj.dropoff?.addr || 'Destino no especificado';
+  const pickupCity = typeObj.pickup?.city ? `, ${typeObj.pickup.city}` : '';
+  const dropoffCity = typeObj.dropoff?.city ? `, ${typeObj.dropoff.city}` : '';
+
+  const originFull = `${pickupAddr}${pickupCity}`;
+  const destFull = `${dropoffAddr}${dropoffCity}`;
+
+  const rawTotal = sale.price_details?.total || 0;
+  const totalPEN = Math.round((rawTotal / 100) * 100) / 100;
+
+  const startAt = typeObj.start_at || detail?.start_at || '';
+  const endAt = typeObj.end_at || detail?.end_at || '';
+
+  const vehicleType = vehicleTypeFromProductId(detail?.product_id);
+
+  return {
+    id: sale.code || journeyId,
+    ticketCode: sale.code || 'S/N',
+    journeyId: journeyId || '',
+    invoiceDate: sale.invoice_date || '',
+    startAt,
+    endAt,
+    dateFormatted: formatDateLima(startAt),
+    riderId: riderId || '',
+    riderName,
+    riderEmail,
+    riderPhone,
+    origin: originFull,
+    destination: destFull,
+    chargeCode: typeObj.charge_code || 'Movilidad General',
+    motivo: detail?.reason || typeObj.reason || null,
+    description: typeObj.description || '',
+    totalPEN,
+    currency: sale.currency || 'PEN',
+    vehicleType,
+    serviceGroup: getServiceGroup(vehicleType),
+    anomaly: detectJourneyAnomaly({ startAt, endAt, origin: originFull, destination: destFull })
+  };
+}
+
 /**
- * Obtiene todas las ventas/viajes corporativos en un rango de fechas,
- * enriquecidos con nombre del colaborador, ruta, fechas y costos.
+ * Trae de Cabify las ventas nuevas (o incompletas) del período y las guarda en Supabase.
+ * No lanza error por fallas de Cabify: devuelve { ok: false, warning } para que quien llama sirva lo ya guardado.
+ * @returns {Promise<{ ok: boolean, warning?: string, partial?: boolean, windowFrom: string, fetched: number, saved: number }>}
  */
-async function fetchCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false }) {
-  // 1. Si no es forzado, intentar leer primero desde la base de datos de Supabase (instantáneo)
+async function syncSalesToSupabase({ from, to, currency = 'PEN', full = false }) {
+  const startedAt = Date.now();
+  const supabase = getSupabaseAdmin();
+
+  // 1. Lo que ya está guardado del período decide la ventana de consulta y qué ventas faltan completar
+  const { data: stored, error: storedErr } = await supabase
+    .from(CABIFY_TABLE)
+    .select('id, invoice_date, rider_name, vehicle_type')
+    .gte('invoice_date', from)
+    .lte('invoice_date', to)
+    .limit(5000);
+  if (storedErr) {
+    return { ok: false, warning: `No se pudo leer Supabase: ${storedErr.message}`, windowFrom: from, fetched: 0, saved: 0 };
+  }
+
+  const storedRows = stored || [];
+  const completeIds = new Set();
+  let lastDate = null;
+  let earliestIncomplete = null;
+  const repairLimit = shiftDate(new Date().toISOString().split('T')[0], -SYNC_REPAIR_DAYS);
+  for (const r of storedRows) {
+    const incomplete = !r.vehicle_type || isGenericRiderName(r.rider_name);
+    if (!incomplete) completeIds.add(r.id);
+    if (r.invoice_date && (!lastDate || r.invoice_date > lastDate)) lastDate = r.invoice_date;
+    if (incomplete && r.invoice_date >= repairLimit && (!earliestIncomplete || r.invoice_date < earliestIncomplete)) {
+      earliestIncomplete = r.invoice_date;
+    }
+  }
+
+  let windowFrom = from;
+  if (!full && lastDate) {
+    windowFrom = shiftDate(lastDate, -SYNC_LOOKBACK_DAYS);
+    if (earliestIncomplete && earliestIncomplete < windowFrom) windowFrom = earliestIncomplete;
+    if (windowFrom < from) windowFrom = from;
+  }
+
+  // 2. Ventas de la ventana (página 1 para saber el total; el resto en paralelo)
+  let token;
+  const sales = [];
+  try {
+    token = await getCabifyAccessToken();
+    const salesParams = (page) => ({ from: windowFrom, to, currency, page, per: SYNC_SALES_PER_PAGE });
+    const first = await axiosGetWithRetry(`${API_BASE}/sales`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      params: salesParams(1),
+      timeout: 25000
+    }, 2);
+    sales.push(...(first.data?.data || []));
+    const totalPages = Math.min(first.data?.pages || 1, SYNC_MAX_PAGES);
+    if (totalPages > 1) {
+      const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+      const rest = await Promise.allSettled(pages.map(page =>
+        axiosGetWithRetry(`${API_BASE}/sales`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          params: salesParams(page),
+          timeout: 25000
+        }, 2)
+      ));
+      let failedPages = 0;
+      for (const r of rest) {
+        if (r.status === 'fulfilled') sales.push(...(r.value?.data?.data || []));
+        else failedPages++;
+      }
+      if (failedPages > 0) {
+        console.warn(`[CabifyClient] ${failedPages} página(s) de ventas fallaron; lo que falte se completará en la próxima sincronización.`);
+      }
+    }
+  } catch (error) {
+    console.error('[CabifyClient] Error al consultar ventas de Cabify:', error.response?.data || error.message);
+    return {
+      ok: false,
+      warning: 'La API de Cabify no respondió a tiempo. Se muestran los datos ya guardados.',
+      windowFrom,
+      fetched: 0,
+      saved: 0
+    };
+  }
+
+  // 3. Separar lo ya completo (solo se marca como sincronizado) de lo que hay que completar con el detalle del viaje
+  const saleId = (s) => s.code || s.concept?.type_object?.id;
+  const alreadyComplete = [];
+  const toResolve = [];
+  for (const s of sales) {
+    const id = saleId(s);
+    if (!id) continue;
+    (completeIds.has(id) ? alreadyComplete : toResolve).push(s);
+  }
+
+  let saved = 0;
+  let partial = false;
+  if (toResolve.length > 0) {
+    const usersMap = await getCabifyUsersMap();
+    for (let i = 0; i < toResolve.length; i += SYNC_DETAIL_BATCH) {
+      if (Date.now() - startedAt > SYNC_TIME_BUDGET_MS) {
+        partial = true;
+        break;
+      }
+      const chunk = toResolve.slice(i, i + SYNC_DETAIL_BATCH);
+      const details = await Promise.all(chunk.map(s => getJourneyDetails(s.concept?.type_object?.id).catch(() => null)));
+      const enriched = chunk.map((s, k) => buildEnrichedJourney(s, details[k], usersMap));
+      const res = await upsertJourneysToSupabase(enriched);
+      saved += res.count || 0;
+    }
+  }
+
+  // 4. Marca de sincronización: sube updated_at de lo ya completo (o del último viaje si no hubo ventas),
+  //    porque "última sincronización" del portal se calcula con el updated_at más reciente.
+  try {
+    const touchIds = alreadyComplete.map(saleId);
+    if (touchIds.length === 0 && saved === 0 && storedRows.length > 0) {
+      const latest = storedRows.reduce((a, b) => ((b.invoice_date || '') > (a.invoice_date || '') ? b : a));
+      touchIds.push(latest.id);
+    }
+    if (touchIds.length > 0) {
+      const { error } = await supabase.from(CABIFY_TABLE).update({ updated_at: new Date().toISOString() }).in('id', touchIds);
+      if (error) console.warn('[CabifyClient/Supabase] No se pudo marcar la sincronización:', error.message);
+    }
+  } catch (e) {
+    console.warn('[CabifyClient/Supabase] No se pudo marcar la sincronización:', e.message);
+  }
+
+  console.log(`[CabifyClient] Sync ${windowFrom} a ${to}: ${sales.length} ventas en Cabify, ${toResolve.length} por completar, ${saved} guardadas${partial ? ' (parcial)' : ''} en ${Date.now() - startedAt}ms`);
+  return { ok: true, partial, windowFrom, fetched: sales.length, saved };
+}
+
+/**
+ * Viajes corporativos de un rango de fechas, enriquecidos con colaborador, ruta, fechas y costos.
+ * Sin forceRefresh sirve lo guardado en Supabase; con forceRefresh sincroniza primero (incremental) y luego sirve lo guardado.
+ */
+async function fetchCorporateJourneys({ from, to, currency = 'PEN', forceRefresh = false, full = false }) {
   if (!forceRefresh) {
     const fromSupabase = await getJourneysFromSupabase({ from, to });
     if (fromSupabase && fromSupabase.journeys && fromSupabase.journeys.length > 0) {
@@ -567,236 +764,30 @@ async function fetchCorporateJourneys({ from, to, currency = 'PEN', forceRefresh
     }
   }
 
-  const cacheKey = `sales_${from}_${to}_${currency}`;
-  if (!forceRefresh) {
-    const cached = readCache(cacheKey, 1800000); // 30 minutos
-    if (cached && Array.isArray(cached.journeys) && cached.journeys.length > 0) {
-      return cached;
-    }
-  }
-
-  // Backup en disco existente para fallback en caso de error
-  const existingDiskCache = readCache(cacheKey, Infinity);
-
-  let token;
-  let usersMap;
+  let sync;
   try {
-    token = await getCabifyAccessToken();
-    usersMap = await getCabifyUsersMap();
-  } catch (authError) {
-    console.error('[CabifyClient] Fallo de credenciales/usuarios:', authError.message);
-    if (existingDiskCache && existingDiskCache.journeys?.length > 0) {
-      return { ...existingDiskCache, isFallback: true };
-    }
-    throw authError;
+    sync = await syncSalesToSupabase({ from, to, currency, full });
+  } catch (err) {
+    console.error('[CabifyClient] Error inesperado al sincronizar:', err.message);
+    sync = { ok: false, warning: 'No se pudo sincronizar con Cabify. Se muestran los datos ya guardados.' };
   }
 
-  const allSales = [];
-  let totalPages = 1;
-  const perPage = 50;
-  let hasFetchError = false;
-
-  // 1. Paginación de ventas: consultar página 1 para determinar totalPages
-  try {
-    const resPage1 = await axiosGetWithRetry(`${API_BASE}/sales`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-      params: {
-        from,
-        to,
-        currency,
-        page: 1,
-        per: perPage
-      },
-      timeout: 25000
-    }, 2);
-
-    const data = resPage1.data?.data || [];
-    allSales.push(...data);
-    totalPages = resPage1.data?.pages || 1;
-  } catch (error) {
-    console.error('[CabifyClient] Error al consultar página 1 de sales:', error.response?.data || error.message);
-    hasFetchError = true;
-  }
-
-  // 1b. Si hay más páginas y no hubo error, consultarlas concurrentemente en paralelo
-  if (!hasFetchError && totalPages > 1) {
-    const pageNumbers = [];
-    for (let p = 2; p <= Math.min(totalPages, 12); p++) {
-      pageNumbers.push(p);
-    }
-
-    const remainingResults = await Promise.allSettled(
-      pageNumbers.map(page =>
-        axiosGetWithRetry(`${API_BASE}/sales`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-          params: {
-            from,
-            to,
-            currency,
-            page,
-            per: perPage
-          },
-          timeout: 25000
-        }, 2)
-      )
-    );
-
-    for (const r of remainingResults) {
-      if (r.status === 'fulfilled' && r.value?.data?.data) {
-        allSales.push(...r.value.data.data);
-      } else {
-        hasFetchError = true;
-        console.warn('[CabifyClient] Fallo al consultar una de las páginas secundarias de sales');
-      }
-    }
-  }
-
-  // Si falló la comunicación y no se pudieron obtener ventas
-  if (hasFetchError && allSales.length === 0) {
-    if (existingDiskCache && Array.isArray(existingDiskCache.journeys) && existingDiskCache.journeys.length > 0) {
-      console.warn('[CabifyClient] Servidores de Cabify con lentitud. Sirviendo última versión en disco como fallback.');
-      return {
-        ...existingDiskCache,
-        isFallback: true,
-        warning: 'Servicio de Cabify con lentitud temporal. Mostrando la última versión guardada.'
-      };
-    }
-    throw new Error('La API de Cabify no respondió a tiempo. Por favor intenta sincronizar nuevamente en unos momentos.');
-  }
-
-  // 2. Extraer IDs de viajes únicos para resolver el rider/pasajero
-  const journeyIds = allSales
-    .map(s => s.concept?.type_object?.id)
-    .filter(Boolean);
-
-  const uniqueJourneyIds = Array.from(new Set(journeyIds));
-
-  // Filtrar solo los viajes que aún no están en memoria ni en disco para no hacer llamadas innecesarias
-  const pendingJourneyIds = uniqueJourneyIds.filter(jId => {
-    if (journeyDetailsCache.has(jId)) return false;
-    const disk = readCache(`journey_${jId}`, 5184000000);
-    if (disk) {
-      journeyDetailsCache.set(jId, disk);
-      return false;
-    }
-    return true;
-  });
-
-  // Resolver en paralelo solo los pendientes con concurrencia controlada de 20
-  if (pendingJourneyIds.length > 0) {
-    await processInBatches(pendingJourneyIds, 20, async (jId) => {
-      return getJourneyDetails(jId);
-    });
-  }
-
-  // 3. Mapear viajes enriquecidos
-  const enrichedJourneys = allSales.map((sale) => {
-    const typeObj = sale.concept?.type_object || {};
-    const journeyId = typeObj.id;
-    const detail = journeyId ? journeyDetailsCache.get(journeyId) : null;
-
-    const riderId = detail?.rider?.id || detail?.user_id;
-    const matchedUser = riderId ? usersMap.get(riderId) : null;
-
-    const contactPickup = typeObj.pickup?.contact;
-    const contactDropoff = typeObj.dropoff?.contact;
-    const contactName = contactPickup?.name || contactDropoff?.name;
-    const contactEmail = contactPickup?.email || contactDropoff?.email;
-
-    const riderName = matchedUser?.fullName || contactName || (riderId ? `Usuario (${riderId.substring(0, 8)})` : 'Colaborador Cabify');
-    const riderEmail = matchedUser?.email || contactEmail || '';
-    const riderPhone = matchedUser?.mobile || contactPickup?.mobile_num || '';
-
-    const pickupAddr = typeObj.pickup?.name || typeObj.pickup?.addr || 'Origen no especificado';
-    const dropoffAddr = typeObj.dropoff?.name || typeObj.dropoff?.addr || 'Destino no especificado';
-    const pickupCity = typeObj.pickup?.city ? `, ${typeObj.pickup.city}` : '';
-    const dropoffCity = typeObj.dropoff?.city ? `, ${typeObj.dropoff.city}` : '';
-
-    const originFull = `${pickupAddr}${pickupCity}`;
-    const destFull = `${dropoffAddr}${dropoffCity}`;
-
-    const rawTotal = sale.price_details?.total || 0;
-    const totalPEN = Math.round((rawTotal / 100) * 100) / 100;
-
-    const startAt = typeObj.start_at || detail?.start_at || '';
-    const endAt = typeObj.end_at || detail?.end_at || '';
-
-    const vehicleType = vehicleTypeFromProductId(detail?.product_id);
-
+  const fresh = await getJourneysFromSupabase({ from, to });
+  if (fresh) {
     return {
-      id: sale.code || journeyId,
-      ticketCode: sale.code || 'S/N',
-      journeyId: journeyId || '',
-      invoiceDate: sale.invoice_date || '',
-      startAt,
-      endAt,
-      dateFormatted: formatDateLima(startAt),
-      riderId: riderId || '',
-      riderName,
-      riderEmail,
-      riderPhone,
-      origin: originFull,
-      destination: destFull,
-      chargeCode: typeObj.charge_code || 'Movilidad General',
-      motivo: detail?.reason || typeObj.reason || null,
-      description: typeObj.description || '',
-      totalPEN,
-      currency: sale.currency || 'PEN',
-      vehicleType,
-      serviceGroup: getServiceGroup(vehicleType),
-      anomaly: detectJourneyAnomaly({ startAt, endAt, origin: originFull, destination: destFull })
+      ...fresh,
+      isFallback: !sync.ok,
+      warning: !sync.ok ? sync.warning : (sync.partial ? 'Sincronización parcial: el resto se completará en la próxima actualización.' : null)
     };
-  });
+  }
 
+  if (!sync.ok) {
+    throw new Error(sync.warning || 'La API de Cabify no respondió a tiempo. Por favor intenta sincronizar nuevamente en unos momentos.');
+  }
 
-  // 4. Calcular métricas consolidadas
-  let totalAmount = 0;
-  const passengerTotals = new Map();
-
-  enrichedJourneys.forEach(j => {
-    totalAmount += j.totalPEN;
-    const pName = j.riderName || 'Otros';
-    const current = passengerTotals.get(pName) || { name: pName, email: j.riderEmail, total: 0, trips: 0 };
-    current.total += j.totalPEN;
-    current.trips += 1;
-    passengerTotals.set(pName, current);
-  });
-
-  totalAmount = Math.round(totalAmount * 100) / 100;
-  const totalTrips = enrichedJourneys.length;
-  const avgAmount = totalTrips > 0 ? Math.round((totalAmount / totalTrips) * 100) / 100 : 0;
-
-  const passengersArray = Array.from(passengerTotals.values())
-    .map(p => ({ ...p, total: Math.round(p.total * 100) / 100 }))
-    .sort((a, b) => b.total - a.total);
-
-  const topPassenger = passengersArray.length > 0 ? passengersArray[0] : null;
-
-  const result = {
-    journeys: enrichedJourneys,
-    summary: {
-      totalAmount,
-      totalTrips,
-      avgAmount,
-      currency,
-      topPassenger,
-      byPassenger: passengersArray
-    }
+  // Mes sin viajes
+  return {
+    journeys: [],
+    summary: { totalAmount: 0, totalTrips: 0, avgAmount: 0, currency, topPassenger: null, byPassenger: [] }
   };
-
-  // Persistir en la base de datos de Supabase para futuras consultas ultrarrápidas
-  if (enrichedJourneys.length > 0) {
-    try {
-      await upsertJourneysToSupabase(enrichedJourneys);
-      console.log(`[CabifyClient] Guardados ${enrichedJourneys.length} viajes en Supabase (${from} a ${to})`);
-    } catch (e) {
-      console.warn('[CabifyClient] Advertencia al persistir viajes en Supabase:', e.message);
-    }
-  }
-
-  // Solo escribir en caché si obtuvimos viajes o si la consulta concluyó de forma limpia
-  if (enrichedJourneys.length > 0 || !hasFetchError) {
-    writeCache(cacheKey, result);
-  }
-  return result;
 }

@@ -57,7 +57,7 @@ export async function POST(request) {
 
       console.log(`[CabifySyncHistory] Descargando y guardando viajes para ${from} a ${to}...`);
       try {
-        const res = await getCorporateJourneys({ from, to, currency: 'PEN', forceRefresh: true });
+        const res = await getCorporateJourneys({ from, to, currency: 'PEN', forceRefresh: true, full: force });
         const tripsCount = res.journeys ? res.journeys.length : 0;
         totalTripsSynced += tripsCount;
         results.push({
