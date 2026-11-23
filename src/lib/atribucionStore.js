@@ -6,13 +6,17 @@
  *  - crb7e_atrconsumodestinatario: los médicos (varios) o el centro (uno) vinculados a Contactos Maestro.
  *  - crb7e_atrconsumomarca: las marcas involucradas. El importe se reparte en partes iguales entre las marcas (y, aparte, entre los destinatarios): ver atribucionReparto.js.
  *  - crb7e_atrhistorial: quién, cuándo, valor anterior y nuevo en cada cambio.
+ * Corporativo lleva una sola empresa (BLISSCORP / BLISSFARMA / SKINBLISS S.A.C) en crb7e_atrconsumomarca, sin destinatarios.
  * La tabla crb7e_atrasignacion no se usa: el reparto en soles se calcula al leer (partes iguales) y no se guarda.
  */
 import { dvGetAll, dvCrear, dvActualizar, dvEliminar, FV } from './dataverseEnv.js';
+import { EMPRESAS_CORPORATIVO } from './atribucionReparto.js';
 
+// La app de Power Apps ya no guarda "No aplica" (todo viaje debe tener un fin); el portal lo conserva para Finanzas.
 export const DESTINOS = ['Médico', 'Centro médico', 'Corporativo', 'No aplica'];
 export const ESTADOS_GUARDADO = ['Provisional', 'Validado'];
-export const MARCA_CORPORATIVO = 'Blisscorp / Corporativo';
+// Marca que llevaban los Corporativos antes de la versión 1.0.3 de la app. Ya no se escribe; solo puede aparecer en datos antiguos.
+export const MARCA_CORPORATIVO_ANTIGUA = 'Blisscorp / Corporativo';
 const ORIGENES_ATRIBUIBLES = { RG: 'RindeGastos', CAB: 'Cabify' };
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
@@ -114,9 +118,15 @@ export function validarAtribucion({ destino, contactoIds = [], marcas = [], esta
     for (const m of marcasLimpias) if (!maestro.marcas.includes(m)) err(`La marca “${m}” no está en el catálogo.`);
     return { destino, ids, marcas: marcasLimpias, estado };
   }
-  // Corporativo y No aplica no llevan destinatarios. Corporativo es en sí mismo el destino analítico.
+  // Corporativo y No aplica no llevan destinatarios.
   if (ids.length > 0) err(`Con destino “${destino}” no se eligen médicos ni centros.`);
-  return { destino, ids: [], marcas: destino === 'Corporativo' ? [MARCA_CORPORATIVO] : [], estado };
+  if (destino === 'Corporativo') {
+    // Corporativo lleva una sola empresa, obligatoria (se guarda en la tabla de marcas, una fila).
+    if (marcasLimpias.length !== 1) err(`Con destino Corporativo elige una empresa: ${EMPRESAS_CORPORATIVO.join(', ')}.`);
+    if (!EMPRESAS_CORPORATIVO.includes(marcasLimpias[0])) err(`“${marcasLimpias[0]}” no es una empresa válida. Elige: ${EMPRESAS_CORPORATIVO.join(', ')}.`);
+    return { destino, ids: [], marcas: marcasLimpias, estado };
+  }
+  return { destino, ids: [], marcas: [], estado };
 }
 
 const iso = (d) => (d ? String(d).slice(0, 10) : null);

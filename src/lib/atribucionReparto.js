@@ -10,6 +10,12 @@
  * Lo que no tiene destinatario o marca se muestra como "Sin destinatario" / "Sin marca" para que cada vista cuadre con el total.
  */
 
+/**
+ * Un consumo Corporativo lleva una empresa (en la tabla de marcas, como una sola fila), en vez de las marcas comerciales.
+ * Lo definen la app de Power Apps "Mis viajes Cabify" (versión 1.0.3) y el portal.
+ */
+export const EMPRESAS_CORPORATIVO = ['BLISSCORP S.A.C', 'BLISSFARMA S.A.C', 'SKINBLISS S.A.C'];
+
 export const SIN_DESTINATARIO = 'Sin destinatario';
 export const SIN_MARCA = 'Sin marca';
 

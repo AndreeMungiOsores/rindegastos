@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { lineasDeReparto, totalesPorBeneficiario, SIN_DESTINATARIO, SIN_MARCA } from '../../lib/atribucionReparto.js';
+import { lineasDeReparto, totalesPorBeneficiario, SIN_DESTINATARIO, SIN_MARCA, EMPRESAS_CORPORATIVO } from '../../lib/atribucionReparto.js';
 
 /**
  * Centro de Atribución de Costos — fase 1 (solo lectura).
@@ -205,8 +205,8 @@ function Entregas({ consumos, zeroMeta }) {
 const DESTINOS_UI = [
   { id: 'Médico', label: 'Médico(s)', ayuda: 'Uno o varios médicos' },
   { id: 'Centro médico', label: 'Centro médico', ayuda: 'Un solo centro o empresa' },
-  { id: 'Corporativo', label: 'Corporativo', ayuda: 'Gasto general, sin médico ni marca' },
-  { id: 'No aplica', label: 'No aplica', ayuda: 'No corresponde atribuir' }
+  { id: 'Corporativo', label: 'Corporativo', ayuda: 'Gasto general de una empresa, sin médico ni marca' },
+  { id: 'No aplica', label: 'No aplica', ayuda: 'No corresponde atribuir (la app de Power Apps ya no lo usa)' }
 ];
 const LOTE = 30;
 let maestroCache = null;
@@ -219,7 +219,9 @@ function AtribuirModal({ filas, onClose, onGuardado }) {
   const [errorMaestro, setErrorMaestro] = useState('');
   const [destino, setDestino] = useState(previo?.destino || (unico?.estado === 'sugerido_corporativo' ? 'Corporativo' : 'Médico'));
   const [seleccion, setSeleccion] = useState([]); // [{id, nombre, tipo}]
-  const [marcas, setMarcas] = useState(previo?.marcas?.filter(m => m !== 'Blisscorp / Corporativo') || []);
+  const [marcas, setMarcas] = useState(previo?.destino === 'Corporativo' ? [] : (previo?.marcas || []));
+  // Corporativo lleva una empresa; los datos anteriores a la versión 1.0.3 traían "Blisscorp / Corporativo" y no la tienen: hay que elegirla.
+  const [empresa, setEmpresa] = useState(previo?.destino === 'Corporativo' ? (previo.marcas?.find(m => EMPRESAS_CORPORATIVO.includes(m)) || '') : '');
   const [estadoGuardado, setEstadoGuardado] = useState(previo?.estado || 'Provisional');
   const [motivo, setMotivo] = useState(previo?.motivo || '');
   const [autor, setAutor] = useState('');
@@ -256,7 +258,7 @@ function AtribuirModal({ filas, onClose, onGuardado }) {
     if (sugerencia.destino) setDestino(sugerencia.destino);
     const contacto = sugerencia.contactoId && maestro?.contactos.find(x => x.id === sugerencia.contactoId);
     setSeleccion(contacto ? [contacto] : []);
-    setMarcas((sugerencia.marcas || []).filter(m => m !== 'Blisscorp / Corporativo'));
+    setMarcas(sugerencia.destino === 'Corporativo' ? [] : (sugerencia.marcas || []));
   };
 
   const esComercial = destino === 'Médico' || destino === 'Centro médico';
@@ -285,7 +287,8 @@ function AtribuirModal({ filas, onClose, onGuardado }) {
 
   const faltaAlgo = !autor.trim()
     || (esComercial && seleccion.length === 0)
-    || (esComercial && marcas.length === 0);
+    || (esComercial && marcas.length === 0)
+    || (destino === 'Corporativo' && !empresa);
   const totalImporte = filas.reduce((a, c) => a + (c.importe || 0), 0);
 
   const guardar = async () => {
@@ -304,7 +307,7 @@ function AtribuirModal({ filas, onClose, onGuardado }) {
             keys: lote.map(c => c.key),
             destino,
             contactoIds: esComercial ? seleccion.map(c => c.id) : [],
-            marcas: esComercial ? marcas : [],
+            marcas: destino === 'Corporativo' ? [empresa] : esComercial ? marcas : [],
             estado: estadoGuardado,
             motivo: motivo.trim() || null,
             autor: autor.trim()
@@ -415,6 +418,18 @@ function AtribuirModal({ filas, onClose, onGuardado }) {
           </>
         )}
 
+        {destino === 'Corporativo' && (
+          <>
+            <label style={etiqueta}>Empresa *</label>
+            <div style={{ display: 'flex', gap: 6 }} role="radiogroup" aria-label="Empresa">
+              {EMPRESAS_CORPORATIVO.map(e => (
+                <button key={e} type="button" role="radio" aria-checked={empresa === e} style={seg(empresa === e)} onClick={() => setEmpresa(e)}>{e}</button>
+              ))}
+            </div>
+            {!empresa && previo && <p style={{ margin: '0.3rem 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Esta atribución se guardó antes de que Corporativo llevara empresa: elige una para poder guardarla.</p>}
+          </>
+        )}
+
         <label style={etiqueta}>Estado</label>
         <div style={{ display: 'flex', gap: 6 }}>
           {['Provisional', 'Validado'].map(e => <button key={e} type="button" style={seg(estadoGuardado === e)} onClick={() => setEstadoGuardado(e)} aria-pressed={estadoGuardado === e}>{e}</button>)}
@@ -521,6 +536,14 @@ function Consumos({ consumos, onRecargar }) {
     }
     const corporativos = aplicables.filter(c => c.sugerencia.destino === 'Corporativo').length;
     if (!window.confirm(`Se guardarán ${aplicables.length} atribuciones como Provisional según la sugerencia: ${corporativos} como Corporativo y ${aplicables.length - corporativos} con médico o centro y marca. Podrás revisarlas y cambiarlas después. ¿Continuar?`)) return;
+    // Corporativo lleva una empresa obligatoria: se pregunta una vez para todos los viajes Corporativos de este lote.
+    let empresaCorp = null;
+    if (corporativos > 0) {
+      const lista = EMPRESAS_CORPORATIVO.map((e, i) => `${i + 1} = ${e}`).join('\n');
+      const resp = (window.prompt(`Los ${corporativos} viajes Corporativos necesitan una empresa. Escribe el número:\n${lista}`) || '').trim();
+      empresaCorp = EMPRESAS_CORPORATIVO[Number(resp) - 1] || null;
+      if (!empresaCorp) { setAvisoSug('No se guardó nada: elige 1, 2 o 3 para la empresa de los viajes Corporativos.'); return; }
+    }
     let autor = '';
     try { autor = localStorage.getItem('atribucion_autor') || ''; } catch { /* sin almacenamiento */ }
     if (!autor.trim()) autor = (window.prompt('¿Quién registra estas atribuciones? (tu nombre)') || '').trim();
@@ -539,7 +562,7 @@ function Consumos({ consumos, onRecargar }) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              keys: lote, destino: sg.destino, contactoIds: sg.contactoId ? [sg.contactoId] : [], marcas: sg.destino === 'Corporativo' ? [] : sg.marcas,
+              keys: lote, destino: sg.destino, contactoIds: sg.contactoId ? [sg.contactoId] : [], marcas: sg.destino === 'Corporativo' ? [empresaCorp] : sg.marcas,
               estado: 'Provisional', motivo: 'Sugerencia automática aceptada', autor
             })
           });
