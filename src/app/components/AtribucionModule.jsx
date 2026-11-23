@@ -473,6 +473,7 @@ function Consumos({ consumos, onRecargar }) {
   const [origen, setOrigen] = useState('');
   const [estado, setEstado] = useState('');
   const [mes, setMes] = useState('');
+  const [atencion, setAtencion] = useState(''); // solo Zero: 'con' | 'sin' comprobante
   const [busqueda, setBusqueda] = useState('');
   const [limite, setLimite] = useState(200);
 
@@ -481,13 +482,14 @@ function Consumos({ consumos, onRecargar }) {
     const q = busqueda.trim().toLowerCase();
     return consumos.filter(c =>
       (!origen || c.origen === origen) &&
+      (!atencion || (c.origen === 'Zero' && (atencion === 'con' ? c.atendido : !c.atendido))) &&
       (!estado || (estado === 'con_sugerencia' ? (c.sugerencia && c.estado === 'pendiente') : c.estado === estado)) &&
       (!mes || c.mes === mes) &&
       (!q || `${c.responsable || ''} ${c.concepto} ${c.destinatario || ''} ${c.marca || ''}`.toLowerCase().includes(q))
     );
-  }, [consumos, origen, estado, mes, busqueda]);
+  }, [consumos, origen, estado, mes, busqueda, atencion]);
 
-  useEffect(() => { setLimite(200); }, [origen, estado, mes, busqueda]);
+  useEffect(() => { setLimite(200); }, [origen, estado, mes, busqueda, atencion]);
 
   const [aplicando, setAplicando] = useState(null); // { hecho, total } mientras se guardan sugerencias
   const [avisoSug, setAvisoSug] = useState('');
@@ -500,12 +502,12 @@ function Consumos({ consumos, onRecargar }) {
     ws.addTable({
       name: 'ConsumosAtribucion', ref: 'A1', headerRow: true, totalsRow: false,
       style: { theme: 'TableStyleMedium2', showRowStripes: true },
-      columns: ['Origen', 'Fecha', 'Responsable', 'Concepto', 'Importe sin IGV (S/)', 'Unidades', 'Destinatario', 'Tipo de destinatario', 'Marca', 'Estado', 'Días pendiente', 'Sugerencia', 'Confianza de la sugerencia', 'Atribuido por', 'Cómo se calculó el importe', 'Solicitud Zero', 'Documento(s) de Zero'].map(name => ({ name, filterButton: true })),
+      columns: ['Origen', 'Fecha', 'Responsable', 'Concepto', 'Importe sin IGV (S/)', 'Unidades', 'Destinatario', 'Tipo de destinatario', 'Marca', 'Estado', 'Días pendiente', 'Sugerencia', 'Confianza de la sugerencia', 'Atribuido por', 'Cómo se calculó el importe', 'Solicitud Zero', 'Comprobante del ítem (Zero)'].map(name => ({ name, filterButton: true })),
       rows: filas.map(c => [
         c.origen, c.fecha || '', c.responsable || '', c.concepto, c.importe ?? '', c.unidades ?? '',
         c.destinatario || '', c.destinatarioTipo || '', c.marca || '', (ESTADOS[c.estado] || ESTADOS.pendiente).label,
         c.estado === 'pendiente' ? (diasDesde(c.fecha) ?? '') : '', sugerenciaTxt(c), c.sugerencia?.confianza || '', c.atribucion?.atribuidoPor || '', VALORIZACION[c.valorizacion] || '',
-        c.solicitud || '', c.origen === 'Zero' ? (c.documentos?.length ? c.documentos.join('; ') : 'Sin documento') : ''
+        c.solicitud || '', c.origen === 'Zero' ? (c.comprobante || 'Sin comprobante') : ''
       ])
     });
     ws.eachRow((row, n) => { if (n > 1) row.getCell(5).numFmt = '#,##0.00'; });
@@ -620,6 +622,11 @@ function Consumos({ consumos, onRecargar }) {
           <option value="">Todos los meses</option>
           {meses.map(m => <option key={m} value={m}>{fmtMes(m)}</option>)}
         </select>
+        <select style={s.select} value={atencion} onChange={e => setAtencion(e.target.value)} aria-label="Atención de Zero" title="Solo productos de Zero: con comprobante = ya atendido">
+          <option value="">Zero: con y sin comprobante</option>
+          <option value="con">Zero: con comprobante (atendido)</option>
+          <option value="sin">Zero: sin comprobante</option>
+        </select>
         <button type="button" className="btn btn-secondary" onClick={() => exportarExcel(filtrados)} disabled={filtrados.length === 0} title="Descarga a Excel todos los consumos que cumplen los filtros">Exportar Excel</button>
       </div>
 
@@ -654,7 +661,7 @@ function Consumos({ consumos, onRecargar }) {
               <th style={s.th}>Fecha</th>
               <th style={s.th}>Responsable</th>
               <th style={s.th}>Concepto</th>
-              <th style={s.th} title="Documento(s) de despacho o facturación de la solicitud de Zero, cargados por Gonzalo">Doc. Zero</th>
+              <th style={s.th} title="Nro de comprobante del ítem de Zero: indica que ese producto ya fue atendido (lo carga Gonzalo)">Comprobante</th>
               <th style={{ ...s.th, ...s.num }}>Importe / unid.</th>
               <th style={s.th}>Destinatario</th>
               <th style={s.th}>Marca</th>
@@ -674,8 +681,8 @@ function Consumos({ consumos, onRecargar }) {
                   <td style={s.td}>{fmtDate(c.fecha)}</td>
                   <td style={{ ...s.td, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.responsable || ''}>{c.responsable || '—'}</td>
                   <td style={{ ...s.td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${c.categoria} · ${c.concepto}`}>{c.concepto}</td>
-                  <td style={{ ...s.td, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.78rem', color: c.origen === 'Zero' && !c.documentos?.length ? 'var(--text-secondary)' : undefined }} title={c.origen === 'Zero' ? `${c.solicitud || ''}${c.documentos?.length ? ` · ${c.documentos.join('; ')}` : ' · sin documento cargado'}` : ''}>
-                    {c.origen === 'Zero' ? (c.documentos?.length ? c.documentos.join('; ') : 'Sin documento') : ''}
+                  <td style={{ ...s.td, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.78rem', color: c.origen === 'Zero' && !c.comprobante ? 'var(--text-secondary)' : undefined }} title={c.origen === 'Zero' ? `${c.solicitud || ''}${c.comprobante ? ` · atendido con ${c.comprobante}` : ' · sin comprobante: aún no se registra como atendido'}${c.documentos?.length ? ` · documentos de la solicitud: ${c.documentos.join('; ')}` : ''}` : ''}>
+                    {c.origen === 'Zero' ? (c.comprobante || 'Sin comprobante') : ''}
                   </td>
                   <td style={{ ...s.td, ...s.num }} title={c.valorizacion ? `Sin IGV. ${VALORIZACION[c.valorizacion] || ''}${c.precioUnitario ? ` (precio unitario ${fmtMoney(c.precioUnitario)})` : ''}` : ''}>{c.origen === 'Zero' ? `${fmtInt(c.unidades)} u. · ${c.importe != null ? fmtMoney(c.importe) : 'sin precio'}` : fmtMoney(c.importe)}</td>
                   <td style={{ ...s.td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.destinatario ? `${c.destinatario} (${c.destinatarioTipo})` : ''}>{c.destinatario || '—'}</td>
@@ -995,20 +1002,20 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
       </div>
 
       {zeroMeta?.documentos && (
-        <section style={s.card} aria-label="Documentos de Zero por solicitud">
-          <h3 style={s.h3}>Zero: documentos por solicitud</h3>
+        <section style={s.card} aria-label="Atención de Zero por comprobante">
+          <h3 style={s.h3}>Zero: productos atendidos (comprobante por ítem)</h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem' }}>
-            Gonzalo cruzó los correos de atención con cada solicitud y cargó el número de documento (campo “Nro Documento” de Zero). Aquí solo se muestra: el campo guarda códigos, no dice qué producto ni qué cantidad cubre cada documento, así que todavía no cambia los importes ni el reparto.
-            Incluye todas las solicitudes reales del portal, también las anteriores a los correos de atención (la conciliación de Gonzalo cubre las de este año con correo).
+            Gonzalo registra en cada ítem de Zero el número de comprobante con el que se atendió (campo “Nro Comprobante”). Un ítem con comprobante se considera atendido. Los importes siguen siendo los de lo pedido (precio de venta de SeaFácil), no los del comprobante, y el campo no dice qué cantidad cubre cada documento.
+            Aún se está cargando: un ítem sin comprobante puede estar pendiente o simplemente sin registrar.
           </p>
           <div className="kpis-grid">
-            <div className="kpi-card"><span className="kpi-label">Solicitudes</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.solicitudes)}</span><span className="kpi-sub">reales, sin pruebas · {fmtInt(zeroMeta.documentos.unidades)} unidades</span></div>
-            <div className="kpi-card"><span className="kpi-label">Con documento</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.conDocumento)}</span><span className="kpi-sub">{pct(zeroMeta.documentos.conDocumento, zeroMeta.documentos.solicitudes)}% · {fmtInt(zeroMeta.documentos.totalDocumentos)} documentos distintos</span></div>
-            <div className="kpi-card"><span className="kpi-label">Sin documento</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.sinDocumento)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.unidadesSinDocumento)} unidades</span></div>
-            <div className="kpi-card"><span className="kpi-label">Documentos compartidos</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.compartidos.length)}</span><span className="kpi-sub">cubren varias solicitudes · {fmtInt(zeroMeta.documentos.multiples)} solicitudes con varios documentos</span></div>
+            <div className="kpi-card"><span className="kpi-label">Ítems con comprobante</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.items.con)}</span><span className="kpi-sub">{pct(zeroMeta.documentos.items.con, zeroMeta.documentos.items.con + zeroMeta.documentos.items.sin)}% de {fmtInt(zeroMeta.documentos.items.con + zeroMeta.documentos.items.sin)} · {fmtInt(zeroMeta.documentos.unidades.con)} unidades</span></div>
+            <div className="kpi-card"><span className="kpi-label">Ítems sin comprobante</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.items.sin)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.unidades.sin)} unidades</span></div>
+            <div className="kpi-card"><span className="kpi-label">Importe atendido</span><span className="kpi-value">{fmtMoney(zeroMeta.documentos.importe.con)}</span><span className="kpi-sub">{fmtMoney(zeroMeta.documentos.importe.sin)} sin comprobante · sin IGV</span></div>
+            <div className="kpi-card"><span className="kpi-label">Solicitudes</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.solicitudes)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.completas)} completas · {fmtInt(zeroMeta.documentos.parciales)} parciales · {fmtInt(zeroMeta.documentos.sinComprobante)} sin comprobante</span></div>
           </div>
           <details style={{ marginTop: '0.75rem' }}>
-            <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver las {fmtInt(zeroMeta.documentos.sinDocumento)} solicitudes sin documento</summary>
+            <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver las {fmtInt(zeroMeta.documentos.pendientes.length)} solicitudes con ítems sin comprobante</summary>
             <div style={{ ...s.tableWrap, marginTop: '0.6rem', maxHeight: '40vh' }}>
               <table style={s.table}>
                 <thead>
@@ -1016,16 +1023,20 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
                     <th style={s.th}>Solicitud</th>
                     <th style={s.th}>Fecha</th>
                     <th style={s.th}>Solicitante</th>
+                    <th style={s.th}>Atención</th>
+                    <th style={{ ...s.th, ...s.num }}>Ítems con comprobante</th>
                     <th style={{ ...s.th, ...s.num }}>Unidades</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {zeroMeta.documentos.listaSinDocumento.map(r => (
+                  {zeroMeta.documentos.pendientes.map(r => (
                     <tr key={r.ref}>
                       <td style={s.td}>{r.ref}</td>
                       <td style={s.td}>{fmtDate(r.fecha)}</td>
                       <td style={s.td}>{r.solicitante || '—'}</td>
-                      <td style={{ ...s.td, ...s.num }}>{fmtInt(r.unidades)}</td>
+                      <td style={s.td}>{r.estado === 'parcial' ? 'Parcial' : 'Sin comprobante'}</td>
+                      <td style={{ ...s.td, ...s.num }}>{fmtInt(r.itemsConComprobante)} de {fmtInt(r.items)}</td>
+                      <td style={{ ...s.td, ...s.num }}>{fmtInt(r.unidadesConComprobante)} de {fmtInt(r.unidades)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1034,12 +1045,12 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
           </details>
           {zeroMeta.documentos.compartidos.length > 0 && (
             <details style={{ marginTop: '0.6rem' }}>
-              <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver los {fmtInt(zeroMeta.documentos.compartidos.length)} documentos que cubren varias solicitudes</summary>
+              <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver los {fmtInt(zeroMeta.documentos.compartidos.length)} comprobantes que cubren varias solicitudes (de {fmtInt(zeroMeta.documentos.totalDocumentos)})</summary>
               <div style={{ ...s.tableWrap, marginTop: '0.6rem', maxHeight: '40vh' }}>
                 <table style={s.table}>
                   <thead>
                     <tr>
-                      <th style={s.th}>Documento</th>
+                      <th style={s.th}>Comprobante</th>
                       <th style={s.th}>Solicitudes que cubre</th>
                     </tr>
                   </thead>
@@ -1053,7 +1064,35 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
                   </tbody>
                 </table>
               </div>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.5rem 0 0' }}>No se sabe qué parte de cada documento corresponde a cada solicitud: hay que definirlo antes de repartir su costo.</p>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.5rem 0 0' }}>No se sabe qué parte de cada comprobante corresponde a cada solicitud: hay que definirlo antes de repartir su costo.</p>
+            </details>
+          )}
+          {zeroMeta.documentos.diferencias.length > 0 && (
+            <details style={{ marginTop: '0.6rem' }}>
+              <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver {fmtInt(zeroMeta.documentos.diferencias.length)} ítems cuyo comprobante no figura en el documento de su solicitud</summary>
+              <div style={{ ...s.tableWrap, marginTop: '0.6rem', maxHeight: '40vh' }}>
+                <table style={s.table}>
+                  <thead>
+                    <tr>
+                      <th style={s.th}>Solicitud</th>
+                      <th style={s.th}>Producto</th>
+                      <th style={s.th}>Comprobante del ítem</th>
+                      <th style={s.th}>Documento(s) de la solicitud</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {zeroMeta.documentos.diferencias.map((d, i) => (
+                      <tr key={`${d.solicitud}-${i}`}>
+                        <td style={s.td}>{d.solicitud}</td>
+                        <td style={s.td}>{d.concepto}</td>
+                        <td style={s.td}>{d.comprobante}</td>
+                        <td style={s.td}>{d.documentosSolicitud.join('; ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.5rem 0 0' }}>Puede ser un segundo despacho de la misma solicitud o un dato por corregir: lo confirma Gonzalo.</p>
             </details>
           )}
         </section>

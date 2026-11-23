@@ -143,7 +143,7 @@ async function cargarZero() {
   let errorPrecios = null;
   try { precios = await cargarPreciosSeafacil(); } catch (e) { errorPrecios = e.message; console.error('[Atribucion] No se pudieron leer los precios de SeaFácil:', e.message); }
   const [items, solicitudes, productos, contactos, legado] = await Promise.all([
-    dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,createdon'),
+    dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,crb7e_nrocomprobante,createdon'),
     dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_email,crb7e_observaciones,crb7e_nrodocumento'),
     dvGetAll('sistemas', 'crb7e_producto1s?$select=crb7e_producto1id,crb7e_nombredelproducto,crb7e_sku,crb7e_marca,crb7e_tipodeproducto'),
     dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra,crb7e_estadodelcontacto,crb7e_nombrecomercial,crb7e_descuento'),
@@ -330,9 +330,18 @@ async function cargarZero() {
     else estado = 'pendiente';
 
     const documentos = documentosDeSolicitud(sol?.crb7e_nrodocumento);
-    const real = solicitudesReales.get(ref) || { ref, fecha, solicitante: sol?.crb7e_solicitante || null, documentos, items: 0, unidades: 0 };
+    // Comprobante del ítem (campo "Nro Comprobante" de hItems, cargado por Gonzalo): indica que ese producto fue atendido.
+    const comprobante = String(it.crb7e_nrocomprobante || '').trim() || null;
+    const real = solicitudesReales.get(ref) || { ref, fecha, solicitante: sol?.crb7e_solicitante || null, documentos, items: 0, unidades: 0, itemsConComprobante: 0, unidadesConComprobante: 0, comprobantes: new Set(), importe: 0, importeConComprobante: 0 };
     real.items++;
     real.unidades += unidades;
+    real.importe += importe || 0;
+    if (comprobante) {
+      real.itemsConComprobante++;
+      real.unidadesConComprobante += unidades;
+      real.importeConComprobante += importe || 0;
+      real.comprobantes.add(comprobante);
+    }
     solicitudesReales.set(ref, real);
 
     filas.push({
@@ -340,6 +349,8 @@ async function cargarZero() {
       origen: 'Zero',
       solicitud: ref,
       documentos,
+      comprobante,
+      atendido: !!comprobante,
       fecha,
       mes: fecha ? fecha.slice(0, 7) : null,
       responsable: sol?.crb7e_solicitante || null,
@@ -363,26 +374,37 @@ async function cargarZero() {
     });
   }
 
-  // Documentos por solicitud: cuántas ya tienen documento, cuáles no y qué documentos cubren varias solicitudes.
-  const porDocumento = new Map(); // documento -> referencias
-  for (const s of solicitudesReales.values()) {
-    for (const d of s.documentos) {
-      if (!porDocumento.has(d)) porDocumento.set(d, []);
-      porDocumento.get(d).push(s.ref);
+  // Atención por ítem: el "Nro Comprobante" de cada ítem (hItems) indica qué productos ya fueron atendidos.
+  // El "Nro Documento" de la solicitud (hSolicitudes) queda como referencia y se usa para detectar diferencias.
+  const lista = [...solicitudesReales.values()];
+  const porComprobante = new Map(); // comprobante -> referencias de solicitud
+  for (const s of lista) {
+    for (const d of s.comprobantes) {
+      if (!porComprobante.has(d)) porComprobante.set(d, []);
+      porComprobante.get(d).push(s.ref);
     }
   }
-  const lista = [...solicitudesReales.values()];
-  const sinDocumento = lista.filter(s => s.documentos.length === 0);
+  const estadoSolicitud = (s) => (s.itemsConComprobante === 0 ? 'sin' : s.itemsConComprobante === s.items ? 'completa' : 'parcial');
+  const pendientes = lista.filter(s => estadoSolicitud(s) !== 'completa');
+  const zeroFilas = filas;
+  const conComp = zeroFilas.filter(f => f.atendido);
+  const sinComp = zeroFilas.filter(f => !f.atendido);
+  const suma = (arr, k) => arr.reduce((t, f) => t + (f[k] || 0), 0);
   meta.documentos = {
     solicitudes: lista.length,
-    conDocumento: lista.length - sinDocumento.length,
-    sinDocumento: sinDocumento.length,
-    unidadesSinDocumento: sinDocumento.reduce((t, s) => t + s.unidades, 0),
-    unidades: lista.reduce((t, s) => t + s.unidades, 0),
-    listaSinDocumento: sinDocumento.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).map(s => ({ ref: s.ref, fecha: s.fecha, solicitante: s.solicitante, unidades: s.unidades })),
-    compartidos: [...porDocumento].filter(([, refs]) => refs.length > 1).map(([documento, refs]) => ({ documento, solicitudes: refs })).sort((a, b) => b.solicitudes.length - a.solicitudes.length),
-    multiples: lista.filter(s => s.documentos.length > 1).length,
-    totalDocumentos: porDocumento.size
+    completas: lista.filter(s => estadoSolicitud(s) === 'completa').length,
+    parciales: lista.filter(s => estadoSolicitud(s) === 'parcial').length,
+    sinComprobante: lista.filter(s => estadoSolicitud(s) === 'sin').length,
+    items: { con: conComp.length, sin: sinComp.length },
+    unidades: { con: suma(conComp, 'unidades'), sin: suma(sinComp, 'unidades') },
+    importe: { con: redondear(suma(conComp, 'importe')), sin: redondear(suma(sinComp, 'importe')) },
+    totalDocumentos: porComprobante.size,
+    compartidos: [...porComprobante].filter(([, refs]) => refs.length > 1).map(([documento, refs]) => ({ documento, solicitudes: refs })).sort((a, b) => b.solicitudes.length - a.solicitudes.length),
+    pendientes: pendientes
+      .map(s => ({ ref: s.ref, fecha: s.fecha, solicitante: s.solicitante, estado: estadoSolicitud(s), items: s.items, itemsConComprobante: s.itemsConComprobante, unidades: s.unidades, unidadesConComprobante: s.unidadesConComprobante }))
+      .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))),
+    // Ítems cuyo comprobante no figura en el "Nro Documento" de su solicitud (la solicitud sí tiene documentos cargados).
+    diferencias: conComp.filter(f => f.documentos.length > 0 && !f.documentos.includes(f.comprobante)).map(f => ({ solicitud: f.solicitud, comprobante: f.comprobante, documentosSolicitud: f.documentos, concepto: f.concepto }))
   };
 
   return { filas, meta: { ...meta, legado: { ...meta.legado, destinatarios: [...meta.legado.destinatarios.values()].sort((a, b) => b.unidades - a.unidades) } } };
