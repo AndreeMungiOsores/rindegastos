@@ -138,9 +138,9 @@ function Entregas({ consumos, zeroMeta }) {
       </div>
 
       <div className="kpis-grid">
-        <div className="kpi-card"><span className="kpi-label">Unidades entregadas</span><span className="kpi-value">{fmtInt(resumen.total)}</span><span className="kpi-sub">{fmtInt(filtrados.length)} ítems de solicitud</span></div>
+        <div className="kpi-card"><span className="kpi-label">Unidades entregadas</span><span className="kpi-value">{fmtInt(resumen.total)}</span><span className="kpi-sub">según las solicitudes de Zero</span></div>
         <div className="kpi-card"><span className="kpi-label">Con destinatario</span><span className="kpi-value">{pct(resumen.total - resumen.sinDest, resumen.total)}%</span><span className="kpi-sub">{fmtInt(resumen.total - resumen.sinDest)} de {fmtInt(resumen.total)} unidades</span></div>
-        <div className="kpi-card"><span className="kpi-label">Médicos alcanzados</span><span className="kpi-value">{fmtInt(resumen.medicos)}</span><span className="kpi-sub">{fmtInt(resumen.filas.length)} destinatarios distintos</span></div>
+        <div className="kpi-card"><span className="kpi-label">Médicos alcanzados</span><span className="kpi-value">{fmtInt(resumen.medicos)}</span><span className="kpi-sub" title="Médicos distintos que recibieron al menos un producto de Zero. El total de destinatarios incluye también staff, influencers y centros.">de {fmtInt(resumen.filas.length)} destinatarios (incluye staff, influencers y centros)</span></div>
         <div className="kpi-card"><span className="kpi-label">Sin destinatario</span><span className="kpi-value">{fmtInt(resumen.sinDest)}</span><span className="kpi-sub">unidades sin a quién atribuir</span></div>
         <div className="kpi-card"><span className="kpi-label">Valor aproximado sin IGV</span><span className="kpi-value">{fmtMoney(filtrados.reduce((a, c) => a + (c.importe || 0), 0))}</span><span className="kpi-sub">{fmtInt(filtrados.filter(c => c.importe == null).reduce((a, c) => a + (c.unidades || 0), 0))} unidades sin precio</span></div>
       </div>
