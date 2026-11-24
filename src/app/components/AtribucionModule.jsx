@@ -104,11 +104,15 @@ function Entregas({ consumos, zeroMeta }) {
 
   return (
     <>
-      <div style={s.note} role="note">
-        Unidades entregadas según las solicitudes de Zero. El valor en soles es una aproximación: cada unidad se valoriza con el precio mayorista (canales B2B) promedio sin IGV de SeaFácil, o con el precio B2C si el producto no se vende por B2B (últimos 12 meses), porque los bonificados no tienen costo ni precio pagado registrado.
-        {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && (
-          <> No se consideran las pruebas: {fmtInt(zeroMeta.pruebasExcluidas.porObservaciones.solicitudes)} solicitudes con observaciones como “Prueba, no atender”, {fmtInt(zeroMeta.pruebasExcluidas.deTI.solicitudes)} solicitudes de Gonzalo Laqui y Andree Mungi (TI) y {fmtInt(zeroMeta.pruebasExcluidas.sinSolicitud.items)} ítems sin solicitud de las primeras pruebas{zeroMeta.pruebasExcluidas.aTI?.items > 0 && <>, además de {fmtInt(zeroMeta.pruebasExcluidas.aTI.items)} ítems pedidos a nombre de Gonzalo Laqui</>}. En total {fmtInt(zeroMeta.pruebasExcluidas.items)} ítems y {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades.</>
-        )}
+      <div
+        style={s.note}
+        role="note"
+        title={zeroMeta?.pruebasExcluidas?.solicitudes > 0
+          ? `Pruebas que no se consideran: ${fmtInt(zeroMeta.pruebasExcluidas.porObservaciones.solicitudes)} solicitudes con observaciones como “Prueba, no atender”, ${fmtInt(zeroMeta.pruebasExcluidas.deTI.solicitudes)} solicitudes de Gonzalo Laqui y Andree Mungi (TI), ${fmtInt(zeroMeta.pruebasExcluidas.sinSolicitud.items)} ítems sin solicitud y ${fmtInt(zeroMeta.pruebasExcluidas.aTI?.items || 0)} ítems pedidos a nombre de Gonzalo Laqui. Detalle en la pestaña Calidad del dato.`
+          : undefined}
+      >
+        Unidades según las solicitudes de Zero, valoradas sin IGV con el precio mayorista B2B de SeaFácil (B2C si no hay venta B2B): es una aproximación, aún no hay costo real.
+        {zeroMeta?.pruebasExcluidas?.solicitudes > 0 && <> No incluye pruebas ({fmtInt(zeroMeta.pruebasExcluidas.items)} ítems, {fmtInt(zeroMeta.pruebasExcluidas.unidades)} unidades).</>}
       </div>
 
       <div style={s.controls}>
