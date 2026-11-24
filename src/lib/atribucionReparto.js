@@ -10,11 +10,8 @@
  * Lo que no tiene destinatario o marca se muestra como "Sin destinatario" / "Sin marca" para que cada vista cuadre con el total.
  */
 
-/**
- * Un consumo Corporativo lleva una empresa (en la tabla de marcas, como una sola fila), en vez de las marcas comerciales.
- * Lo definen la app de Power Apps "Mis viajes Cabify" (versión 1.0.3) y el portal.
- */
-export const EMPRESAS_CORPORATIVO = ['BLISSCORP S.A.C', 'BLISSFARMA S.A.C', 'SKINBLISS S.A.C'];
+/** Un consumo Corporativo sin marca va a este rubro en el costal de marcas (con marca, va a esa marca). */
+export const CORPORATIVO_GENERAL = 'Corporativo (sin marca)';
 
 export const SIN_DESTINATARIO = 'Sin destinatario';
 export const SIN_MARCA = 'Sin marca';
@@ -33,10 +30,12 @@ export function destinatariosDe(c) {
   return [{ id: SIN_DESTINATARIO, nombre: SIN_DESTINATARIO, tipo: null }];
 }
 
-/** Marcas de un consumo (al menos una). */
+/** Marcas de un consumo (al menos una). Corporativo puede llevar marcas o ninguna. */
 export function marcasDe(c) {
   const lista = c.atribucion ? (c.atribucion.marcas || []) : separar(c.marca);
-  return lista.length ? lista : [SIN_MARCA];
+  if (lista.length) return lista;
+  // Corporativo sin marca es un rubro propio, distinto de "Sin marca" (pendiente de atribuir).
+  return [c.atribucion?.destino === 'Corporativo' ? CORPORATIVO_GENERAL : SIN_MARCA];
 }
 
 /**
