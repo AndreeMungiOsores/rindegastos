@@ -18,6 +18,12 @@ export function getSupabaseAdmin() {
       auth: {
         persistSession: false,
         autoRefreshToken: false
+      },
+      // Next.js (App Router) guarda en su caché de datos las respuestas de fetch: una misma consulta a Supabase
+      // (misma URL) devolvía siempre el resultado de la primera vez aunque la tabla ya hubiera cambiado.
+      // Los datos de este portal cambian a cada sincronización, así que las lecturas nunca deben cachearse.
+      global: {
+        fetch: (input, init = {}) => fetch(input, { ...init, cache: 'no-store' })
       }
     });
   }

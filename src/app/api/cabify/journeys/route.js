@@ -65,7 +65,8 @@ export async function GET(request) {
       isCurrentMonth,
       lastSyncAt: result.lastSyncAt || null,
       needsBackgroundRevalidation,
-      warning: result.warning || null
+      warning: result.warning || null,
+      sync: result.sync || null
     });
   } catch (error) {
     console.error('[CabifyAPI] Error al procesar consulta de viajes:', error);

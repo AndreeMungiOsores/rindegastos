@@ -511,6 +511,7 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
 
     const chunkSize = 100;
     let saved = 0;
+    let firstError = null;
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       const { error } = await supabase
@@ -519,12 +520,13 @@ export async function upsertJourneysToSupabase(enrichedJourneys) {
 
       if (error) {
         console.error('[CabifyClient/Supabase] Error en upsert chunk:', error.message);
+        if (!firstError) firstError = error.message;
       } else {
         saved += chunk.length;
       }
     }
 
-    return { count: saved };
+    return firstError ? { count: saved, error: firstError } : { count: saved };
   } catch (err) {
     console.error('[CabifyClient/Supabase] Error al guardar en Supabase:', err.message);
     return { count: 0, error: err.message };
@@ -716,6 +718,7 @@ async function syncSalesToSupabase({ from, to, currency = 'PEN', full = false })
 
   let saved = 0;
   let partial = false;
+  let writeError = null;
   if (toResolve.length > 0) {
     const usersMap = await getCabifyUsersMap();
     for (let i = 0; i < toResolve.length; i += SYNC_DETAIL_BATCH) {
@@ -728,6 +731,7 @@ async function syncSalesToSupabase({ from, to, currency = 'PEN', full = false })
       const enriched = chunk.map((s, k) => buildEnrichedJourney(s, details[k], usersMap));
       const res = await upsertJourneysToSupabase(enriched);
       saved += res.count || 0;
+      if (res.error && !writeError) writeError = res.error;
     }
   }
 
@@ -741,14 +745,28 @@ async function syncSalesToSupabase({ from, to, currency = 'PEN', full = false })
     }
     if (touchIds.length > 0) {
       const { error } = await supabase.from(CABIFY_TABLE).update({ updated_at: new Date().toISOString() }).in('id', touchIds);
-      if (error) console.warn('[CabifyClient/Supabase] No se pudo marcar la sincronización:', error.message);
+      if (error) {
+        console.warn('[CabifyClient/Supabase] No se pudo marcar la sincronización:', error.message);
+        if (!writeError) writeError = error.message;
+      }
     }
   } catch (e) {
     console.warn('[CabifyClient/Supabase] No se pudo marcar la sincronización:', e.message);
+    if (!writeError) writeError = e.message;
   }
 
   console.log(`[CabifyClient] Sync ${windowFrom} a ${to}: ${sales.length} ventas en Cabify, ${toResolve.length} por completar, ${saved} guardadas${partial ? ' (parcial)' : ''} en ${Date.now() - startedAt}ms`);
-  return { ok: true, partial, windowFrom, fetched: sales.length, saved };
+  if (writeError) {
+    return {
+      ok: false,
+      warning: `No se pudieron guardar los viajes en Supabase: ${writeError}`,
+      windowFrom,
+      fetched: sales.length,
+      toResolve: toResolve.length,
+      saved
+    };
+  }
+  return { ok: true, partial, windowFrom, fetched: sales.length, toResolve: toResolve.length, saved };
 }
 
 /**
@@ -772,10 +790,12 @@ async function fetchCorporateJourneys({ from, to, currency = 'PEN', forceRefresh
     sync = { ok: false, warning: 'No se pudo sincronizar con Cabify. Se muestran los datos ya guardados.' };
   }
 
+  const syncInfo = { windowFrom: sync.windowFrom, fetched: sync.fetched, toResolve: sync.toResolve, saved: sync.saved, ok: sync.ok };
   const fresh = await getJourneysFromSupabase({ from, to });
   if (fresh) {
     return {
       ...fresh,
+      sync: syncInfo,
       isFallback: !sync.ok,
       warning: !sync.ok ? sync.warning : (sync.partial ? 'Sincronización parcial: el resto se completará en la próxima actualización.' : null)
     };
