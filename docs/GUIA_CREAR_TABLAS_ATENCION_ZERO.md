@@ -1,5 +1,18 @@
 # Guía: crear hComprobantes y hItemAtenciones en Power Apps
 
+> **Estado 25/11/2026: ya creadas por API y probadas (claves únicas activas, duplicados rechazados)** (cuenta `api_rindegastos`, que es Administrador del sistema en el entorno `sistemas`), dentro de la solución `GestindeProductosGratuitos` (Gestión de Productos Gratuitos, publisher `crb7e`). No hace falta repetir los pasos 1 a 5: la guía queda como referencia del diseño y para revisar o reconstruir las tablas a mano.
+>
+> | Elemento | Nombre lógico / conjunto |
+> |---|---|
+> | Tabla hComprobantes | `crb7e_hcomprobante` / `crb7e_hcomprobantes` (principal: `crb7e_numero`) |
+> | Tabla hItemAtenciones | `crb7e_hitematencion` / `crb7e_hitematencions` (principal: `crb7e_referencia`) |
+> | Columnas de hComprobantes | `crb7e_empresa` (26/27/28), `crb7e_fuente`, `crb7e_fecha`, `crb7e_tipo`, `crb7e_vigente` (Sí por defecto) |
+> | Columnas de hItemAtenciones | `crb7e_item` (búsqueda a hItems), `crb7e_comprobante` (búsqueda a hComprobantes), `crb7e_cantidadatendida` (entero, admite negativos, vacío por defecto), `crb7e_origen`, `crb7e_motivo`, `crb7e_costounitario` (decimal, 4 decimales), `crb7e_clave` (opcional, de respaldo) |
+> | Columnas nuevas en hItems | `crb7e_cantidadatendida`, `crb7e_estadoatencion`, `crb7e_motivocierre`, `crb7e_detallecierre` |
+> | Claves únicas | hComprobantes: `crb7e_numero`; hItemAtenciones: `crb7e_item` + `crb7e_comprobante` (se aceptaron las búsquedas, no hace falta la columna `Clave`) |
+> | Relaciones | hItems → hItemAtenciones y hComprobantes → hItemAtenciones, ambas **Restrict**: no se puede borrar un ítem o comprobante que tenga atenciones |
+> | Permiso del portal | Ya cubierto: `api_rindegastos` tiene el rol Administrador del sistema (el portal solo lee estas tablas) |
+
 Fecha: 25/11/2026 · Complementa `docs/ARQUITECTURA_ATENCION_ZERO_POR_ITEM.md` (qué se decidió y por qué). Esta guía es solo el "cómo".
 
 **Dónde:** entorno `sistemas` (orge0b27328), **dentro de la misma solución de Zero donde está hItems**, para que la app y los flujos de Zero las vean. Se crea en make.powerapps.com → Soluciones → (solución de Zero).
