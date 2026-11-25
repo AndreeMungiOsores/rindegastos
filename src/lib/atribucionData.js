@@ -131,6 +131,7 @@ export function documentosDeSolicitud(texto) {
 /**
  * Estado de atención de un ítem de Zero a partir de sus filas en hItemAtenciones (comprobante + cantidad que cubre).
  * - atendido: la suma verificada iguala lo pedido · parcial: es menor · por_verificar: tiene comprobante pero falta la cantidad en alguna fila
+ *   (o la suma supera lo pedido, que es un error de carga: también queda por verificar, con aviso)
  * - cerrado: el neto es 0 (por ejemplo, anulado por nota de crédito) · sin_comprobante: sin filas vigentes ni "Nro Comprobante".
  * Sin filas en la tabla, un "Nro Comprobante" en hItems cuenta como por_verificar (hay comprobante, cantidad no demostrada).
  * Las filas de comprobantes anulados (vigente = No) no cuentan.
@@ -146,13 +147,15 @@ export function calcularAtencion(pedido, filas, comprobanteLegado) {
   const documentos = [...new Set(vigentes.filter(f => !f.esNotaCredito).map(f => f.numero).filter(Boolean))];
   const suma = vigentes.reduce((t, f) => t + (f.cantidad == null ? 0 : f.cantidad), 0);
   const hayVacias = vigentes.some(f => f.cantidad == null);
-  const unidadesVerificadas = Math.max(0, Math.min(suma, pedido));
+  // Si la suma supera lo pedido hay un error de carga (no puede atenderse más de lo solicitado): no se da por verificado y se avisa.
+  const excedida = !hayVacias && suma > pedido;
+  const unidadesVerificadas = (hayVacias || excedida) ? 0 : Math.max(0, Math.min(suma, pedido));
   let estado;
-  if (hayVacias) estado = 'por_verificar';
+  if (hayVacias || excedida) estado = 'por_verificar';
   else if (suma <= 0) estado = 'cerrado';
   else if (suma < pedido) estado = 'parcial';
   else estado = 'atendido';
-  return { ...base, estado, atendido: estado !== 'cerrado', unidadesVerificadas, documentos, excedida: !hayVacias && suma > pedido };
+  return { ...base, estado, atendido: estado !== 'cerrado', unidadesVerificadas, documentos, excedida };
 }
 
 /** Tipo de destinatario cuando solo se conoce la categoría del sistema anterior (dDestinatarios). */
