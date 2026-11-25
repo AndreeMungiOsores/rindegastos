@@ -403,8 +403,9 @@ async function cargarZero() {
     pendientes: pendientes
       .map(s => ({ ref: s.ref, fecha: s.fecha, solicitante: s.solicitante, estado: estadoSolicitud(s), items: s.items, itemsConComprobante: s.itemsConComprobante, unidades: s.unidades, unidadesConComprobante: s.unidadesConComprobante }))
       .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))),
-    // Ítems cuyo comprobante no figura en el "Nro Documento" de su solicitud (la solicitud sí tiene documentos cargados).
-    diferencias: conComp.filter(f => f.documentos.length > 0 && !f.documentos.includes(f.comprobante)).map(f => ({ solicitud: f.solicitud, comprobante: f.comprobante, documentosSolicitud: f.documentos, concepto: f.concepto }))
+    // Ítems con algún comprobante que no figura en el "Nro Documento" de su solicitud (la solicitud sí tiene documentos cargados).
+    // Un ítem puede traer varios comprobantes ("A; B"): se revisa cada uno por separado.
+    diferencias: conComp.filter(f => f.documentos.length > 0 && documentosDeSolicitud(f.comprobante).some(c => !f.documentos.includes(c))).map(f => ({ solicitud: f.solicitud, comprobante: f.comprobante, documentosSolicitud: f.documentos, concepto: f.concepto }))
   };
 
   return { filas, meta: { ...meta, legado: { ...meta.legado, destinatarios: [...meta.legado.destinatarios.values()].sort((a, b) => b.unidades - a.unidades) } } };
