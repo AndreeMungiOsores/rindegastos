@@ -128,6 +128,33 @@ export function documentosDeSolicitud(texto) {
   return [...new Set(String(texto || '').split(/[;\n]/).map(d => d.trim()).filter(Boolean))];
 }
 
+/**
+ * Estado de atención de un ítem de Zero a partir de sus filas en hItemAtenciones (comprobante + cantidad que cubre).
+ * - atendido: la suma verificada iguala lo pedido · parcial: es menor · por_verificar: tiene comprobante pero falta la cantidad en alguna fila
+ * - cerrado: el neto es 0 (por ejemplo, anulado por nota de crédito) · sin_comprobante: sin filas vigentes ni "Nro Comprobante".
+ * Sin filas en la tabla, un "Nro Comprobante" en hItems cuenta como por_verificar (hay comprobante, cantidad no demostrada).
+ * Las filas de comprobantes anulados (vigente = No) no cuentan.
+ */
+export function calcularAtencion(pedido, filas, comprobanteLegado) {
+  const base = { unidadesVerificadas: 0, documentos: [], excedida: false, desdeTabla: filas.length > 0 };
+  if (!filas.length) {
+    const legado = documentosDeSolicitud(comprobanteLegado);
+    return legado.length ? { ...base, estado: 'por_verificar', atendido: true, documentos: legado } : { ...base, estado: 'sin_comprobante', atendido: false };
+  }
+  const vigentes = filas.filter(f => f.vigente);
+  if (!vigentes.length) return { ...base, estado: 'sin_comprobante', atendido: false };
+  const documentos = [...new Set(vigentes.filter(f => !f.esNotaCredito).map(f => f.numero).filter(Boolean))];
+  const suma = vigentes.reduce((t, f) => t + (f.cantidad == null ? 0 : f.cantidad), 0);
+  const hayVacias = vigentes.some(f => f.cantidad == null);
+  const unidadesVerificadas = Math.max(0, Math.min(suma, pedido));
+  let estado;
+  if (hayVacias) estado = 'por_verificar';
+  else if (suma <= 0) estado = 'cerrado';
+  else if (suma < pedido) estado = 'parcial';
+  else estado = 'atendido';
+  return { ...base, estado, atendido: estado !== 'cerrado', unidadesVerificadas, documentos, excedida: !hayVacias && suma > pedido };
+}
+
 /** Tipo de destinatario cuando solo se conoce la categoría del sistema anterior (dDestinatarios). */
 function tipoDesdeCategoriaLegado(cat) {
   const c = norm(cat);
@@ -142,15 +169,42 @@ async function cargarZero() {
   let precios = new Map();
   let errorPrecios = null;
   try { precios = await cargarPreciosSeafacil(); } catch (e) { errorPrecios = e.message; console.error('[Atribucion] No se pudieron leer los precios de SeaFácil:', e.message); }
-  const [items, solicitudes, productos, contactos, legado] = await Promise.all([
+  // Atención por ítem (tablas de Gonzalo): si no se pueden leer, el portal sigue con el "Nro Comprobante" de hItems.
+  let errorAtenciones = null;
+  const leerAtenciones = async () => {
+    try {
+      const [comprobantes, atenciones] = await Promise.all([
+        dvGetAll('sistemas', 'crb7e_hcomprobantes?$select=crb7e_hcomprobanteid,crb7e_numero,crb7e_vigente,crb7e_tipo'),
+        dvGetAll('sistemas', 'crb7e_hitematencions?$select=crb7e_hitematencionid,crb7e_cantidadatendida,_crb7e_item_value,_crb7e_comprobante_value')
+      ]);
+      return { comprobantes, atenciones };
+    } catch (e) { errorAtenciones = e.message; console.error('[Atribucion] No se pudieron leer las atenciones de Zero:', e.message); return null; }
+  };
+  const [items, solicitudes, productos, contactos, legado, tablaAtenciones] = await Promise.all([
     dvGetAll('sistemas', 'crb7e_hitemses?$select=crb7e_hitemsid,crb7e_cantidad,_crb7e_contacto_value,crb7e_iddestinatario,crb7e_empresa,crb7e_nombreproducto,crb7e_sku,crb7e_referenciasolicitud,_crb7e_producto_value,crb7e_nrocomprobante,createdon'),
     dvGetAll('sistemas', 'crb7e_hsolicitudeses?$select=crb7e_referenciasolicitud,crb7e_fechasolicitud,crb7e_estado,crb7e_solicitante,crb7e_email,crb7e_observaciones,crb7e_nrodocumento'),
     dvGetAll('sistemas', 'crb7e_producto1s?$select=crb7e_producto1id,crb7e_nombredelproducto,crb7e_sku,crb7e_marca,crb7e_tipodeproducto'),
     dvGetAll('sistemas', 'crb7e_contactosmaestros?$select=crb7e_contactosmaestroid,crb7e_nombre,crb7e_numerodedocumento,crb7e_cmp,crb7e_ruc,crb7e_tipodepersona,crb7e_categoriamaestra,crb7e_estadodelcontacto,crb7e_nombrecomercial,crb7e_descuento'),
     // Sistema anterior de destinatarios (antes de Contactos Maestro); se conserva como historial.
-    dvGetAll('sistemas', 'crb7e_ddestinatarioses?$select=crb7e_iddestinatario,crb7e_nombre,crb7e_nrodocumento,crb7e_categoria')
+    dvGetAll('sistemas', 'crb7e_ddestinatarioses?$select=crb7e_iddestinatario,crb7e_nombre,crb7e_nrodocumento,crb7e_categoria'),
+    leerAtenciones()
   ]);
 
+  // Filas de atención por ítem: { numero, cantidad (null = no demostrada), vigente, esNotaCredito }
+  const atencionesPorItem = new Map();
+  if (tablaAtenciones) {
+    const compPorId = new Map(tablaAtenciones.comprobantes.map(c => [c.crb7e_hcomprobanteid, {
+      numero: String(c.crb7e_numero || '').trim(),
+      vigente: c.crb7e_vigente !== false,
+      esNotaCredito: norm(c[`crb7e_tipo${FV}`]) === 'nota de credito'
+    }]));
+    for (const a of tablaAtenciones.atenciones) {
+      const comp = compPorId.get(a._crb7e_comprobante_value);
+      if (!comp || !a._crb7e_item_value) continue;
+      if (!atencionesPorItem.has(a._crb7e_item_value)) atencionesPorItem.set(a._crb7e_item_value, []);
+      atencionesPorItem.get(a._crb7e_item_value).push({ ...comp, cantidad: a.crb7e_cantidadatendida == null ? null : Number(a.crb7e_cantidadatendida) });
+    }
+  }
   const solPorRef = new Map(solicitudes.map(s => [s.crb7e_referenciasolicitud, s]));
   const prodPorId = new Map(productos.map(p => [p.crb7e_producto1id, {
     nombre: p.crb7e_nombredelproducto,
@@ -330,17 +384,21 @@ async function cargarZero() {
     else estado = 'pendiente';
 
     const documentos = documentosDeSolicitud(sol?.crb7e_nrodocumento);
-    // Comprobante del ítem (campo "Nro Comprobante" de hItems, cargado por Gonzalo): indica que ese producto fue atendido.
+    // Comprobante del ítem (campo "Nro Comprobante" de hItems, texto de consulta que genera Gonzalo).
     const comprobante = String(it.crb7e_nrocomprobante || '').trim() || null;
+    // Atención del ítem: sale de las filas de hItemAtenciones (comprobante + cantidad que cubre). Sin filas, se usa "Nro Comprobante".
+    const atencion = calcularAtencion(unidades, atencionesPorItem.get(it.crb7e_hitemsid) || [], comprobante);
+    const atendido = atencion.atendido;
+    const importeVerificado = p ? redondear(atencion.unidadesVerificadas * p.precio) : null;
     const real = solicitudesReales.get(ref) || { ref, fecha, solicitante: sol?.crb7e_solicitante || null, documentos, items: 0, unidades: 0, itemsConComprobante: 0, unidadesConComprobante: 0, comprobantes: new Set(), importe: 0, importeConComprobante: 0 };
     real.items++;
     real.unidades += unidades;
     real.importe += importe || 0;
-    if (comprobante) {
+    if (atendido) {
       real.itemsConComprobante++;
       real.unidadesConComprobante += unidades;
       real.importeConComprobante += importe || 0;
-      real.comprobantes.add(comprobante);
+      for (const d of atencion.documentos) real.comprobantes.add(d);
     }
     solicitudesReales.set(ref, real);
 
@@ -350,7 +408,12 @@ async function cargarZero() {
       solicitud: ref,
       documentos,
       comprobante,
-      atendido: !!comprobante,
+      atendido,
+      estadoAtencion: atencion.estado,
+      unidadesVerificadas: atencion.unidadesVerificadas,
+      importeVerificado,
+      atencionExcedida: atencion.excedida,
+      atencionDesdeTabla: atencion.desdeTabla,
       fecha,
       mes: fecha ? fecha.slice(0, 7) : null,
       responsable: sol?.crb7e_solicitante || null,
@@ -398,6 +461,25 @@ async function cargarZero() {
     items: { con: conComp.length, sin: sinComp.length },
     unidades: { con: suma(conComp, 'unidades'), sin: suma(sinComp, 'unidades') },
     importe: { con: redondear(suma(conComp, 'importe')), sin: redondear(suma(sinComp, 'importe')) },
+    // Atención por ítem según hItemAtenciones: lo solicitado con comprobante (tope) va aparte de lo verificado (cantidad demostrada).
+    atencion: (() => {
+      const grupo = (estado) => {
+        const g = zeroFilas.filter(f => f.estadoAtencion === estado);
+        return { items: g.length, unidades: suma(g, 'unidades'), unidadesVerificadas: suma(g, 'unidadesVerificadas'), importe: redondear(suma(g, 'importe')), importeVerificado: redondear(suma(g, 'importeVerificado')) };
+      };
+      const detalle = (f) => ({ solicitud: f.solicitud, concepto: f.concepto, pedido: f.unidades, verificadas: f.unidadesVerificadas });
+      return {
+        fuente: tablaAtenciones ? 'tabla' : 'nro_comprobante',
+        error: errorAtenciones,
+        itemsConFilas: zeroFilas.filter(f => f.atencionDesdeTabla).length,
+        estados: { atendido: grupo('atendido'), parcial: grupo('parcial'), por_verificar: grupo('por_verificar'), cerrado: grupo('cerrado'), sin_comprobante: grupo('sin_comprobante') },
+        unidadesVerificadas: suma(zeroFilas, 'unidadesVerificadas'),
+        importeVerificado: redondear(suma(zeroFilas, 'importeVerificado')),
+        parciales: zeroFilas.filter(f => f.estadoAtencion === 'parcial').map(detalle),
+        cerrados: zeroFilas.filter(f => f.estadoAtencion === 'cerrado').map(detalle),
+        excedidos: zeroFilas.filter(f => f.atencionExcedida).map(detalle)
+      };
+    })(),
     totalDocumentos: porComprobante.size,
     compartidos: [...porComprobante].filter(([, refs]) => refs.length > 1).map(([documento, refs]) => ({ documento, solicitudes: refs })).sort((a, b) => b.solicitudes.length - a.solicitudes.length),
     pendientes: pendientes

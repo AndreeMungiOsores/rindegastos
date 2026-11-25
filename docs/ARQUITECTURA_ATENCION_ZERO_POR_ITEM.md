@@ -3,6 +3,8 @@
 Fecha: 24/11/2026 (actualizado 25/11/2026 con la respuesta de Gonzalo) · Estado: **modelo aceptado por Gonzalo; tablas aún no creadas** (no se ha cambiado código). Gonzalo aplicó el 25/11 las 16 correcciones de carga en `hItems` (listado `Zero_correcciones_antes_despues.xlsx`); el portal cuenta ahora **204 ítems con comprobante** (52 comprobantes únicos). `Nro Comprobante` sigue sin ser definitivo mientras queden los pendientes del §6.
 Base: propuesta de Gonzalo (`Zero trazabilidad de atención por ítem.pdf`) + Excel `Zero_Discrepancias_para_Andree.xlsx` + verificación del portal contra SeaFácil (solo lectura).
 
+> **Estado 25/11/2026 (implementado):** las tablas `hComprobantes` e `hItemAtenciones` existen y Gonzalo las cargó (52 comprobantes, 210 atenciones, 206 ítems; 147 filas con cantidad y 63 sin). El portal ya las lee (`src/lib/atribucionData.js`, función `calcularAtencion`): estados atendido / parcial / por verificar / cerrado / sin comprobante, calculados desde las filas y no desde el estado guardado en `hItems`. Hoy: 142 atendidos, 61 por verificar, 1 parcial, 2 cerrados (nota de crédito) y 151 sin comprobante. Si la tabla no se puede leer, el portal cae al `Nro Comprobante` de `hItems` (tener comprobante cuenta como "por verificar"). El reparto de costos sigue usando lo pedido; usar solo lo verificado es una decisión pendiente de Adrián.
+
 ## 1. Qué se acuerda
 
 | Tema | Decisión propuesta |

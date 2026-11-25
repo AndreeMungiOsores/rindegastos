@@ -25,6 +25,14 @@ const ESTADOS = {
   validado: { label: 'Validado', fg: 'var(--status-success-fg)', bg: 'var(--status-success-bg)', hint: 'Atribuido en el portal y validado' },
   pendiente: { label: 'Pendiente', fg: 'var(--status-error-fg)', bg: 'var(--status-error-bg)', hint: 'Falta el destinatario y/o la marca' }
 };
+// Atención de los ítems de Zero (comprobante + cantidad que cubre, tabla hItemAtenciones de Gonzalo)
+const ATENCION = {
+  atendido: { label: 'Atendido', fg: 'var(--status-success-fg)', bg: 'var(--status-success-bg)', ayuda: 'la cantidad de los comprobantes cubre lo pedido' },
+  parcial: { label: 'Parcial', fg: 'var(--status-pending-fg)', bg: 'var(--status-pending-bg)', ayuda: 'los comprobantes cubren menos de lo pedido' },
+  por_verificar: { label: 'Por verificar', fg: 'var(--accent-600, #1d4f91)', bg: 'var(--accent-tint, #EEF4F9)', ayuda: 'tiene comprobante, pero la cantidad que cubre aún no está demostrada' },
+  cerrado: { label: 'Cerrado', fg: 'var(--status-neutral-fg)', bg: 'var(--status-neutral-bg)', ayuda: 'sin atención neta (por ejemplo, anulado por nota de crédito)' },
+  sin_comprobante: { label: 'Sin comprobante', fg: 'var(--status-neutral-fg)', bg: 'var(--status-neutral-bg)', ayuda: 'aún no se registra como atendido' }
+};
 const ORIGENES = ['Zero', 'RindeGastos', 'Cabify'];
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -471,7 +479,7 @@ function Consumos({ consumos, onRecargar }) {
   const [origen, setOrigen] = useState('');
   const [estado, setEstado] = useState('');
   const [mes, setMes] = useState('');
-  const [atencion, setAtencion] = useState(''); // solo Zero: 'con' | 'sin' comprobante
+  const [atencion, setAtencion] = useState(''); // solo Zero: '' | 'con' | 'sin' | un estado de atención (atendido, parcial, por_verificar, cerrado)
   const [busqueda, setBusqueda] = useState('');
   const [limite, setLimite] = useState(200);
 
@@ -480,7 +488,7 @@ function Consumos({ consumos, onRecargar }) {
     const q = busqueda.trim().toLowerCase();
     return consumos.filter(c =>
       (!origen || c.origen === origen) &&
-      (!atencion || (c.origen === 'Zero' && (atencion === 'con' ? c.atendido : !c.atendido))) &&
+      (!atencion || (c.origen === 'Zero' && (atencion === 'con' ? c.atendido : atencion === 'sin' ? !c.atendido : c.estadoAtencion === atencion))) &&
       (!estado || (estado === 'con_sugerencia' ? (c.sugerencia && c.estado === 'pendiente') : c.estado === estado)) &&
       (!mes || c.mes === mes) &&
       (!q || `${c.responsable || ''} ${c.concepto} ${c.destinatario || ''} ${c.marca || ''}`.toLowerCase().includes(q))
@@ -500,12 +508,13 @@ function Consumos({ consumos, onRecargar }) {
     ws.addTable({
       name: 'ConsumosAtribucion', ref: 'A1', headerRow: true, totalsRow: false,
       style: { theme: 'TableStyleMedium2', showRowStripes: true },
-      columns: ['Origen', 'Fecha', 'Responsable', 'Concepto', 'Importe sin IGV (S/)', 'Unidades', 'Destinatario', 'Tipo de destinatario', 'Marca', 'Estado', 'Días pendiente', 'Sugerencia', 'Confianza de la sugerencia', 'Atribuido por', 'Cómo se calculó el importe', 'Solicitud Zero', 'Comprobante del ítem (Zero)'].map(name => ({ name, filterButton: true })),
+      columns: ['Origen', 'Fecha', 'Responsable', 'Concepto', 'Importe sin IGV (S/)', 'Unidades', 'Destinatario', 'Tipo de destinatario', 'Marca', 'Estado', 'Días pendiente', 'Sugerencia', 'Confianza de la sugerencia', 'Atribuido por', 'Cómo se calculó el importe', 'Solicitud Zero', 'Comprobante del ítem (Zero)', 'Estado de atención (Zero)', 'Unidades verificadas (Zero)'].map(name => ({ name, filterButton: true })),
       rows: filas.map(c => [
         c.origen, c.fecha || '', c.responsable || '', c.concepto, c.importe ?? '', c.unidades ?? '',
         c.destinatario || '', c.destinatarioTipo || '', c.marca || '', (ESTADOS[c.estado] || ESTADOS.pendiente).label,
         c.estado === 'pendiente' ? (diasDesde(c.fecha) ?? '') : '', sugerenciaTxt(c), c.sugerencia?.confianza || '', c.atribucion?.atribuidoPor || '', VALORIZACION[c.valorizacion] || '',
-        c.solicitud || '', c.origen === 'Zero' ? (c.comprobante || 'Sin comprobante') : ''
+        c.solicitud || '', c.origen === 'Zero' ? (c.comprobante || 'Sin comprobante') : '',
+        c.origen === 'Zero' ? (ATENCION[c.estadoAtencion]?.label || '') : '', c.origen === 'Zero' ? (c.unidadesVerificadas ?? 0) : ''
       ])
     });
     ws.eachRow((row, n) => { if (n > 1) row.getCell(5).numFmt = '#,##0.00'; });
@@ -612,9 +621,13 @@ function Consumos({ consumos, onRecargar }) {
           <option value="">Todos los meses</option>
           {meses.map(m => <option key={m} value={m}>{fmtMes(m)}</option>)}
         </select>
-        <select style={s.select} value={atencion} onChange={e => setAtencion(e.target.value)} aria-label="Atención de Zero" title="Solo productos de Zero: con comprobante = ya atendido">
-          <option value="">Zero: con y sin comprobante</option>
-          <option value="con">Zero: con comprobante (atendido)</option>
+        <select style={s.select} value={atencion} onChange={e => setAtencion(e.target.value)} aria-label="Atención de Zero" title="Solo productos de Zero. Atendido = la cantidad del comprobante cubre lo pedido; por verificar = hay comprobante pero la cantidad no está demostrada">
+          <option value="">Zero: toda la atención</option>
+          <option value="con">Zero: con comprobante</option>
+          <option value="atendido">Zero: atendido (cantidad verificada)</option>
+          <option value="por_verificar">Zero: por verificar</option>
+          <option value="parcial">Zero: atendido parcial</option>
+          <option value="cerrado">Zero: cerrado (anulado)</option>
           <option value="sin">Zero: sin comprobante</option>
         </select>
         <button type="button" className="btn btn-secondary" onClick={() => exportarExcel(filtrados)} disabled={filtrados.length === 0} title="Descarga a Excel todos los consumos que cumplen los filtros">Exportar Excel</button>
@@ -651,7 +664,7 @@ function Consumos({ consumos, onRecargar }) {
               <th style={s.th}>Fecha</th>
               <th style={s.th}>Responsable</th>
               <th style={s.th}>Concepto</th>
-              <th style={s.th} title="Nro de comprobante del ítem de Zero: indica que ese producto ya fue atendido (lo carga Gonzalo)">Comprobante</th>
+              <th style={s.th} title="Atención del ítem de Zero según los comprobantes y cantidades que registra Gonzalo (hItemAtenciones)">Atención</th>
               <th style={{ ...s.th, ...s.num }}>Importe / unid.</th>
               <th style={s.th}>Destinatario</th>
               <th style={s.th}>Marca</th>
@@ -671,8 +684,13 @@ function Consumos({ consumos, onRecargar }) {
                   <td style={s.td}>{fmtDate(c.fecha)}</td>
                   <td style={{ ...s.td, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.responsable || ''}>{c.responsable || '—'}</td>
                   <td style={{ ...s.td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${c.categoria} · ${c.concepto}`}>{c.concepto}</td>
-                  <td style={{ ...s.td, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.78rem', color: c.origen === 'Zero' && !c.comprobante ? 'var(--text-secondary)' : undefined }} title={c.origen === 'Zero' ? `${c.solicitud || ''}${c.comprobante ? ` · atendido con ${c.comprobante}` : ' · sin comprobante: aún no se registra como atendido'}${c.documentos?.length ? ` · documentos de la solicitud: ${c.documentos.join('; ')}` : ''}` : ''}>
-                    {c.origen === 'Zero' ? (c.comprobante || 'Sin comprobante') : ''}
+                  <td style={{ ...s.td, maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.78rem' }} title={c.origen === 'Zero' ? `${c.solicitud || ''} · ${ATENCION[c.estadoAtencion]?.ayuda || ''}${c.comprobante ? ` · comprobante: ${c.comprobante}` : ''}${c.estadoAtencion !== 'sin_comprobante' ? ` · verificadas ${fmtInt(c.unidadesVerificadas)} de ${fmtInt(c.unidades)} u.` : ''}${c.atencionExcedida ? ' · la suma de los comprobantes supera lo pedido' : ''}${c.documentos?.length ? ` · documentos de la solicitud: ${c.documentos.join('; ')}` : ''}` : ''}>
+                    {c.origen === 'Zero' && ATENCION[c.estadoAtencion] ? (
+                      <>
+                        <span style={s.pill(ATENCION[c.estadoAtencion].fg, ATENCION[c.estadoAtencion].bg)}>{ATENCION[c.estadoAtencion].label}</span>
+                        {c.comprobante && <div style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.comprobante}</div>}
+                      </>
+                    ) : ''}
                   </td>
                   <td style={{ ...s.td, ...s.num }} title={c.valorizacion ? `Sin IGV. ${VALORIZACION[c.valorizacion] || ''}${c.precioUnitario ? ` (precio unitario ${fmtMoney(c.precioUnitario)})` : ''}` : ''}>{c.origen === 'Zero' ? `${fmtInt(c.unidades)} u. · ${c.importe != null ? fmtMoney(c.importe) : 'sin precio'}` : fmtMoney(c.importe)}</td>
                   <td style={{ ...s.td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.destinatario ? `${c.destinatario} (${c.destinatarioTipo})` : ''}>{c.destinatario || '—'}</td>
@@ -993,17 +1011,39 @@ function Calidad({ consumos, fuentes, zeroMeta }) {
 
       {zeroMeta?.documentos && (
         <section style={s.card} aria-label="Atención de Zero por comprobante">
-          <h3 style={s.h3}>Zero: productos atendidos (comprobante por ítem)</h3>
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem' }}>
-            Gonzalo registra en cada ítem de Zero el número de comprobante con el que se atendió (campo “Nro Comprobante”). Un ítem con comprobante se considera atendido. Los importes siguen siendo los de lo pedido (precio de venta de SeaFácil), no los del comprobante, y el campo no dice qué cantidad cubre cada documento.
-            Aún se está cargando: un ítem sin comprobante puede estar pendiente o simplemente sin registrar.
-          </p>
+          <h3 style={s.h3}>Zero: atención por ítem (comprobantes y cantidades)</h3>
+          {zeroMeta.documentos.atencion?.fuente === 'tabla' ? (
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem' }}>
+              Gonzalo registra qué comprobante cubre cada ítem y cuántas unidades (tabla de atenciones). <strong>Atendido</strong>: la cantidad verificada iguala lo pedido. <strong>Por verificar</strong>: hay comprobante, pero la cantidad aún no está demostrada, así que no se cuenta como atendido. Se muestran por separado lo pedido con comprobante (tope) y lo valorizado con cantidad verificada (precio de venta de SeaFácil sin IGV, no es costo real). Los ítems sin registro no son necesariamente pendientes: el histórico cargado es el que se pudo rescatar.
+            </p>
+          ) : (
+            <p style={{ fontSize: '0.82rem', color: 'var(--status-error-fg)', margin: '0 0 0.75rem' }}>
+              No se pudo leer la tabla de atenciones{zeroMeta.documentos.atencion?.error ? ` (${zeroMeta.documentos.atencion.error})` : ''}. Se usa solo el “Nro Comprobante” de cada ítem: tener comprobante cuenta como “por verificar”.
+            </p>
+          )}
           <div className="kpis-grid">
-            <div className="kpi-card"><span className="kpi-label">Ítems con comprobante</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.items.con)}</span><span className="kpi-sub">{pct(zeroMeta.documentos.items.con, zeroMeta.documentos.items.con + zeroMeta.documentos.items.sin)}% de {fmtInt(zeroMeta.documentos.items.con + zeroMeta.documentos.items.sin)} · {fmtInt(zeroMeta.documentos.unidades.con)} unidades</span></div>
-            <div className="kpi-card"><span className="kpi-label">Ítems sin comprobante</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.items.sin)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.unidades.sin)} unidades</span></div>
-            <div className="kpi-card"><span className="kpi-label">Importe atendido</span><span className="kpi-value">{fmtMoney(zeroMeta.documentos.importe.con)}</span><span className="kpi-sub">{fmtMoney(zeroMeta.documentos.importe.sin)} sin comprobante · sin IGV</span></div>
-            <div className="kpi-card"><span className="kpi-label">Solicitudes</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.solicitudes)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.completas)} completas · {fmtInt(zeroMeta.documentos.parciales)} parciales · {fmtInt(zeroMeta.documentos.sinComprobante)} sin comprobante</span></div>
+            <div className="kpi-card"><span className="kpi-label">Atendidos (verificados)</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.atencion.estados.atendido.items)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.atencion.estados.atendido.unidadesVerificadas)} unidades · {fmtMoney(zeroMeta.documentos.atencion.estados.atendido.importeVerificado)}</span></div>
+            <div className="kpi-card"><span className="kpi-label">Por verificar</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.atencion.estados.por_verificar.items)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.atencion.estados.por_verificar.unidades)} unidades pedidas · {fmtMoney(zeroMeta.documentos.atencion.estados.por_verificar.importe)}</span></div>
+            <div className="kpi-card"><span className="kpi-label">Parciales y cerrados</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.atencion.estados.parcial.items + zeroMeta.documentos.atencion.estados.cerrado.items)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.atencion.estados.parcial.items)} parcial · {fmtInt(zeroMeta.documentos.atencion.estados.cerrado.items)} cerrado (anulado)</span></div>
+            <div className="kpi-card"><span className="kpi-label">Sin comprobante</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.atencion.estados.sin_comprobante.items)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.atencion.estados.sin_comprobante.unidades)} unidades · {fmtMoney(zeroMeta.documentos.atencion.estados.sin_comprobante.importe)}</span></div>
+            <div className="kpi-card"><span className="kpi-label">Valorizado verificado</span><span className="kpi-value">{fmtMoney(zeroMeta.documentos.atencion.importeVerificado)}</span><span className="kpi-sub">de {fmtMoney(zeroMeta.documentos.importe.con)} pedidos con comprobante · sin IGV</span></div>
+            <div className="kpi-card"><span className="kpi-label">Solicitudes</span><span className="kpi-value">{fmtInt(zeroMeta.documentos.solicitudes)}</span><span className="kpi-sub">{fmtInt(zeroMeta.documentos.completas)} con todos sus ítems con comprobante · {fmtInt(zeroMeta.documentos.parciales)} parciales · {fmtInt(zeroMeta.documentos.sinComprobante)} sin comprobante</span></div>
           </div>
+          {(zeroMeta.documentos.atencion.parciales.length > 0 || zeroMeta.documentos.atencion.cerrados.length > 0 || zeroMeta.documentos.atencion.excedidos.length > 0) && (
+            <details style={{ marginTop: '0.75rem' }}>
+              <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver los {fmtInt(zeroMeta.documentos.atencion.parciales.length + zeroMeta.documentos.atencion.cerrados.length + zeroMeta.documentos.atencion.excedidos.length)} ítems parciales, cerrados o con exceso</summary>
+              <div style={{ ...s.tableWrap, marginTop: '0.6rem', maxHeight: '30vh' }}>
+                <table style={s.table}>
+                  <thead><tr><th style={s.th}>Situación</th><th style={s.th}>Solicitud</th><th style={s.th}>Producto</th><th style={{ ...s.th, ...s.num }}>Pedido</th><th style={{ ...s.th, ...s.num }}>Verificado</th></tr></thead>
+                  <tbody>
+                    {[['Parcial', zeroMeta.documentos.atencion.parciales], ['Cerrado (neto 0)', zeroMeta.documentos.atencion.cerrados], ['La suma supera lo pedido', zeroMeta.documentos.atencion.excedidos]].flatMap(([titulo, lista]) => lista.map((d, i) => (
+                      <tr key={`${titulo}-${d.solicitud}-${d.concepto}-${i}`}><td style={s.td}>{titulo}</td><td style={s.td}>{d.solicitud}</td><td style={s.td}>{d.concepto}</td><td style={{ ...s.td, ...s.num }}>{fmtInt(d.pedido)}</td><td style={{ ...s.td, ...s.num }}>{fmtInt(d.verificadas)}</td></tr>
+                    )))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
           <details style={{ marginTop: '0.75rem' }}>
             <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Ver las {fmtInt(zeroMeta.documentos.pendientes.length)} solicitudes con ítems sin comprobante</summary>
             <div style={{ ...s.tableWrap, marginTop: '0.6rem', maxHeight: '40vh' }}>
