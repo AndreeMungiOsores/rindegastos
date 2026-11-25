@@ -1,6 +1,6 @@
 # Zero: trazabilidad de atención por ítem — arquitectura unificada
 
-Fecha: 24/11/2026 (actualizado 25/11/2026 con la respuesta de Gonzalo) · Estado: **modelo aceptado por Gonzalo; tablas aún no creadas** (no se ha cambiado código). Gonzalo avisa que hay cargas por corregir en `hItems`: `Nro Comprobante` **no es definitivo** hasta que las aplique.
+Fecha: 24/11/2026 (actualizado 25/11/2026 con la respuesta de Gonzalo) · Estado: **modelo aceptado por Gonzalo; tablas aún no creadas** (no se ha cambiado código). Gonzalo aplicó el 25/11 las 16 correcciones de carga en `hItems` (listado `Zero_correcciones_antes_despues.xlsx`); el portal cuenta ahora **204 ítems con comprobante** (52 comprobantes únicos). `Nro Comprobante` sigue sin ser definitivo mientras queden los pendientes del §6.
 Base: propuesta de Gonzalo (`Zero trazabilidad de atención por ítem.pdf`) + Excel `Zero_Discrepancias_para_Andree.xlsx` + verificación del portal contra SeaFácil (solo lectura).
 
 ## 1. Qué se acuerda
@@ -64,8 +64,10 @@ Base: propuesta de Gonzalo (`Zero trazabilidad de atención por ítem.pdf`) + Ex
 
 | Pendiente | Responsable |
 |---|---|
-| Aplicar en `hItems` las correcciones de la carga (10 ítems de TTG-EFB6016BC7 con comprobante dudoso, 4 UV Sport/Stick recuperables, 2 ítems de TTG-203047 anulados por nota de crédito), guardando un listado antes/después, **antes** de migrar a la puente | Gonzalo |
-| Confirmar el segundo comprobante del Sebiaclear (punto 3 del §4) y `F002-00014204` en Anka | Gonzalo |
+| ~~Aplicar en `hItems` las correcciones de la carga~~ Hecho el 25/11 y verificado en Dataverse: 10 ítems de TTG-EFB6016BC7 vaciados (tenían `B011-0000115`), 4 UV Sport/Stick cargados (`BG01-00003638`, `3619`, `3586`), 2 ítems de TTG-203047 vaciados por la nota de crédito. Total 204 ítems con comprobante | Cerrado |
+| Al migrar a la puente: TiZO3 85 g y Palpebral Mascara (TTG-203047) → fila +1 `BG01-00003586`, fila −1 `BC02-00000261` (neto 0), motivo "anulado por nota de crédito". Mientras tanto el portal los muestra como pendientes, sin valorizarlos | Gonzalo |
+| Retirar `F011-0000376` del Sebiaclear Active Gel (TTG-C63A239F67); el campo de documentos de la solicitud ya dice solo `BG03-0000300; B011-0000141`. Confirmar `F002-00014204` en Anka | Gonzalo |
+| Completar `Nro Documento` de 4 solicitudes cuyos ítems traen un segundo documento: TTG-D0546E324F (`BG03-0000279`), TTG-976778 (`BG01-00003929`), TTG-396966 (`BG01-00003857`), TTG-B2A6D68D10 (`BG01-00004104`); así Calidad deja de marcar esas diferencias | Gonzalo |
 | ~~¿Las líneas del export de Anka traen costo?~~ Respondido: el export trae solo producto y cantidad; la pantalla del pedido muestra precio unitario y descuento, no costo. Para Anka no habrá costo: la valorización sigue con precios de SeaFácil (aproximación) | Cerrado |
 | Confirmar si la vista de SeaFácil omite documentos 100% gratuitos | Quien administra la vista |
 | Costo real por producto (ERP) | Fernando |
