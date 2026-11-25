@@ -1,6 +1,6 @@
 # Zero: trazabilidad de atención por ítem — arquitectura unificada
 
-Fecha: 24/11/2026 · Estado: **propuesta a validar** (no se ha creado ninguna tabla ni se ha cambiado código)
+Fecha: 24/11/2026 (actualizado 25/11/2026 con la respuesta de Gonzalo) · Estado: **modelo aceptado por Gonzalo; tablas aún no creadas** (no se ha cambiado código). Gonzalo avisa que hay cargas por corregir en `hItems`: `Nro Comprobante` **no es definitivo** hasta que las aplique.
 Base: propuesta de Gonzalo (`Zero trazabilidad de atención por ítem.pdf`) + Excel `Zero_Discrepancias_para_Andree.xlsx` + verificación del portal contra SeaFácil (solo lectura).
 
 ## 1. Qué se acuerda
@@ -34,15 +34,15 @@ Base: propuesta de Gonzalo (`Zero trazabilidad de atención por ítem.pdf`) + Ex
 | Quién registra mientras no haya integración | Gonzalo y logística (carga o formulario). El portal no escribe. |
 | Reportes separados | Sí (ver §1). |
 
-**Nota de crédito (`BC02-00000261`, solicitudes TTG-203047, TTG-489669, TTG-559452):** fila en la puente con cantidad negativa, marcada tipo nota de crédito, cuando se sepa a qué ítem resta. Mientras tanto esas solicitudes quedan en "Por verificar", no en "Atendido".
+**Nota de crédito (`BC02-00000261`):** Gonzalo ya identificó los ítems: Palpebral Mascara y TiZO3 85 g, de TTG-203047, una unidad cada uno. Solo ahí van filas negativas (tipo nota de crédito). Cada ítem queda con una fila positiva (su documento original) y una negativa (la nota), neto 0, y se cierra con un motivo tipo "anulado por nota de crédito"; el portal no lo valoriza. TTG-489669 y TTG-559452 no llevan filas negativas.
 
 ## 4. Hallazgos de la verificación contra SeaFácil (24/11/2026, solo lectura)
 
 1. **SeaFácil sí tiene líneas por producto** (`v_ventas_all`), pero de los 52 comprobantes únicos de Zero solo 2 están: `B001-0000675` (Topialyse Crème 400 mL, 1 und a precio 0 → coincide con el ítem y confirma entrega gratuita) y `F011-0000376` (solo Cicavit DM+ 15 g: 12 und con precio y 1 a precio 0).
 2. **La vista no expone documentos 100% gratuitos (hipótesis fuerte, por confirmar):** de 9,545 documentos ninguno tiene total 0, y de la serie `B011` faltan 57 de 149 números, entre ellos los 5 `B011` de Zero (86, 115, 116, 134, 141). `BG03` tiene solo 5 documentos (números ≤ 188) y los `BG03` de Zero no están. Las muestras puras probablemente solo se ven en el export de Anka o en el ERP.
-3. **Dato en duda de TTG-C63A239F67:** `F011-0000376` contiene Cicavit, no Sebiaclear. Lo probable es que el Cicavit (1 und) sea de `F011-0000376`, que el Sebiaclear tenga solo `BG03-0000300` y que `B011-0000141` no exista en la vista. **Gonzalo debe confirmarlo.**
-4. `F002-00014204` (Spirial Deo-Creme) tiene 8 dígitos; SeaFácil usa 7 → probablemente de Anka o error de tipeo.
-5. Hoja 3 del Excel: la fila de `B011-0000115` menciona el documento `BG01-00004036` → confirmar cuál es el correcto.
+3. **Dato en duda de TTG-C63A239F67 (hipótesis corregida el 25/11):** `F011-0000376` contiene solo Cicavit, no Sebiaclear, y es una venta a DERMATOLOGIA Y SALUD E.I.R.L. (12 und con precio + 1 a precio 0, 16/11/2026), es decir, parece venta comercial y no una entrega de Zero. `B011-0000141` no está en la vista, pero su fecha encaja (existen el 140 del 16/11 y el 142 del 17/11), coherente con la hipótesis de documentos gratuitos omitidos. Lectura actual: `F011-0000376` no corresponde a ninguno de los dos ítems; el Cicavit probablemente sí era `B011-0000141`; el Sebiaclear conserva `BG03-0000300` y su segundo comprobante queda **sin identificar**. Gonzalo lo confirma en Anka/SeaFácil.
+4. `F002-00014204` (Spirial Deo-Creme) tiene formato de Anka (8 dígitos); logística citó el pedido 34767/27571. Gonzalo lo confirma en Anka.
+5. Hoja 3 del Excel: la solicitud TTG-EFB6016BC7 tiene dos documentos, `BG01-00004036` (Anka) y `B011-0000115` (SeaFácil). Los Color Balm, Sun Secure Blur y UV Sport no deben ir con el B011: es un error de la carga que Gonzalo corrige.
 6. Casos de cantidad/producto distinto (Vitamin CE 29 mL vs 30 mL; Daily Moisture 5 g ×20 vs 85 g ×1) no se pueden dar por verificados: entran como "Por verificar".
 
 ## 5. Migración del histórico
@@ -57,15 +57,16 @@ Base: propuesta de Gonzalo (`Zero trazabilidad de atención por ítem.pdf`) + Ex
 | Segundo despacho | TTG-976778: BG01-00003786 y BG01-00003929 | Cada ítem apunta a su comprobante |
 | Ítem con dos documentos | TTG-D0546E324F: BG03-0000276 y BG03-0000279 | Dos filas por ítem, cantidad por confirmar |
 | Documento compartido | BG01-00003638: TTG-642544, TTG-723288, TTG-784177 | Un comprobante, filas en las tres solicitudes |
-| Dato en duda | TTG-C63A239F67: F011-0000376 o B011-0000141 | Se confirma antes de migrar |
-| Nota de crédito | BC02-00000261 | Fila con cantidad negativa y su ítem |
+| Dato en duda | TTG-C63A239F67: F011-0000376 (parece venta comercial) y B011-0000141 | Se confirma antes de migrar |
+| Nota de crédito | BC02-00000261 en TTG-203047 (2 ítems, 1 und cada uno) | Fila positiva + fila negativa por ítem, neto 0, motivo "anulado por nota de crédito" |
 
 ## 6. Pendientes y responsables
 
 | Pendiente | Responsable |
 |---|---|
-| Confirmar punto 3 y 5 del §4 y el formato de `F002-00014204` | Gonzalo |
-| ¿Las líneas del export de Anka traen costo o precio, o solo cantidad? | Gonzalo |
+| Aplicar en `hItems` las correcciones de la carga (10 ítems de TTG-EFB6016BC7 con comprobante dudoso, 4 UV Sport/Stick recuperables, 2 ítems de TTG-203047 anulados por nota de crédito), guardando un listado antes/después, **antes** de migrar a la puente | Gonzalo |
+| Confirmar el segundo comprobante del Sebiaclear (punto 3 del §4) y `F002-00014204` en Anka | Gonzalo |
+| ~~¿Las líneas del export de Anka traen costo?~~ Respondido: el export trae solo producto y cantidad; la pantalla del pedido muestra precio unitario y descuento, no costo. Para Anka no habrá costo: la valorización sigue con precios de SeaFácil (aproximación) | Cerrado |
 | Confirmar si la vista de SeaFácil omite documentos 100% gratuitos | Quien administra la vista |
 | Costo real por producto (ERP) | Fernando |
 | ¿El reparto de costos usa solo lo verificado? | Adrián |
