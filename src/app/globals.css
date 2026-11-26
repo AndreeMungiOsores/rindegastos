@@ -3592,3 +3592,16 @@ body {
 .rv-city-row td { background: var(--bg-surface-2); font-size: 0.8rem; }
 .rv-note { margin: 0.5rem 0 0; font-size: 0.74rem; color: var(--text-tertiary); }
 .rv-voucher { width: 100%; max-height: 520px; object-fit: contain; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: #fff; }
+
+.menu-soon-badge {
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+}

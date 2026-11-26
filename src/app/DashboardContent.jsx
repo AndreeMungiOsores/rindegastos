@@ -300,7 +300,7 @@ export default function AdminDashboard({ onLogout }) {
   const isAutoSyncingRef = useRef(false);
 
   // Módulos y Navegación del Panel Lateral
-  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'rindeviajes' | 'buzon' | 'prestamos' | 'cxc' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
+  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'rindeviajes' | 'rindeplanes' | 'buzon' | 'prestamos' | 'cxc' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
   // Solo en memoria: se mantiene al cambiar de módulo, pero se pide de nuevo al recargar la página o abrir otra pestaña.
   const [prestamosDesbloqueado, setPrestamosDesbloqueado] = useState(false);
   const [cabifyMenuOpen, setCabifyMenuOpen] = useState(false);
@@ -3007,7 +3007,7 @@ export default function AdminDashboard({ onLogout }) {
 
         {/* ── Menu ─────────────────────────────── */}
         <nav className="sidebar-menu" aria-label="Navegación principal">
-          {!sidebarCollapsed && <span className="menu-group-label">Módulos</span>}
+          {!sidebarCollapsed && <span className="menu-group-label">Aplicaciones</span>}
 
           <button
             type="button"
@@ -3032,15 +3032,34 @@ export default function AdminDashboard({ onLogout }) {
             type="button"
             className={`menu-item ${activeModule === 'rindeviajes' ? 'active' : ''}`}
             onClick={() => setActiveModule('rindeviajes')}
-            title="Rinde Viajes (presupuesto y gastos de viaje)"
+            title="Panel Rindeviajes (presupuesto y gastos de viaje)"
             aria-current={activeModule === 'rindeviajes' ? 'page' : undefined}
           >
             <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
               <circle cx="12" cy="10" r="3"/>
             </svg>
-            {!sidebarCollapsed && <span className="menu-label">Rinde Viajes</span>}
+            {!sidebarCollapsed && <span className="menu-label">Panel Rindeviajes</span>}
           </button>
+
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'rindeplanes' ? 'active' : ''}`}
+            onClick={() => setActiveModule('rindeplanes')}
+            title="Panel Rindeplanes (próximamente)"
+            aria-current={activeModule === 'rindeplanes' ? 'page' : undefined}
+          >
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Panel Rindeplanes</span>}
+            {!sidebarCollapsed && <span className="menu-soon-badge">Pronto</span>}
+          </button>
+
+          {!sidebarCollapsed && <span className="menu-group-label">Módulos</span>}
 
           <button
             type="button"
@@ -7319,6 +7338,21 @@ export default function AdminDashboard({ onLogout }) {
         {activeModule === 'cxc' && <CxcModule />}
 
         {activeModule === 'rindeviajes' && <RindeViajesModule />}
+
+        {activeModule === 'rindeplanes' && (
+          <div className="placeholder-module-screen">
+            <div className="placeholder-card">
+              <svg className="placeholder-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="18" rx="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <h2>Panel Rindeplanes</h2>
+              <p className="status-text">Próximamente</p>
+            </div>
+          </div>
+        )}
 
         {activeModule === 'atribucion' && <AtribucionModule />}
 
