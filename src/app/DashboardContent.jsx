@@ -8,6 +8,7 @@ import { buildLoanSlots, splitEqualCents, validateCustomAmounts, toCents } from 
 import { formatMarca, formatTipoGasto } from '../lib/dataverseChoiceResolver.js';
 import CabifyMobilityModule from './components/CabifyMobilityModule';
 import CxcModule from './components/CxcModule';
+import RindeViajesModule from './components/RindeViajesModule';
 import AtribucionModule from './components/AtribucionModule';
 import AccessCodeGate from './components/AccessCodeGate';
 
@@ -299,7 +300,7 @@ export default function AdminDashboard({ onLogout }) {
   const isAutoSyncingRef = useRef(false);
 
   // Módulos y Navegación del Panel Lateral
-  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'buzon' | 'prestamos' | 'cxc' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
+  const [activeModule, setActiveModule] = useState('rindegastos'); // 'rindegastos' | 'rindeviajes' | 'buzon' | 'prestamos' | 'cxc' | 'cabify-taxi' | 'cabify-delivery' | 'proveedores'
   // Solo en memoria: se mantiene al cambiar de módulo, pero se pide de nuevo al recargar la página o abrir otra pestaña.
   const [prestamosDesbloqueado, setPrestamosDesbloqueado] = useState(false);
   const [cabifyMenuOpen, setCabifyMenuOpen] = useState(false);
@@ -3025,6 +3026,20 @@ export default function AdminDashboard({ onLogout }) {
               <path d="M14 17h7M17.5 14v7"/>
             </svg>
             {!sidebarCollapsed && <span className="menu-label">Panel Rindegastos</span>}
+          </button>
+
+          <button
+            type="button"
+            className={`menu-item ${activeModule === 'rindeviajes' ? 'active' : ''}`}
+            onClick={() => setActiveModule('rindeviajes')}
+            title="Rinde Viajes (presupuesto y gastos de viaje)"
+            aria-current={activeModule === 'rindeviajes' ? 'page' : undefined}
+          >
+            <svg className="menu-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            {!sidebarCollapsed && <span className="menu-label">Rinde Viajes</span>}
           </button>
 
           <button
@@ -7302,6 +7317,8 @@ export default function AdminDashboard({ onLogout }) {
         )}
 
         {activeModule === 'cxc' && <CxcModule />}
+
+        {activeModule === 'rindeviajes' && <RindeViajesModule />}
 
         {activeModule === 'atribucion' && <AtribucionModule />}
 
