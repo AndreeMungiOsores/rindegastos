@@ -140,7 +140,7 @@ function IaAmountPill({ alert: amountAlert, fontSize = '0.62rem' }) {
   const fmt = (n) => n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
     <span
-      title={`La IA lee S/ ${fmt(amountAlert.iaTotal)} en la foto del comprobante, pero el monto registrado es S/ ${fmt(amountAlert.actual)}. Verifica el monto antes de aprobar o desembolsar.`}
+      title={`La IA espera S/ ${fmt(amountAlert.iaTotal)} según la foto del comprobante (incluye la propina si la detectó), pero el monto registrado es S/ ${fmt(amountAlert.actual)}. Verifica el monto antes de aprobar o desembolsar.`}
       style={{
         display: 'inline-block',
         width: 'fit-content',

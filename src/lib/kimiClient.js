@@ -31,12 +31,17 @@ Responde solo con JSON con esta estructura exacta:
   "recargo_consumo": null,
   "inafecto": null,
   "total_comprobante": 0.00,
+  "propina": null,
+  "total_a_pagar": null,
   "confianza": "alta|media|baja"
 }
 
 Notas:
 - tasa_igv: puede ser 18, 10.5, 10 o 0 (para inafectos)
 - recargo_consumo: el RC que aparece debajo del subtotal en restaurantes y hoteles
+- total_comprobante: el Total o Total Venta del comprobante (suma de base, IGV, recargo al consumo e inafecto). NO incluye la propina.
+- propina: SOLO si aparece una línea explícita de propina voluntaria ("Propina", "Tip", "Gratificación") fuera del total del comprobante, normalmente debajo del total y antes del total a pagar. No es el recargo al consumo (RC) ni un cargo por servicio incluido dentro del total. Si no ves esa línea usa null; no la calcules ni la estimes.
+- total_a_pagar: SOLO si aparece impreso un monto final a pagar que ya incluye la propina; si no, null.
 - confianza: "alta" si la imagen es clara, "media" si hay partes borrosas, "baja" si es ilegible`;
 
 const USER_PROMPT_PROPINA = `Esta es la imagen del voucher de PROPINA asociado al comprobante anterior.
@@ -149,7 +154,7 @@ export function normalizeComprobanteData(raw) {
       tipo_comprobante: null, numero_comprobante: null, ruc_comercio: null,
       nombre_comercio: null, fecha_emision: null, base_gravada: null,
       tasa_igv: null, igv_monto: null, recargo_consumo: null, inafecto: null,
-      total_comprobante: null, confianza: 'baja'
+      total_comprobante: null, monto_propina: null, total_a_pagar: null, confianza: 'baja'
     };
   }
 
@@ -207,6 +212,7 @@ export function normalizeComprobanteData(raw) {
     inafecto: inafecto != null && inafecto > 0 ? Math.round(inafecto * 100) / 100 : null,
     total_comprobante: total != null ? Math.round(total * 100) / 100 : null,
     monto_propina: toNum(raw.monto_propina ?? raw.propina ?? totales.propina),
+    total_a_pagar: toNum(raw.total_a_pagar),
     confianza
   };
 }

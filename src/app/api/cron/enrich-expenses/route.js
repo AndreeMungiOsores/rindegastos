@@ -4,10 +4,11 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { getAccessToken } from '../../../../lib/tokenManager.js';
 import { updateExpense } from '../../../../lib/dataverseClient.js';
-import { extractFromComprobante, evaluarCambioBrusco, tasaIgvValida } from '../../../../lib/kimiClient.js';
+import { extractFromComprobante, tasaIgvValida } from '../../../../lib/kimiClient.js';
 import { resolverComercio } from '../../../../lib/sunatRucClient.js';
 import { estandarizarRazonSocialReciente } from '../../../../lib/razonSocialSweep.js';
 import { formatAmountAlertConfidence, isLowConfidence } from '../../../../lib/iaAmountAlert.js';
+import { decidirPropina, evaluarMontoRegistrado } from '../../../../lib/propinaIa.js';
 
 const DATAVERSE_BASE_URL = 'https://org1123c726.api.crm2.dynamics.com/api/data/v9.2';
 
@@ -154,13 +155,18 @@ async function handleEnrichExpenses({ force = false } = {}) {
         const alertasList = [];
         const totalValido = typeof comp.total_comprobante === 'number' && !isNaN(comp.total_comprobante) && comp.total_comprobante > 0;
         let totalDifiere = false;
+        // La propina es opcional: puede salir en el comprobante, en un recibo aparte o no salir. Solo se completa si está vacía y se detecta.
+        const { conocida: propinaConocida, nueva: propinaNueva } = decidirPropina({ registrada: g.cr168_monto_propina, comp, prop });
+        let montoEsperado = null;
 
         if (!totalValido) {
           alertasList.push('Extracción incompleta: no se obtuvo un importe total numérico válido');
         } else {
-          const chkTotal = evaluarCambioBrusco(g.cr168_montototalincluyendoigv, comp.total_comprobante, 'total');
-          if (chkTotal.brusco) {
-            alertasList.push(chkTotal.detalle);
+          // El monto registrado incluye la propina; la IA lee el total del comprobante. Se compara contra el total + propina conocida.
+          const chkTotal = evaluarMontoRegistrado({ registrado: g.cr168_montototalincluyendoigv, totalComprobante: comp.total_comprobante, propinaConocida });
+          montoEsperado = chkTotal.esperado;
+          if (chkTotal.dudoso) {
+            alertasList.push(`total: actual=${g.cr168_montototalincluyendoigv} → IA=${chkTotal.esperado}${propinaConocida > 0 ? ` (incluye propina ${propinaConocida})` : ''}`);
             totalDifiere = true;
           }
         }
@@ -178,10 +184,13 @@ async function handleEnrichExpenses({ force = false } = {}) {
           console.warn(`[EnrichCron] Discrepancia o alerta en gasto ${id}:`, alertasList);
           // Si el motivo es que el total de la foto difiere del registrado, se guarda el total que leyó la IA ("baja|T:207.00")
           // para que el portal muestre el aviso de monto. El monto registrado nunca se pisa.
-          await updateExpense(id, {
+          const patchAlerta = {
             cr168_ia_procesado: false,
-            cr168_ia_confianza: totalDifiere ? formatAmountAlertConfidence(comp.total_comprobante) : 'baja'
-          });
+            cr168_ia_confianza: totalDifiere ? formatAmountAlertConfidence(montoEsperado) : 'baja'
+          };
+          // Aunque el monto esté dudoso, la propina detectada se completa (el aviso ya cuenta con ella)
+          if (propinaNueva != null) patchAlerta.cr168_monto_propina = propinaNueva;
+          await updateExpense(id, patchAlerta);
           alertas.push({ id, vendedor: g.cr168_vendedor, alertas: alertasList });
         } else {
           // Construir payload limpio de actualización en Dataverse
@@ -194,6 +203,7 @@ async function handleEnrichExpenses({ force = false } = {}) {
           if (comp.igv_monto != null) patch.cr168_igv_monto = comp.igv_monto;
           if (comp.recargo_consumo && comp.recargo_consumo > 0) patch.cr168_recargo_consumo = comp.recargo_consumo;
           if (comp.inafecto && comp.inafecto > 0) patch.cr168_inafecto = comp.inafecto;
+          if (propinaNueva != null) patch.cr168_monto_propina = propinaNueva;
 
           // Enriquecer metadatos si estaban vacíos en Dataverse
           if (comp.nombre_comercio && (!g.cr168_nombredelcomercio || g.cr168_nombredelcomercio === 'sin comercio')) {
